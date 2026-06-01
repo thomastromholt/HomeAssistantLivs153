@@ -1,0 +1,102 @@
+# Smart Energy Automation Logic
+# Controls Pax fans and monitors energy load using:
+#   - Nord Pool real-time spot prices  (HACS: nordpool integration)
+#   - Greenely real-time energy consumption monitoring
+#   - SaveEye (Pulse) household load
+#
+# Prerequisites — create these helpers in HA (Settings > Devices > Helpers):
+#   input_number.cheap_price_threshold   (SEK/kWh, e.g. 0.80)
+#   input_number.max_household_load_kw   (e.g. 8.0)
+#
+# Nord Pool sensor ID — verify yours in Developer Tools > States after setup:
+#   Typical format: sensor.nordpool_kwh_se3_sek_3_10_0
+#   Adjust SE3 to your price area (SE1/SE2/SE3/SE4)
+
+automation:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. EVE ROOM AIR QUALITY
+# ─────────────────────────────────────────────────────────────────────────────
+
+  - id: eve_room_air_quality_alert
+    alias: "Eve Room: Alert on poor air quality"
+    description: >
+      Notifies when Eve Room reports VOC above 1100 ppb (poor air quality).
+      Suggests ventilation action.
+    mode: single
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.eve_room_voc
+        above: 1100
+        for: "00:05:00"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "Air Quality Alert"
+          message: >
+            Eve Room VOC: {{ states('sensor.eve_room_voc') }} ppb.
+            Consider opening a window or running ventilation.
+            Temperature: {{ states('sensor.eve_room_temperature') }}°C,
+            Humidity: {{ states('sensor.eve_room_humidity') }}%.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. HIGH CONSUMPTION ALERT (SaveEye + Greenely)
+# ─────────────────────────────────────────────────────────────────────────────
+
+  - id: high_load_alert
+    alias: "Energy: Alert on sustained high household load"
+    description: >
+      Notifies if SaveEye reports load above the configured threshold for 5+
+      minutes. Useful during expensive Nord Pool hours.
+    mode: single
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.saveeye_current_power
+        above: input_number.max_household_load_kw
+        value_template: "{{ value | float / 1000 }}"
+        for: "00:05:00"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "High Load Warning"
+          message: >
+            Household at {{ (states('sensor.saveeye_current_power') | float / 1000) | round(2) }} kW
+            for 5+ minutes.
+            Current Nord Pool price: {{ states('sensor.nordpool_kwh_se3_sek_3_10_0') }} SEK/kWh.
+            Greenely cost today: {{ states('sensor.greenely_today_cost') }} SEK.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. DAILY MORNING BRIEFING (07:00)
+# ─────────────────────────────────────────────────────────────────────────────
+
+  - id: daily_energy_briefing
+    alias: "Energy: Daily morning briefing at 07:00"
+    description: >
+      Push notification with today's Nord Pool price overview,
+      cheapest hours, and whether tomorrow prices are available yet.
+    mode: single
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "Energy Plan for Today"
+          message: >
+            {% set prices = state_attr('sensor.nordpool_kwh_se3_sek_3_10_0', 'today') %}
+            {% if prices %}
+              {% set valid = prices | select('number') | list %}
+              {% set avg_p = (valid | sum / (valid | length)) | round(3) %}
+              {% set min_p = valid | min | round(3) %}
+              {% set max_p = valid | max | round(3) %}
+              {% set sorted_hours = range(valid | length) | list | sort(attribute=lambda i: valid[i]) %}
+              Nord Pool today: avg {{ avg_p }} | min {{ min_p }} | max {{ max_p }} SEK/kWh.
+              3 cheapest hours: {{ sorted_hours[:3] | map('string') | join(':00, ') }}:00.
+              {% if state_attr('sensor.nordpool_kwh_se3_sek_3_10_0', 'tomorrow_valid') %}
+              Tomorrow preview available — check the dashboard.
+              {% endif %}
+            {% else %}
+              Nord Pool prices not yet available.
+            {% endif %}

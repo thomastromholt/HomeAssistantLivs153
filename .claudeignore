@@ -1,0 +1,26 @@
+# Secrets and credentials — never send to external servers
+secrets.yaml
+secrets.yaml.*
+
+# Home Assistant databases (can be large and contain personal data)
+*.db
+*.db-shm
+*.db-wal
+
+# Internal HA storage (tokens, session data, entity registry state)
+.storage/
+
+# Backups
+backups/
+*.tar
+
+# Log files (can contain IPs, entity states, personal patterns)
+home-assistant.log
+home-assistant.log.*
+OZW_Log.txt
+
+# SSL/TLS certificates
+*.pem
+*.crt
+*.key
+ssl/
