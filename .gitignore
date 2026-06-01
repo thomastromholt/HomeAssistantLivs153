@@ -1,0 +1,12 @@
+# Local Claude settings — may contain secrets (HA tokens, IPs)
+.claude/settings.local.json
+
+# HA runtime files — never commit these
+secrets.yaml
+*.db
+*.db-shm
+*.db-wal
+.storage/
+backups/
+home-assistant.log*
+ssl/
