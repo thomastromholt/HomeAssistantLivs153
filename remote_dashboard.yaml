@@ -11,67 +11,73 @@ views:
     badges: []
     cards:
 
-      # ─── ROW 1: Real-time power (SaveEye) ────────────────────────────────
-      - type: custom:mini-graph-card
-        name: Live Household Power
-        icon: mdi:transmission-tower
+      # ─── ROW 1: Current price + daily stats ──────────────────────────────
+      # Nord Pool live: sensor.nordpool_kwh_se3_sek_3_10_025
+      # Greenely daily: sensor.greenely_daily_usage (data attribute = array of {localtime, usage})
+
+      - type: entities
+        title: Electricity Now
+        show_header_toggle: false
         entities:
-          - entity: sensor.saveeye_current_power
-            name: Load (W)
-        hours_to_show: 1
-        points_per_hour: 60
-        line_width: 2
-        show:
-          extrema: true
-          labels: true
-        style: |
-          ha-card { font-size: 16px; }
+          - entity: sensor.nordpool_kwh_se3_sek_3_10_025
+            name: Current Price (SEK/kWh)
+            icon: mdi:flash
+          - type: attribute
+            entity: sensor.nordpool_kwh_se3_sek_3_10_025
+            attribute: average
+            name: Day Avg (SEK/kWh)
+            icon: mdi:chart-line
+          - type: attribute
+            entity: sensor.nordpool_kwh_se3_sek_3_10_025
+            attribute: min
+            name: Day Min (SEK/kWh)
+            icon: mdi:arrow-down
+          - type: attribute
+            entity: sensor.nordpool_kwh_se3_sek_3_10_025
+            attribute: max
+            name: Day Max (SEK/kWh)
+            icon: mdi:arrow-up
         grid_options:
           columns: 2
           rows: 2
 
       - type: entities
-        title: Energy Today (Greenely)
+        title: Greenely Usage
         show_header_toggle: false
         entities:
-          - entity: sensor.greenely_current_price
-            name: Current Price
-            icon: mdi:tag
-          - entity: sensor.greenely_today_cost
-            name: Cost Today
-            icon: mdi:currency-usd
-          - entity: sensor.saveeye_energy_today
-            name: Usage Today
+          - entity: sensor.greenely_daily_usage
+            name: Yesterday (kWh)
             icon: mdi:counter
+          - entity: sensor.greenely_prices
+            name: Greenely Price
+            icon: mdi:currency-usd
         grid_options:
           columns: 2
           rows: 2
 
       # ─── ROW 2: Nord Pool prices — today & tomorrow ───────────────────────
+      # raw_today has 96 x 15-min intervals: [{start, end, value}]
+
       - type: custom:apexcharts-card
         header:
-          title: Nord Pool — Today
+          title: Nord Pool — Today (SE3)
           show: true
         series:
-          - entity: sensor.nordpool_kwh_se3_sek_3_10_0
+          - entity: sensor.nordpool_kwh_se3_sek_3_10_025
             type: column
             name: SEK/kWh
             color: '#f5a623'
             data_generator: |
-              const prices = entity.attributes.today || [];
-              return prices.map((p, i) => [
-                new Date().setHours(i, 0, 0, 0), p
-              ]);
-          - entity: sensor.nordpool_kwh_se3_sek_3_10_0
+              const data = entity.attributes.raw_today || [];
+              return data.map(d => [new Date(d.start).getTime(), d.value]);
+          - entity: sensor.nordpool_kwh_se3_sek_3_10_025
             type: line
             name: Avg
             color: '#e74c3c'
             data_generator: |
-              const prices = entity.attributes.today || [];
-              const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
-              return prices.map((_, i) => [
-                new Date().setHours(i, 0, 0, 0), avg
-              ]);
+              const data = entity.attributes.raw_today || [];
+              const avg = entity.attributes.average || 0;
+              return data.map(d => [new Date(d.start).getTime(), avg]);
         graph_span: 24h
         span:
           start: day
@@ -86,20 +92,16 @@ views:
           title: Nord Pool — Tomorrow
           show: true
         series:
-          - entity: sensor.nordpool_kwh_se3_sek_3_10_0
+          - entity: sensor.nordpool_kwh_se3_sek_3_10_025
             type: column
             name: SEK/kWh
             color: '#3498db'
             data_generator: |
-              const prices = entity.attributes.tomorrow || [];
-              if (!entity.attributes.tomorrow_valid || !prices.length) {
+              const data = entity.attributes.raw_tomorrow || [];
+              if (!entity.attributes.tomorrow_valid || !data.length) {
                 return [[Date.now(), null]];
               }
-              const tomorrow = new Date();
-              tomorrow.setDate(tomorrow.getDate() + 1);
-              return prices.map((p, i) => [
-                new Date(tomorrow).setHours(i, 0, 0, 0), p
-              ]);
+              return data.map(d => [new Date(d.start).getTime(), d.value]);
         graph_span: 24h
         span:
           start: +1d
@@ -109,89 +111,45 @@ views:
           columns: 2
           rows: 2
 
-      # ─── ROW 3: Greenely — monthly consumption & cost ────────────────────
-      # sensor.greenely_month: state = total kWh, attributes: cost (SEK), daily_usages[]
-      # Verify entity ID in Developer Tools → States after installing Greenely HACS
+      # ─── ROW 3: Greenely daily consumption chart ─────────────────────────
+      # sensor.greenely_daily_usage.attributes.data = [{localtime: "Jun 01 2026", usage: "12.5"}]
 
       - type: entities
-        title: This Month (Greenely)
+        title: Daily Usage (Greenely)
         show_header_toggle: false
         entities:
-          - entity: sensor.greenely_month
-            name: Consumption
-            icon: mdi:lightning-bolt
-          - type: attribute
-            entity: sensor.greenely_month
-            attribute: cost
-            name: Cost (SEK)
-            icon: mdi:cash
-          - entity: sensor.greenely_today
-            name: Today (kWh)
+          - entity: sensor.greenely_daily_usage
+            name: Yesterday
             icon: mdi:calendar-today
-          - type: attribute
-            entity: sensor.greenely_today
-            attribute: cost
-            name: Today Cost (SEK)
-            icon: mdi:receipt
-          - entity: sensor.greenely_current_price
-            name: Current Price (SEK/kWh)
-            icon: mdi:tag
         grid_options:
           columns: 2
-          rows: 3
+          rows: 2
 
       - type: custom:apexcharts-card
         header:
-          title: Daily Consumption This Month (kWh)
+          title: Daily Consumption — Last 10 Days (kWh)
           show: true
-        graph_span: 1month
-        span:
-          start: month
         series:
-          - entity: sensor.greenely_month
+          - entity: sensor.greenely_daily_usage
             name: kWh
             type: column
             color: '#27ae60'
             data_generator: |
-              const usages = entity.attributes.daily_usages || [];
-              return usages.map(d => [
-                new Date(d.date).getTime(),
+              const data = entity.attributes.data || [];
+              return data.map(d => [
+                new Date(d.localtime).getTime(),
                 parseFloat(d.usage) || 0
               ]);
-          - entity: sensor.greenely_month
-            name: Cost (SEK)
-            type: line
-            color: '#e74c3c'
-            yaxis_id: cost
-            data_generator: |
-              const usages = entity.attributes.daily_usages || [];
-              return usages.map(d => [
-                new Date(d.date).getTime(),
-                parseFloat(d.cost) || 0
-              ]);
         yaxis:
-          - id: main
-            min: 0
-            apex_config:
-              title:
-                text: kWh
-          - id: cost
-            opposite: true
-            min: 0
-            apex_config:
-              title:
-                text: SEK
-        apex_config:
-          chart:
-            type: bar
-          plotOptions:
-            bar:
-              columnWidth: 70%
+          - min: 0
+        graph_span: 10d
+        span:
+          end: now
         grid_options:
           columns: 4
           rows: 3
 
-      # ─── ROW 4: Eve Room Air Quality (Bluetooth) ─────────────────────────
+      # ─── ROW 4: Eve Room Air Quality (Bluetooth — not yet paired) ────────
       - type: vertical-stack
         title: Eve Room — Air Quality
         cards:
@@ -217,7 +175,7 @@ views:
           columns: 2
           rows: 3
 
-      # ─── ROW 5: Zigbee climate sensors ───────────────────────────────────
+      # ─── ROW 5: Zigbee climate sensors (not yet paired) ──────────────────
       - type: custom:mushroom-chips-card
         chips:
           - type: template
@@ -246,8 +204,6 @@ views:
             name: Living Room
           - entity: sensor.temp_bedroom
             name: Bedroom
-          - entity: sensor.temp_kitchen
-            name: Kitchen
           - entity: sensor.eve_room_temperature
             name: Eve Room
         hours_to_show: 6
@@ -268,8 +224,6 @@ views:
             name: Bedroom
           - entity: sensor.humidity_bathroom
             name: Bathroom
-          - entity: sensor.humidity_basement
-            name: Basement
           - entity: sensor.humidity_kitchen
             name: Kitchen
           - entity: sensor.eve_room_humidity
@@ -277,4 +231,3 @@ views:
         grid_options:
           columns: 2
           rows: 3
-

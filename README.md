@@ -91,15 +91,13 @@ Developer Tools → States after installing each integration.
 
 | Sensor | Entity ID |
 |--------|-----------|
-| Nord Pool current price | `sensor.nordpool_kwh_se3_sek_3_10_0` |
-| Nord Pool today/tomorrow | attribute `today` / `tomorrow` on above |
-| Greenely current price | `sensor.greenely_current_price` |
-| Greenely monthly kWh | `sensor.greenely_month` |
-| Greenely monthly cost | attribute `cost` on `sensor.greenely_month` |
-| Greenely daily breakdown | attribute `daily_usages[]` on `sensor.greenely_month` |
-| Greenely today kWh | `sensor.greenely_today` |
-| SaveEye live power | `sensor.saveeye_current_power` |
-| SaveEye today kWh | `sensor.saveeye_energy_today` |
+| Nord Pool current price | `sensor.nordpool_kwh_se3_sek_3_10_025` |
+| Nord Pool today (96×15min) | attribute `raw_today` — `[{start, end, value}]` |
+| Nord Pool avg/min/max | attributes `average`, `min`, `max` |
+| Nord Pool tomorrow | attribute `raw_tomorrow` (when `tomorrow_valid=true`) |
+| Greenely daily usage | `sensor.greenely_daily_usage` — attribute `data[]` `{localtime, usage}` |
+| Greenely prices | `sensor.greenely_prices` — attributes `current_day`, `next_day` |
+| SaveEye live power | pending — SaveEye integration loaded but no entities yet |
 | Eve Room temperature | `sensor.eve_room_temperature` |
 | Eve Room humidity | `sensor.eve_room_humidity` |
 | Eve Room VOC | `sensor.eve_room_voc` |
