@@ -66,23 +66,25 @@ views:
           - entity: sensor.nordpool_kwh_se3_sek_3_10_025
             type: column
             name: SEK/kWh
-            color: '#f5a623'
+            color: '#27ae60'
             data_generator: |
               const data = entity.attributes.raw_today || [];
               return data.map(d => [new Date(d.start).getTime(), d.value]);
-          - entity: sensor.nordpool_kwh_se3_sek_3_10_025
-            type: line
-            name: Avg
-            color: '#e74c3c'
-            data_generator: |
-              const data = entity.attributes.raw_today || [];
-              const avg = entity.attributes.average || 0;
-              return data.map(d => [new Date(d.start).getTime(), avg]);
         graph_span: 24h
         span:
           start: day
         yaxis:
           - min: 0
+        xaxis:
+          plotLines:
+            - value: now
+              strokeDashArray: 0
+              borderColor: '#999'
+              label:
+                text: Now
+                style:
+                  fontSize: 11px
+                  color: '#999'
         grid_options:
           columns: 2
           rows: 2

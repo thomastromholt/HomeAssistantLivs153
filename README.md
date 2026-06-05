@@ -40,6 +40,7 @@ Managed and deployed via Claude Code in VS Code over Tailscale SSH.
 ```
 HomeAssistantLivs153/
 ├── README.md                  — this file
+├── AI_BOT_GUIDE.md            — MCP setup guide for AI assistants
 ├── .claudeignore              — files never sent to external AI services
 ├── remote_dashboard.yaml      — Lovelace UI for 10" wall tablet
 ├── smart_energy_logic.yaml    — HA automations
