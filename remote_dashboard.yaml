@@ -1,4 +1,4 @@
-title: Remote Control
+title: Huset
 views:
   - title: Energy & Climate
     path: energy_climate
@@ -10,53 +10,10 @@ views:
       gap: 12px
     badges: []
     cards:
-
-      # ─── ROW 1: Current price + daily stats ──────────────────────────────
-      # Nord Pool live: sensor.nordpool_kwh_se3_sek_3_10_025
-      # Greenely daily: sensor.greenely_daily_usage (data attribute = array of {localtime, usage})
-
-      - type: entities
-        title: Electricity Now
-        show_header_toggle: false
-        entities:
-          - entity: sensor.nordpool_kwh_se3_sek_3_10_025
-            name: Current Price (SEK/kWh)
-            icon: mdi:flash
-          - type: attribute
-            entity: sensor.nordpool_kwh_se3_sek_3_10_025
-            attribute: average
-            name: Day Avg (SEK/kWh)
-            icon: mdi:chart-line
-          - type: attribute
-            entity: sensor.nordpool_kwh_se3_sek_3_10_025
-            attribute: min
-            name: Day Min (SEK/kWh)
-            icon: mdi:arrow-down
-          - type: attribute
-            entity: sensor.nordpool_kwh_se3_sek_3_10_025
-            attribute: max
-            name: Day Max (SEK/kWh)
-            icon: mdi:arrow-up
-        grid_options:
-          columns: 2
-          rows: 2
-
-      - type: entities
-        title: Greenely Usage
-        show_header_toggle: false
-        entities:
-          - entity: sensor.greenely_daily_usage
-            name: Yesterday (kWh)
-            icon: mdi:counter
-          - entity: sensor.greenely_prices
-            name: Greenely Price
-            icon: mdi:currency-usd
-        grid_options:
-          columns: 2
-          rows: 2
-
-      # ─── ROW 2: Nord Pool prices — today & tomorrow ───────────────────────
-      # raw_today has 96 x 15-min intervals: [{start, end, value}]
+      # ─── COLUMN 1: Energy & Pricing ────────────────────────────────────
+      - type: markdown
+        content: |
+          # ⚡ Energy & Pricing
 
       - type: custom:apexcharts-card
         header:
@@ -75,161 +32,156 @@ views:
           start: day
         yaxis:
           - min: 0
-        xaxis:
-          plotLines:
-            - value: now
-              strokeDashArray: 0
-              borderColor: '#999'
-              label:
-                text: Now
-                style:
-                  fontSize: 11px
-                  color: '#999'
-        grid_options:
-          columns: 2
-          rows: 2
 
+      # ─── COLUMN 3: Temperature ────────────────────────────────────────
+      - type: markdown
+        content: |
+          # 🌡️ Climate & Comfort
+
+      # ─── COLUMN 4: Humidity & Sensors ─────────────────────────────────
+      - type: entities
+        title: Sensors
+        show_header_toggle: false
+        entities:
+          - entity: input_boolean.sensor_overview
+            name: Show Details
+
+      # ─── ROW 2 ────────────────────────────────────────────────────────
+      # COLUMN 1: Cost
+      - type: markdown
+        title: Estimated Daily Cost
+        content: |
+          **Yesterday usage × Day avg price:**
+
+          Usage: {{ states("sensor.greenely_daily_usage_2") }} kWh
+
+          Avg price: {{ state_attr("sensor.nordpool_kwh_se3_sek_3_10_025", "average") | round(2) }} SEK/kWh
+
+          **Est. Cost: {{ (states("sensor.greenely_daily_usage_2") | float(0) * state_attr("sensor.nordpool_kwh_se3_sek_3_10_025", "average") | float(0)) | round(2) }} SEK**
+
+      # ─── COLUMN 2: Hourly Consumption
+      - type: conditional
+        conditions:
+          - entity: input_boolean.input_boolean_consumption_24h
+            state: 'on'
+        card:
+          type: custom:apexcharts-card
+          header:
+            title: Hourly Consumption (24h)
+            show: true
+          series:
+            - entity: sensor.greenely_hourly_usage
+              name: kWh
+              type: column
+              color: '#f39c12'
+              data_generator: |
+                const data = entity.attributes.data || [];
+                return data.map(d => [new Date(d.localtime).getTime(), parseFloat(d.usage) || 0]);
+          graph_span: 24h
+          yaxis:
+            - min: 0
+
+      # ─── COLUMN 3: Temperature
       - type: custom:apexcharts-card
         header:
-          title: Nord Pool — Tomorrow
+          title: Temperature & Humidity (24h)
           show: true
         series:
-          - entity: sensor.nordpool_kwh_se3_sek_3_10_025
-            type: column
-            name: SEK/kWh
+          - entity: sensor.basement_temperature
+            name: Bedroom Temp
+            color: '#e74c3c'
+            type: line
+            stroke_width: 2
+          - entity: sensor.ewelink_snzb_02p_temperature
+            name: Living Room Temp
             color: '#3498db'
-            data_generator: |
-              const data = entity.attributes.raw_tomorrow || [];
-              if (!entity.attributes.tomorrow_valid || !data.length) {
-                return [[Date.now(), null]];
-              }
-              return data.map(d => [new Date(d.start).getTime(), d.value]);
+            type: line
+            stroke_width: 2
+          - entity: sensor.ewelink_snzb_02p_temperature_2
+            name: Basement Temp
+            color: '#27ae60'
+            type: line
+            stroke_width: 2
         graph_span: 24h
-        span:
-          start: +1d
         yaxis:
-          - min: 0
-        grid_options:
-          columns: 2
-          rows: 2
+          - min: 15
+            max: 30
 
-      # ─── ROW 3: Greenely daily consumption chart ─────────────────────────
-      # sensor.greenely_daily_usage.attributes.data = [{localtime: "Jun 01 2026", usage: "12.5"}]
-
-      - type: entities
-        title: Daily Usage (Greenely)
-        show_header_toggle: false
-        entities:
-          - entity: sensor.greenely_daily_usage
-            name: Yesterday
-            icon: mdi:calendar-today
-        grid_options:
-          columns: 2
-          rows: 2
-
+      # ─── COLUMN 4: Humidity
       - type: custom:apexcharts-card
         header:
-          title: Daily Consumption — Last 10 Days (kWh)
+          title: Humidity (24h)
           show: true
         series:
-          - entity: sensor.greenely_daily_usage
-            name: kWh
-            type: column
-            color: '#27ae60'
-            data_generator: |
-              const data = entity.attributes.data || [];
-              return data.map(d => [
-                new Date(d.localtime).getTime(),
-                parseFloat(d.usage) || 0
-              ]);
-        yaxis:
-          - min: 0
-        graph_span: 10d
-        span:
-          end: now
-        grid_options:
-          columns: 4
-          rows: 3
-
-      # ─── ROW 4: Eve Room Air Quality (Bluetooth — not yet paired) ────────
-      - type: vertical-stack
-        title: Eve Room — Air Quality
-        cards:
-          - type: gauge
-            entity: sensor.eve_room_voc
-            name: VOC (Air Quality)
-            unit: ppb
-            min: 0
-            max: 3000
-            severity:
-              green: 0
-              yellow: 800
-              red: 1500
-          - type: entities
-            entities:
-              - entity: sensor.eve_room_temperature
-                name: Temperature
-                icon: mdi:thermometer
-              - entity: sensor.eve_room_humidity
-                name: Humidity
-                icon: mdi:water-percent
-        grid_options:
-          columns: 2
-          rows: 3
-
-      # ─── ROW 5: Zigbee climate sensors (not yet paired) ──────────────────
-      - type: custom:mushroom-chips-card
-        chips:
-          - type: template
-            icon: mdi:thermometer
-            content: "Living {{ states('sensor.temp_living_room') }}°"
-          - type: template
-            icon: mdi:thermometer
-            content: "Bedroom {{ states('sensor.temp_bedroom') }}°"
-          - type: template
-            icon: mdi:thermometer
-            content: "Kitchen {{ states('sensor.temp_kitchen') }}°"
-          - type: template
-            icon: mdi:thermometer
-            content: "Bathroom {{ states('sensor.temp_bathroom') }}°"
-          - type: template
-            icon: mdi:thermometer
-            content: "Office {{ states('sensor.temp_office') }}°"
-        grid_options:
-          columns: 4
-          rows: 1
-
-      - type: custom:mini-graph-card
-        name: Temperature Trend (6h)
-        entities:
-          - entity: sensor.temp_living_room
-            name: Living Room
-          - entity: sensor.temp_bedroom
+          - entity: sensor.basement_humidity
             name: Bedroom
-          - entity: sensor.eve_room_temperature
-            name: Eve Room
-        hours_to_show: 6
-        points_per_hour: 4
-        smoothing: true
-        grid_options:
-          columns: 4
-          rows: 2
+            color: '#e74c3c'
+            type: line
+            stroke_width: 2
+          - entity: sensor.ewelink_snzb_02p_humidity
+            name: Living Room
+            color: '#3498db'
+            type: line
+            stroke_width: 2
+          - entity: sensor.ewelink_snzb_02p_humidity_2
+            name: Basement
+            color: '#27ae60'
+            type: line
+            stroke_width: 2
+        graph_span: 24h
+        yaxis:
+          - min: 45
+            max: 60
 
-      # ─── ROW 6: Humidity ──────────────────────────────────────────────────
+      # ─── ROW 3 ────────────────────────────────────────────────────────
+      # COLUMN 1: View Toggle
       - type: entities
-        title: Humidity
+        title: View
         show_header_toggle: false
         entities:
-          - entity: sensor.humidity_living_room
-            name: Living Room
-          - entity: sensor.humidity_bedroom
-            name: Bedroom
-          - entity: sensor.humidity_bathroom
-            name: Bathroom
-          - entity: sensor.humidity_kitchen
-            name: Kitchen
-          - entity: sensor.eve_room_humidity
-            name: Eve Room
-        grid_options:
-          columns: 2
-          rows: 3
+          - entity: input_boolean.input_boolean_consumption_24h
+            name: 24h / 1 Month
+
+      # ─── COLUMN 2: Daily Consumption
+      - type: conditional
+        conditions:
+          - entity: input_boolean.input_boolean_consumption_24h
+            state: 'off'
+        card:
+          type: custom:apexcharts-card
+          header:
+            title: Daily Consumption (This Month)
+            show: true
+          series:
+            - entity: sensor.greenely_daily_usage_2
+              name: kWh
+              type: column
+              color: '#3498db'
+              data_generator: |
+                const data = entity.attributes.data || [];
+                return data.map(d => [new Date(d.localtime).getTime(), parseFloat(d.usage) || 0]);
+          yaxis:
+            - min: 0
+
+      # ─── COLUMN 3+4: Conditional Sensor Details
+      - type: conditional
+        conditions:
+          - entity: input_boolean.sensor_overview
+            state: 'on'
+        card:
+          type: entities
+          title: Current Values
+          show_header_toggle: false
+          entities:
+            - entity: sensor.basement_temperature
+              name: Bedroom Temp (°C)
+            - entity: sensor.basement_humidity
+              name: Bedroom Humidity (%)
+            - entity: sensor.ewelink_snzb_02p_temperature
+              name: Living Temp (°C)
+            - entity: sensor.ewelink_snzb_02p_humidity
+              name: Living Humidity (%)
+            - entity: sensor.ewelink_snzb_02p_temperature_2
+              name: Basement Temp (°C)
+            - entity: sensor.ewelink_snzb_02p_humidity_2
+              name: Basement Humidity (%)

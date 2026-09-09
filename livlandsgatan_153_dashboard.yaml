@@ -1,0 +1,99 @@
+views:
+  - title: Home
+    path: home
+    type: sections
+    icon: mdi:home
+    max_columns: 4
+    sections:
+      - type: grid
+        columns: 12
+        cards:
+          - type: heading
+            heading: Kia Ceed PHEV
+            heading_style: title
+            icon: mdi:car
+
+      - type: grid
+        columns: 12
+        cards:
+          - type: tile
+            entity: sensor.kia_ceed_phev_ev_battery_percentage
+            name: EV Battery
+            icon: mdi:battery-high
+            grid_options:
+              columns: 3
+
+          - type: tile
+            entity: sensor.kia_ceed_phev_estimated_ev_range
+            name: EV Range
+            icon: mdi:map-marker-distance
+            grid_options:
+              columns: 3
+
+          - type: tile
+            entity: sensor.kia_ceed_phev_total_driving_range
+            name: Total Range
+            icon: mdi:gauge
+            grid_options:
+              columns: 3
+
+          - type: tile
+            entity: binary_sensor.kia_ceed_phev_is_charging
+            name: Charging
+            icon: mdi:lightning-bolt
+            grid_options:
+              columns: 3
+
+      - type: grid
+        columns: 12
+        cards:
+          - type: tile
+            entity: lock.kia_ceed_phev_lock
+            name: Door Lock
+            icon: mdi:lock
+            grid_options:
+              columns: 3
+            tap_action:
+              action: toggle
+
+          - type: tile
+            entity: sensor.kia_ceed_phev_fuel_level
+            name: Fuel Level
+            icon: mdi:fuel
+            grid_options:
+              columns: 3
+
+          - type: tile
+            entity: sensor.kia_ceed_phev_odometer
+            name: Odometer
+            icon: mdi:speedometer
+            grid_options:
+              columns: 3
+
+          - type: tile
+            entity: sensor.kia_ceed_phev_last_updated_at
+            name: Last Updated
+            icon: mdi:clock
+            grid_options:
+              columns: 3
+
+      - type: grid
+        columns: 12
+        cards:
+          - type: heading
+            heading: Vehicle Info
+            heading_style: subtitle
+
+      - type: grid
+        columns: 12
+        cards:
+          - type: entities
+            entities:
+              - entity: device_tracker.kia_ceed_phev_location
+                name: GPS Location
+              - entity: sensor.kia_ceed_phev_defrost_is_on
+                name: Defrost Status
+              - entity: switch.kia_ceed_phev_air_conditioner
+                name: AC Status
+            grid_options:
+              columns: 12
