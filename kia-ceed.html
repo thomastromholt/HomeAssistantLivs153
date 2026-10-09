@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kia Ceed</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .hero { text-align: center; }
+        .soc { font-size: 58px; font-weight: 300; line-height: 1; color: #ffb340; transition: color 0.4s; }
+        .soc .unit { margin-left: 2px; font-size: 22px; font-weight: 400; }
+        .soc-bar { width: 62%; height: 4px; margin: 8px auto 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+        .soc-fill { height: 100%; width: 0; border-radius: 2px; background: #ffb340; transition: width 0.5s, background 0.4s; }
+        .ranges { font-size: 15px; color: #e5ecf0; }
+        .ranges .sep { margin: 0 4px; color: #6d808c; }
+
+        .car { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+        .car img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            -webkit-mask-image: radial-gradient(ellipse 52% 52% at 50% 50%, #000 62%, transparent 100%);
+            mask-image: radial-gradient(ellipse 52% 52% at 50% 50%, #000 62%, transparent 100%);
+        }
+        .glow {
+            position: absolute;
+            left: 20%; right: 20%; bottom: 6%;
+            height: 14px;
+            border-radius: 50%;
+            background: rgba(52, 199, 89, 0.55);
+            filter: blur(10px);
+            opacity: 0;
+        }
+        .glow.on { opacity: 1; animation: breathe 2s ease-in-out infinite; }
+        @keyframes breathe { 50% { opacity: 0.35; } }
+
+        .status { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        .status .tile { padding: 8px 2px 6px; background: none; }
+        .status .tile:hover { background: rgba(255, 255, 255, 0.08); }
+        .status svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .status .tile-value { margin-top: 4px; font-size: 12px; font-weight: 500; }
+        .status .warn svg, .status .warn .tile-value { color: #ffb340; }
+        .status .live svg, .status .live .tile-value { color: #5fe085; }
+        .status .live svg { animation: breathe 1.4s ease-in-out infinite; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head">
+            <span class="name">Ceed <span class="muted">PHEV</span></span>
+        </div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="hero">
+            <div class="soc"><span id="soc">–</span><span class="unit">%</span></div>
+            <div class="soc-bar"><div class="soc-fill" id="socFill"></div></div>
+            <div class="ranges"><span id="totalRange">–</span> km<span class="sep">/</span><span id="odometer">–</span> km</div>
+        </div>
+
+        <div class="car">
+            <img src="/local/kia-car.png?v=1" alt="Kia Ceed SW PHEV">
+            <div class="glow" id="glow"></div>
+        </div>
+
+        <div class="status" id="status"></div>
+        <div class="footer" id="updated"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        const E = {
+            battery: 'sensor.ceed_ev_battery_level',
+            evRange: 'sensor.ceed_ev_range',
+            totalRange: 'sensor.ceed_total_driving_range',
+            odometer: 'sensor.ceed_odometer',
+            charging: 'binary_sensor.ceed_ev_battery_charge',
+            plug: 'binary_sensor.ceed_ev_battery_plug',
+            chargeMinutes: 'sensor.ceed_estimated_charge_duration',
+            lock: 'lock.ceed_door_lock',
+            updatedAt: 'sensor.ceed_last_updated_at',
+        };
+        const OPENINGS = [
+            ['binary_sensor.ceed_front_left_door'], ['binary_sensor.ceed_front_right_door'],
+            ['binary_sensor.ceed_back_left_door'], ['binary_sensor.ceed_back_right_door'],
+            ['binary_sensor.ceed_trunk'], ['binary_sensor.ceed_hood'],
+        ].map(([id]) => id);
+
+        const ICONS = {
+            lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+            bolt: '<path d="M13 3 5 14h6l-1 7 8-11h-6z"/>',
+            door: '<path d="M5 20V9.5L9 4h10v16z"/><path d="M9 4v5.5H5"/><path d="M14 13h3"/>',
+            range: '<path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 17 4-5"/>',
+        };
+
+        function statusTile(icon, entityId) {
+            const button = document.createElement('button');
+            button.className = 'tile';
+            button.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[icon]}</svg><div class="tile-value"></div>`;
+            button.addEventListener('click', () => openHistory(entityId));
+            document.getElementById('status').append(button);
+            return { button, value: button.querySelector('.tile-value') };
+        }
+        const tiles = {
+            lock: statusTile('lock', E.lock),
+            charge: statusTile('bolt', E.charging),
+            doors: statusTile('door', E.lock),
+            range: statusTile('range', E.evRange),
+        };
+
+        const hours = minutes => `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+        const batteryColor = level => level > 50 ? '#34c759' : level > 20 ? '#ffd60a' : '#ffb340';
+
+        async function render() {
+            try {
+                const states = await statesOf([...Object.values(E), ...OPENINGS]);
+                const s = key => states[E[key]];
+
+                const level = parseFloat(s('battery'));
+                const color = batteryColor(level);
+                document.getElementById('soc').textContent = formatNumber(s('battery')) ?? '–';
+                document.querySelector('.soc').style.color = color;
+                const fill = document.getElementById('socFill');
+                fill.style.width = `${Number.isNaN(level) ? 0 : level}%`;
+                fill.style.background = color;
+
+                document.getElementById('totalRange').textContent = formatNumber(s('totalRange')) ?? '–';
+                document.getElementById('odometer').textContent = formatNumber(s('odometer')) ?? '–';
+
+                const locked = s('lock') === 'locked';
+                tiles.lock.value.textContent = locked ? 'Locked' : 'Unlocked';
+                tiles.lock.button.classList.toggle('warn', !locked);
+
+                const charging = s('charging') === 'on';
+                const minutes = parseFloat(s('chargeMinutes'));
+                tiles.charge.value.textContent = charging
+                    ? (Number.isNaN(minutes) ? 'Charging' : hours(minutes))
+                    : s('plug') === 'on' ? 'Plugged in' : 'Not plugged';
+                tiles.charge.button.classList.toggle('live', charging);
+                document.getElementById('glow').classList.toggle('on', charging);
+
+                const open = OPENINGS.filter(id => states[id] === 'on').length;
+                tiles.doors.value.textContent = open ? `${open} open` : 'Closed';
+                tiles.doors.button.classList.toggle('warn', open > 0);
+
+                tiles.range.value.textContent = `${formatNumber(s('evRange')) ?? '–'} km EV`;
+
+                const updated = new Date(s('updatedAt'));
+                document.getElementById('updated').textContent = Number.isNaN(updated.getTime())
+                    ? ''
+                    : `Car data from ${updated.toLocaleString('sv-SE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
+
+                showError(null);
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        render();
+        setInterval(render, 60e3);
+    </script>
+</body>
+</html>

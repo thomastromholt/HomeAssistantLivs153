@@ -5,86 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elpris</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        [hidden] { display: none !important; }
-
-        html, body { height: 100%; }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: white;
-            border-top: 4px solid var(--accent);
-        }
-
-        .container {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            padding: 12px 16px;
-        }
-
-        .header { position: relative; text-align: center; margin-bottom: 8px; }
-        .header h1 { font-size: 18px; color: #333; margin-bottom: 2px; }
-        .info { color: #999; font-size: 14px; font-weight: normal; cursor: help; outline: none; }
+        .head { position: relative; }
+        .info { color: #6d808c; font-size: 14px; font-weight: 400; cursor: help; outline: none; }
         .info-box {
             display: none;
             position: absolute;
             top: 100%;
             left: 0;
             right: 0;
-            margin-top: 4px;
+            z-index: 200;
+            margin-top: 6px;
             padding: 8px 10px;
             text-align: left;
             font-size: 12px;
-            font-weight: normal;
+            font-weight: 400;
             line-height: 1.5;
-            color: #fff;
-            background: #333;
+            color: #e5ecf0;
+            background: #0b1218;
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 8px;
-            z-index: 200;
         }
         .info:hover .info-box, .info:focus .info-box { display: block; }
 
         .legend {
-            white-space: nowrap;
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 13px;
-            padding: 8px;
             margin-bottom: 8px;
-            background: #f0f9f0;
-            border-radius: 8px;
+            padding: 7px 10px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #c5d1d9;
+            font-size: 13px;
+            white-space: nowrap;
         }
-
-        .legend-box { width: 24px; height: 4px; border-radius: 2px; margin-left: 8px; }
+        .legend-box { width: 24px; height: 4px; margin-left: 8px; border-radius: 2px; }
         .legend-box:first-child { margin-left: 0; }
         .legend-box.night { background: #34c759; }
         .legend-box.normal { background: #ff9500; }
 
         .chart-wrapper { position: relative; flex: 1; min-height: 0; }
 
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 8px;
-            margin-top: 8px;
-        }
-
-        .stat-card { background: #f5f5f5; padding: 8px; border-radius: 8px; text-align: center; }
-        .stat-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-        .stat-value { font-size: 18px; font-weight: bold; color: var(--accent); }
-        .stat-value.low { color: #34c759; }
-        .stat-value.high { color: #ff3b30; }
-
-        .error { background: #ff3b30; color: white; padding: 8px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
+        .tile.static { cursor: default; }
+        .tile.static:hover { background: rgba(255, 255, 255, 0.06); }
+        .tile-value { color: var(--accent); }
     </style>
+    <script src="/local/card-common.js?v=1"></script>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1><span id="title"></span> <span class="info" tabindex="0" aria-label="Details">ⓘ<div class="info-box" id="infoBox"></div></span></h1>
+        <div class="head">
+            <span class="name"><span id="title"></span> <span class="muted" id="subtitle"></span> <span class="info" tabindex="0" aria-label="Details">ⓘ<div class="info-box" id="infoBox"></div></span></span>
         </div>
 
         <div id="error" class="error" hidden></div>
@@ -97,7 +71,7 @@
         <div class="chart-wrapper"><canvas id="chart"></canvas></div>
 
         <div class="stats">
-            <div class="stat-card"><div class="stat-label">Now</div><div class="stat-value" id="now">–</div></div>
+            <div class="tile static"><div class="tile-label">Now</div><div class="tile-value" id="now">–</div></div>
         </div>
     </div>
 
@@ -126,7 +100,8 @@
         const MODE = new URLSearchParams(location.search).get('mode') === 'total' ? 'total' : 'spot';
         const VIEW = MODE === 'total'
             ? {
-                title: '💰 Total Electricity Price',
+                title: 'Electricity',
+                subtitle: 'price',
                 info: [
                     'Nord Pool spot (SE3), hourly average of the 15-minute prices',
                     `+ ${SUPPLIER_FEES_ORE} öre supplier fees (Greenely), then × ${VAT} VAT`,
@@ -138,14 +113,16 @@
                 toPrice: spot => (spot + SUPPLIER_FEES_ORE) * VAT + GRID_FEE_ORE + ENERGY_TAX_ORE,
             }
             : {
-                title: '⚡ NordPool Spot Price',
+                title: 'Nord Pool',
+                subtitle: 'spot price',
                 info: ['Nord Pool spot (SE3), hourly average of the 15-minute prices, excl. VAT'],
-                color: '#667eea',
+                color: '#64d2ff',
                 toPrice: spot => spot,
             };
 
         document.documentElement.style.setProperty('--accent', VIEW.color);
         document.getElementById('title').textContent = VIEW.title;
+        document.getElementById('subtitle').textContent = VIEW.subtitle;
         for (const line of VIEW.info) {
             const row = document.createElement('div');
             row.textContent = line;
@@ -154,24 +131,6 @@
         document.getElementById('legend').hidden = MODE !== 'total';
 
         let chart = null;
-
-        // Inside the dashboard, go through Home Assistant's own connection: it refreshes the login token itself.
-        // Opened standalone (e.g. headless tests), fall back to the token the frontend stores in localStorage.
-        async function callApi(method, path, body) {
-            let hass = null;
-            try { hass = window.parent.document.querySelector('home-assistant')?.hass; } catch (e) { /* cross-origin */ }
-            if (hass) return hass.callApi(method, path, body);
-
-            const tokens = JSON.parse(localStorage.getItem('hassTokens') || 'null');
-            if (!tokens) throw new Error('Not logged in to Home Assistant');
-            const res = await fetch('/api/' + path, {
-                method,
-                headers: { Authorization: `Bearer ${tokens.access_token}`, 'Content-Type': 'application/json' },
-                body: body === undefined ? undefined : JSON.stringify(body),
-            });
-            if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status_code: res.status });
-            return res.json();
-        }
 
         function localDate(offsetDays) {
             const d = new Date();
@@ -248,7 +207,7 @@
                 const { ctx, chartArea: area, scales: { x } } = chart;
                 const px = x.getPixelForValue(0);
                 ctx.save();
-                ctx.strokeStyle = '#ff3b30';
+                ctx.strokeStyle = '#ff453a';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(px, area.top);
@@ -293,6 +252,11 @@
                         legend: { display: false },
                         tooltip: {
                             displayColors: false,
+                            backgroundColor: '#0b1218',
+                            borderColor: 'rgba(255, 255, 255, 0.15)',
+                            borderWidth: 1,
+                            titleColor: '#8da0ad',
+                            bodyColor: '#f2f5f7',
                             callbacks: {
                                 title: items => clockTime(now, items[0].parsed.x),
                                 label: item => `${item.parsed.y.toFixed(1)} öre/kWh`,
@@ -305,12 +269,12 @@
                             min: (from - now) / HOUR,
                             max: (to - now) / HOUR,
                             afterBuildTicks: axis => { axis.ticks = hourTicks; },
-                            ticks: { color: '#999', font: { size: 11 }, maxRotation: 0, autoSkip: false, callback: value => axisLabel(now, value) },
+                            ticks: { color: '#8da0ad', font: { size: 11 }, maxRotation: 0, autoSkip: false, callback: value => axisLabel(now, value) },
                             grid: { display: false },
                         },
                         y: {
-                            ticks: { color: '#999', font: { size: 11 } },
-                            grid: { color: '#e0e0e0' },
+                            ticks: { color: '#8da0ad', font: { size: 11 } },
+                            grid: { color: 'rgba(255, 255, 255, 0.08)' },
                         },
                     },
                 },

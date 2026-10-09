@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radonmåler</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .top { display: flex; align-items: center; gap: 14px; margin: 4px 0 10px; }
+
+        .device { flex: none; width: 96px; height: 96px; }
+        .device .body { fill: url(#pebble); }
+        .device .eye { fill: #e8ecef; stroke: #c5ccd2; stroke-width: 1; }
+        .device .holes { fill: #b4bcc4; }
+        .device .led { fill: var(--level, #8da0ad); filter: drop-shadow(0 0 4px var(--level, #8da0ad)); animation: breathe 2.4s ease-in-out infinite; }
+        .device .halo { fill: none; stroke: var(--level, #8da0ad); stroke-width: 1.5; opacity: 0.35; }
+        @keyframes breathe { 50% { opacity: 0.45; } }
+
+        .radon-button {
+            padding: 4px 8px;
+            border: 0;
+            border-radius: 12px;
+            background: none;
+            color: inherit;
+            font-family: inherit;
+            text-align: left;
+            cursor: pointer;
+        }
+        .radon-button:hover, .radon-button:focus-visible { background: rgba(255, 255, 255, 0.08); outline: none; }
+
+        .radon-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #8da0ad; }
+        .radon-value { margin-top: 2px; font-size: 44px; font-weight: 300; line-height: 1.05; color: var(--level, #f2f5f7); }
+        .radon-value small { font-size: 15px; color: #8da0ad; }
+        .radon-note { margin-top: 2px; font-size: 11px; color: #6d808c; }
+
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head">
+            <span class="name">Radon <span class="muted">Airthings</span></span>
+            <span class="pill" id="levelPill"></span>
+        </div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="top" id="top">
+            <svg class="device" viewBox="0 0 100 100" role="img" aria-label="Airthings radon monitor">
+                <defs>
+                    <linearGradient id="pebble" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#ffffff"/>
+                        <stop offset="1" stop-color="#cfd6dc"/>
+                    </linearGradient>
+                </defs>
+                <ellipse cx="50" cy="93" rx="30" ry="4" fill="rgba(0,0,0,0.35)"/>
+                <rect class="body" x="14" y="8" width="72" height="82" rx="28"/>
+                <circle class="halo" cx="50" cy="38" r="17"/>
+                <circle class="eye" cx="50" cy="38" r="11"/>
+                <circle class="led" cx="50" cy="38" r="4.5"/>
+                <g class="holes">
+                    <circle cx="40" cy="72" r="1.7"/><circle cx="50" cy="72" r="1.7"/><circle cx="60" cy="72" r="1.7"/>
+                    <circle cx="45" cy="78" r="1.7"/><circle cx="55" cy="78" r="1.7"/>
+                </g>
+            </svg>
+            <button class="radon-button" id="radonButton">
+                <div class="radon-label">1-day average</div>
+                <div class="radon-value"><span id="radon">–</span> <small>Bq/m³</small></div>
+                <div class="radon-note">Swedish reference level: 200 Bq/m³</div>
+            </button>
+        </div>
+
+        <div class="grid" id="grid"></div>
+        <div class="footer" id="footer"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        const P = 'sensor.airthings_wave_270668_';
+        const E = {
+            radon: P + 'radon_1_day_average',
+            radonLevel: P + 'radon_1_day_level',
+            radonLongterm: P + 'radon_longterm_average',
+            radonLongtermLevel: P + 'radon_longterm_level',
+            co2: P + 'carbon_dioxide',
+            voc: P + 'volatile_organic_compounds_parts',
+            temperature: P + 'temperatur',
+            humidity: P + 'luftfugtighed',
+            pressure: P + 'atmospheric_pressure',
+            battery: P + 'batteri',
+        };
+        const LEVEL_COLOR = { good: '#5fe085', fair: '#ffb340', poor: '#ff6b61' };
+        const LEVEL_LABEL = { good: 'Good', fair: 'Fair', poor: 'Poor' };
+
+        // Airthings' own guide values.
+        const levelCo2 = ppm => ppm < 800 ? 'good' : ppm < 1000 ? 'fair' : 'poor';
+        const levelVoc = ppb => ppb < 250 ? 'good' : ppb < 2000 ? 'fair' : 'poor';
+        const levelHumidity = pct => pct >= 25 && pct <= 60 ? 'good' : pct >= 15 && pct <= 70 ? 'fair' : 'poor';
+
+        document.getElementById('radonButton').addEventListener('click', () => openHistory(E.radon));
+
+        const grid = document.getElementById('grid');
+        const tiles = {
+            co2: createTile(grid, 'CO₂', E.co2),
+            voc: createTile(grid, 'VOC', E.voc),
+            humidity: createTile(grid, 'Humidity', E.humidity),
+            temperature: createTile(grid, 'Temperature', E.temperature),
+            pressure: createTile(grid, 'Pressure', E.pressure),
+            radonLongterm: createTile(grid, 'Long-term', E.radonLongterm),
+        };
+
+        function setTile(tile, state, digits, suffix, level) {
+            const text = formatNumber(state, digits);
+            tile.className = `tile-value ${text !== null && level ? level : ''}`;
+            tile.innerHTML = text === null ? '–' : `${text} <small>${suffix}</small>`;
+        }
+
+        async function render() {
+            try {
+                const states = await statesOf(Object.values(E));
+                const s = key => states[E[key]];
+                const number = key => parseFloat(s(key));
+
+                const level = LEVEL_LABEL[s('radonLevel')] ? s('radonLevel') : null;
+                document.getElementById('top').style.setProperty('--level', level ? LEVEL_COLOR[level] : '#8da0ad');
+                document.getElementById('radon').textContent = formatNumber(s('radon')) ?? '–';
+                const pill = document.getElementById('levelPill');
+                pill.textContent = level ? LEVEL_LABEL[level] : '';
+                pill.className = `pill ${level ?? ''}`;
+
+                setTile(tiles.co2, s('co2'), 0, 'ppm', levelCo2(number('co2')));
+                setTile(tiles.voc, s('voc'), 0, 'ppb', levelVoc(number('voc')));
+                setTile(tiles.humidity, s('humidity'), 0, '%', levelHumidity(number('humidity')));
+                setTile(tiles.temperature, s('temperature'), 1, '°C');
+                setTile(tiles.pressure, s('pressure'), 0, 'hPa');
+                setTile(tiles.radonLongterm, s('radonLongterm'), 0, 'Bq/m³',
+                    LEVEL_LABEL[s('radonLongtermLevel')] ? s('radonLongtermLevel') : null);
+
+                const battery = formatNumber(s('battery'));
+                document.getElementById('footer').textContent = battery === null ? '' : `Battery ${battery} %`;
+
+                showError(null);
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        render();
+        setInterval(render, 60e3);
+    </script>
+</body>
+</html>

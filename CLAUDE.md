@@ -22,3 +22,11 @@ HA runs on an Intel NUC at `192.168.1.77` (port 80). SSH: `ssh root@192.168.1.77
 After each iteration of a custom HTML card, render it headless and read the result instead of asking the user:
 `cd tools && npm i puppeteer-core && node shot.js ../.env "http://192.168.1.77/local/elpris-24h.html?mode=total" out.png`
 It logs in with the `.env` token, prints console errors, the page's error box and stats, and saves a screenshot to look at.
+
+## Card conventions
+
+- `card-dark.css` and `card-common.js` are shared by the dark cards (`kia-ceed`, `zaptec`, `airthings`, `temperatur`, `elpris-24h`). Bump their `?v=` in the HTML that links them when they change.
+- Cards talk to HA through `callApi()` in `card-common.js` (HA's own connection, so the login token never goes stale) and open history with `openHistory(entityId)`.
+- The Livlandsgatan dashboard is one wide section (`column_span: 3`) of cards with `columns: 12` and `rows: N` so they pack without gaps.
+- `tools/page.js` renders any card page headless at card size: `node page.js ../.env "<url>" out.png 372 440`; `tools/dash.js` renders a whole dashboard; `tools/click.js` clicks inside a card to test the history pop-up.
+- `kia-car.png` is a car render cropped from the Kia app; it is not committed.

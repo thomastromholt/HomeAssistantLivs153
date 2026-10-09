@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zaptec</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .gauge { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+        .gauge svg { height: 100%; max-height: 190px; aspect-ratio: 1; }
+        .ring-bg { fill: none; stroke: rgba(255, 255, 255, 0.09); stroke-width: 8; }
+        .ring-fill { fill: none; stroke: #34c759; stroke-width: 8; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 60px 60px; transition: stroke-dashoffset 0.6s, stroke 0.4s; }
+        .ring-flow { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 2; stroke-dasharray: 2 9; opacity: 0; }
+        .charging .ring-flow { opacity: 1; animation: flow 1.6s linear infinite; }
+        .charging .ring-fill { filter: drop-shadow(0 0 5px rgba(52, 199, 89, 0.7)); }
+        @keyframes flow { to { stroke-dashoffset: -22; } }
+
+        .center { position: absolute; text-align: center; }
+        .power { font-size: 34px; font-weight: 300; line-height: 1; }
+        .power small { font-size: 14px; color: #8da0ad; }
+        .mode { margin-top: 5px; font-size: 13px; color: #8da0ad; }
+        .charging .mode { color: #5fe085; }
+
+        .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    </style>
+</head>
+<body>
+    <div class="container" id="root">
+        <div class="head">
+            <span class="name">Zaptec <span class="muted" id="chargerName">Go2</span></span>
+            <span class="pill" id="online"></span>
+        </div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="gauge">
+            <svg viewBox="0 0 120 120" role="img" aria-label="Charging power">
+                <circle class="ring-bg" cx="60" cy="60" r="50"/>
+                <circle class="ring-fill" id="ringFill" cx="60" cy="60" r="50" stroke-dasharray="314.16" stroke-dashoffset="314.16"/>
+                <circle class="ring-flow" cx="60" cy="60" r="40"/>
+            </svg>
+            <div class="center">
+                <div class="power"><span id="power">–</span> <small>kW</small></div>
+                <div class="mode" id="mode"></div>
+            </div>
+        </div>
+
+        <div class="tiles" id="tiles"></div>
+        <div class="footer" id="footer"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        // ?c=go2 (default) or ?c=stugan
+        const CHARGER = new URLSearchParams(location.search).get('c') === 'stugan' ? 'stugan' : 'go2';
+        const MAX_KW = 11; // 3 phases × 16 A; only scales the ring
+        const CIRCUMFERENCE = 2 * Math.PI * 50;
+        const MODES = {
+            disconnected: ['Not connected', ''],
+            connected_requesting: ['Ready', ''],
+            connected_charging: ['Charging', 'charging'],
+            connected_finished: ['Finished', ''],
+        };
+
+        const entity = (kind, name) => `${kind}.${CHARGER}_${name}`;
+        const E = {
+            mode: entity('sensor', 'charger_mode'),
+            power: entity('sensor', 'charge_power'),
+            session: entity('sensor', 'session_total_charge'),
+            lastSession: entity('sensor', 'completed_session_energy'),
+            lifetime: entity('sensor', 'energy_meter'),
+            current: entity('sensor', 'allocated_charge_current'),
+            temperature: entity('sensor', 'temperature_internal'),
+            online: entity('binary_sensor', 'online'),
+        };
+
+        document.getElementById('chargerName').textContent = CHARGER === 'go2' ? 'Go2' : 'Stugan';
+
+        const tiles = {
+            session: createTile(document.getElementById('tiles'), 'Last session', E.lastSession),
+            lifetime: createTile(document.getElementById('tiles'), 'Total', E.lifetime),
+            current: createTile(document.getElementById('tiles'), 'Allocated', E.current),
+            temperature: createTile(document.getElementById('tiles'), 'Temperature', E.temperature),
+        };
+        const unit = (state, digits, suffix) => {
+            const text = formatNumber(state, digits);
+            return text === null ? '–' : `${text} <small>${suffix}</small>`;
+        };
+
+        async function render() {
+            try {
+                const states = await statesOf(Object.values(E));
+                const s = key => states[E[key]];
+
+                const [label, cssClass] = MODES[s('mode')] ?? [s('mode') ?? '–', ''];
+                document.getElementById('root').className = `container ${cssClass}`;
+                document.getElementById('mode').textContent = label;
+
+                const kw = (parseFloat(s('power')) || 0) / 1000;
+                document.getElementById('power').textContent = kw.toFixed(1);
+                document.getElementById('ringFill').style.opacity = kw > 0 ? 1 : 0;
+                document.getElementById('ringFill').style.strokeDashoffset = CIRCUMFERENCE * (1 - Math.min(kw / MAX_KW, 1));
+
+                const charging = s('mode') === 'connected_charging';
+                tiles.session.parentElement.querySelector('.tile-label').textContent = charging ? 'This session' : 'Last session';
+                tiles.session.innerHTML = unit(charging ? s('session') : s('lastSession'), 1, 'kWh');
+                tiles.lifetime.innerHTML = unit(s('lifetime'), 0, 'kWh');
+                tiles.current.innerHTML = unit(s('current'), 0, 'A');
+                tiles.temperature.innerHTML = unit(s('temperature'), 1, '°C');
+
+                const online = document.getElementById('online');
+                const isOnline = s('online') === 'on';
+                online.textContent = isOnline ? 'Online' : 'Offline';
+                online.className = `pill ${isOnline ? 'good' : 'fair'}`;
+
+                showError(null);
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        render();
+        setInterval(render, 15e3);
+    </script>
+</body>
+</html>

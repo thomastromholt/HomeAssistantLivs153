@@ -4,70 +4,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Temperatur</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        html, body { height: 100%; }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: white;
-            border-top: 4px solid #5ac8fa;
-        }
-
-        .container {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            padding: 12px 16px;
-        }
-
-        h1 { text-align: center; font-size: 18px; color: #333; margin-bottom: 8px; }
-
-        .error { background: #ff3b30; color: white; padding: 8px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
-        [hidden] { display: none !important; }
-
-        .rooms {
-            flex: 1;
-            min-height: 0;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-            gap: 8px;
-        }
+        .rooms { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
 
         .room {
             display: flex;
             flex-direction: column;
             justify-content: center;
-            background: #f5f5f5;
-            padding: 8px;
-            border-radius: 8px;
+            padding: 8px 4px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.06);
             text-align: center;
         }
 
-        .room-name { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
         .value {
             display: block;
             width: 100%;
-            padding: 2px 0;
+            padding: 3px 0;
             border: 0;
-            border-radius: 6px;
+            border-radius: 8px;
             background: none;
+            color: inherit;
             font-family: inherit;
             cursor: pointer;
         }
-        .value:hover, .value:focus-visible { background: #e6eef2; outline: none; }
-        .room-temp { font-size: 22px; font-weight: bold; color: #5ac8fa; }
-        .room-humidity { font-size: 13px; color: #666; margin-top: 2px; }
+        .value:hover, .value:focus-visible { background: rgba(255, 255, 255, 0.1); outline: none; }
+        .room-temp { margin-top: 4px; font-size: 24px; font-weight: 300; color: #64d2ff; }
+        .room-temp small { font-size: 13px; color: #8da0ad; }
+        .room-humidity { font-size: 13px; color: #8da0ad; }
+        .room-humidity.good { color: #5fe085; }
+        .room-humidity.fair { color: #ffb340; }
+        .room-humidity.poor { color: #ff6b61; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🌡️ Temperatur</h1>
+        <div class="head"><span class="name">Temperatur</span></div>
         <div id="error" class="error" hidden></div>
         <div class="rooms" id="rooms"></div>
     </div>
 
+    <script src="/local/card-common.js?v=1"></script>
     <script>
         const ROOMS = [
             { name: 'Soveværelse', temp: 'sensor.ewelink_snzb_02p_temperatur', humidity: 'sensor.ewelink_snzb_02p_luftfugtighed' },
@@ -75,44 +53,8 @@
             { name: 'Stue', temp: 'sensor.stue_stuen_temp_temperatur', humidity: 'sensor.stue_stuen_temp_luftfugtighed' },
         ];
 
-        // Inside the dashboard, go through Home Assistant's own connection: it refreshes the login token itself.
-        // Opened standalone (e.g. headless tests), fall back to the token the frontend stores in localStorage.
-        async function callApi(method, path, body) {
-            let hass = null;
-            try { hass = window.parent.document.querySelector('home-assistant')?.hass; } catch (e) { /* cross-origin */ }
-            if (hass) return hass.callApi(method, path, body);
-
-            const tokens = JSON.parse(localStorage.getItem('hassTokens') || 'null');
-            if (!tokens) throw new Error('Not logged in to Home Assistant');
-            const res = await fetch('/api/' + path, {
-                method,
-                headers: { Authorization: `Bearer ${tokens.access_token}`, 'Content-Type': 'application/json' },
-                body: body === undefined ? undefined : JSON.stringify(body),
-            });
-            if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status_code: res.status });
-            return res.json();
-        }
-
-        async function reading(entityId) {
-            try {
-                const value = parseFloat((await callApi('GET', `states/${entityId}`)).state);
-                return Number.isNaN(value) ? null : value;
-            } catch (error) {
-                if ((error.status_code ?? error.status) === 404) return null;
-                throw error;
-            }
-        }
-
-        // Opens Home Assistant's own history pop-up (graph + time picker); possible because
-        // this card is served from the same origin as the HA frontend.
-        function openHistory(entityId) {
-            const ha = window.parent.document.querySelector('home-assistant');
-            ha.dispatchEvent(new CustomEvent('hass-more-info', {
-                detail: { entityId },
-                bubbles: true,
-                composed: true,
-            }));
-        }
+        // Airthings' own guide values for humidity.
+        const humidityLevel = pct => pct >= 25 && pct <= 60 ? 'good' : pct >= 15 && pct <= 70 ? 'fair' : 'poor';
 
         function valueButton(className, entityId) {
             const button = document.createElement('button');
@@ -124,31 +66,30 @@
         const cells = ROOMS.map(room => {
             const card = document.createElement('div');
             card.className = 'room';
-            const name = document.createElement('div');
-            name.className = 'room-name';
-            name.textContent = room.name;
+            const label = document.createElement('div');
+            label.className = 'tile-label';
+            label.textContent = room.name;
             const temp = valueButton('room-temp', room.temp);
             const humidity = valueButton('room-humidity', room.humidity);
-            card.append(name, temp, humidity);
+            card.append(label, temp, humidity);
             document.getElementById('rooms').append(card);
             return { temp, humidity };
         });
 
         async function render() {
-            const errorBox = document.getElementById('error');
             try {
-                const values = await Promise.all(ROOMS.map(async room => ({
-                    temp: await reading(room.temp),
-                    humidity: await reading(room.humidity),
-                })));
-                values.forEach((v, i) => {
-                    cells[i].temp.textContent = v.temp === null ? '–' : `${v.temp.toFixed(1)} °C`;
-                    cells[i].humidity.textContent = v.humidity === null ? '–' : `💧 ${v.humidity.toFixed(0)} %`;
+                const states = await statesOf(ROOMS.flatMap(room => [room.temp, room.humidity]));
+                ROOMS.forEach((room, i) => {
+                    const temp = formatNumber(states[room.temp], 1);
+                    const humidity = formatNumber(states[room.humidity], 0);
+                    cells[i].temp.innerHTML = temp === null ? '–' : `${temp}<small> °C</small>`;
+                    cells[i].humidity.textContent = humidity === null ? '–' : `💧 ${humidity} %`;
+                    cells[i].humidity.classList.remove('good', 'fair', 'poor');
+                    if (humidity !== null) cells[i].humidity.classList.add(humidityLevel(parseFloat(states[room.humidity])));
                 });
-                errorBox.hidden = true;
+                showError(null);
             } catch (error) {
-                errorBox.textContent = error.message || error.error || 'Request failed';
-                errorBox.hidden = false;
+                showError(error);
             }
         }
 
