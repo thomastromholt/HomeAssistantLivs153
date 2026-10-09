@@ -21,7 +21,8 @@
         .mode { margin-top: 5px; font-size: 13px; color: #8da0ad; }
         .charging .mode { color: #5fe085; }
 
-        .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+        .sub { margin-top: 2px; font-size: 10px; font-weight: 400; color: #6d808c; }
+        .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
     </style>
 </head>
 <body>
@@ -61,6 +62,9 @@
             connected_finished: ['Finished', ''],
         };
 
+        // Each charger belongs to a Zaptec installation that has its own available current per phase.
+        const INSTALLATION = CHARGER === 'go2' ? 'livlandsgatan_153' : 'sven_wallanders_vag_50';
+
         const entity = (kind, name) => `${kind}.${CHARGER}_${name}`;
         const E = {
             mode: entity('sensor', 'charger_mode'),
@@ -69,8 +73,8 @@
             lastSession: entity('sensor', 'completed_session_energy'),
             lifetime: entity('sensor', 'energy_meter'),
             current: entity('sensor', 'allocated_charge_current'),
-            temperature: entity('sensor', 'temperature_internal'),
             online: entity('binary_sensor', 'online'),
+            available: `number.${INSTALLATION}_available_current`,
         };
 
         document.getElementById('chargerName').textContent = CHARGER === 'go2' ? 'Go2' : 'Stugan';
@@ -78,8 +82,7 @@
         const tiles = {
             session: createTile(document.getElementById('tiles'), 'Last session', E.lastSession),
             lifetime: createTile(document.getElementById('tiles'), 'Total', E.lifetime),
-            current: createTile(document.getElementById('tiles'), 'Allocated', E.current),
-            temperature: createTile(document.getElementById('tiles'), 'Temperature', E.temperature),
+            current: createTile(document.getElementById('tiles'), 'Current limit', E.current),
         };
         const unit = (state, digits, suffix) => {
             const text = formatNumber(state, digits);
@@ -104,8 +107,10 @@
                 tiles.session.parentElement.querySelector('.tile-label').textContent = charging ? 'This session' : 'Last session';
                 tiles.session.innerHTML = unit(charging ? s('session') : s('lastSession'), 1, 'kWh');
                 tiles.lifetime.innerHTML = unit(s('lifetime'), 0, 'kWh');
-                tiles.current.innerHTML = unit(s('current'), 0, 'A');
-                tiles.temperature.innerHTML = unit(s('temperature'), 1, '°C');
+                const limit = formatNumber(s('current'), 0);
+                const available = formatNumber(s('available'), 0);
+                tiles.current.innerHTML = limit === null ? '–'
+                    : `${limit} <small>A</small><div class="sub">${available === null ? '' : `of ${available} A`}</div>`;
 
                 const online = document.getElementById('online');
                 const isOnline = s('online') === 'on';

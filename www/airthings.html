@@ -33,7 +33,8 @@
         .radon-value small { font-size: 15px; color: #8da0ad; }
         .radon-note { margin-top: 2px; font-size: 11px; color: #6d808c; }
 
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; gap: 6px; }
+        .grid .tile { display: flex; flex-direction: column; justify-content: center; }
     </style>
 </head>
 <body>
@@ -65,7 +66,7 @@
             <button class="radon-button" id="radonButton">
                 <div class="radon-label">1-day average</div>
                 <div class="radon-value"><span id="radon">–</span> <small>Bq/m³</small></div>
-                <div class="radon-note">Swedish reference level: 200 Bq/m³</div>
+                <div class="radon-note" id="radonUpdated"></div>
             </button>
         </div>
 
@@ -119,6 +120,16 @@
                 const states = await statesOf(Object.values(E));
                 const s = key => states[E[key]];
                 const number = key => parseFloat(s(key));
+
+                // last_reported moves on every reading, even when the value is unchanged.
+                const radonState = await callApi('GET', `states/${E.radon}`);
+                const reading = new Date(radonState.last_reported || radonState.last_updated);
+                const sameDay = reading.toDateString() === new Date().toDateString();
+                document.getElementById('radonUpdated').textContent = Number.isNaN(reading.getTime())
+                    ? ''
+                    : 'Updated ' + reading.toLocaleString('sv-SE', sameDay
+                        ? { hour: '2-digit', minute: '2-digit' }
+                        : { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
                 const level = LEVEL_LABEL[s('radonLevel')] ? s('radonLevel') : null;
                 document.getElementById('top').style.setProperty('--level', level ? LEVEL_COLOR[level] : '#8da0ad');

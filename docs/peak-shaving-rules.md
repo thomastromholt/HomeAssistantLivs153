@@ -1,6 +1,6 @@
-# Peak shaving (NIBE night mode)
+# Peak shaving (NIBE heat curve −3)
 
-The only control is a fixed heat-curve offset: the normal curve is the comfort setting and night mode is **−3**.
+The only control is a fixed heat-curve offset: the normal curve is the comfort setting and peak shaving is **−3** (called night mode in the NIBE and eWeLink apps).
 There is no pre-heating (+3) and no night-time setback. The only goal is to hold back heat in the most expensive hours.
 
 ## Rules
@@ -28,4 +28,4 @@ If 2 hours is barely noticeable, try 3-hour blocks later (about −1.2 °C).
 
 ## Where it lives
 
-`elpris-24h.html`, the `PEAK_*` constants and `peakHours()`. The cards only show the plan (green = peak shaving, orange = normal); nothing controls the heat pump yet, and HA has no entity for the night-mode relay.
+`www/elpris-24h.html`, the `PEAK_*` constants and `peakHours()`. The cards only show the plan (green = peak shaving, orange = normal); nothing controls the heat pump yet, and HA has no entity for the night-mode relay.

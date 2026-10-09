@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "lovelace_dashboards",
+  "data": {
+    "items": [
+      {
+        "id": "livlandsgatan-153",
+        "icon": "mdi:home-car",
+        "title": "Livlandsgatan 153",
+        "url_path": "livlandsgatan-153",
+        "require_admin": false,
+        "show_in_sidebar": true,
+        "mode": "storage"
+      },
+      {
+        "id": "el-priser",
+        "icon": "mdi:flash",
+        "title": "Elpriser",
+        "url_path": "el-priser",
+        "require_admin": false,
+        "show_in_sidebar": true,
+        "mode": "storage"
+      }
+    ]
+  }
+}

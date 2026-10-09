@@ -20,5 +20,5 @@ Slope 37 / 29.6 = exactly 1.25 (the VAT), intercept 32.5 = 26 × 1.25. Two point
 
 ## Constants
 
-`elpris-24h.html`: `SUPPLIER_FEES_ORE`, `VAT`, `GRID_FEE_ORE`, `ENERGY_TAX_ORE`.
+`www/elpris-24h.html`: `SUPPLIER_FEES_ORE`, `VAT`, `GRID_FEE_ORE`, `ENERGY_TAX_ORE`.
 Ellevio's rates are for a 3 × 20 A connection in Stockholm (fixed fee 590 kr/month is not part of the per-kWh price).

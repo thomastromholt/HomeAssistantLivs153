@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heat pump</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .unit { display: flex; align-items: center; gap: 12px; margin: 2px 0 6px; }
+        .unit svg { flex: none; width: 128px; height: 88px; }
+
+        .supply { min-width: 0; }
+        .supply-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: #8da0ad; }
+        .supply-value { margin-top: 2px; font-size: 44px; font-weight: 300; line-height: 1.05; }
+        .supply-value small { font-size: 15px; color: #8da0ad; }
+        .supply-note { margin-top: 2px; font-size: 12px; color: #6d808c; }
+
+        .tiles { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; gap: 6px; }
+        .tiles .tile { display: flex; flex-direction: column; justify-content: center; }
+        .tile.idle { cursor: default; }
+
+    </style>
+</head>
+<body>
+    <div class="container" id="root">
+        <div class="head">
+            <span class="name">NIBE <span class="muted">EVP 270</span></span>
+            <span class="pill" id="status"></span>
+        </div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="unit">
+            <svg viewBox="0 0 160 110" role="img" aria-label="Heat pump outdoor unit">
+                <defs>
+                    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#e3e8ec"/>
+                        <stop offset="1" stop-color="#aab4bc"/>
+                    </linearGradient>
+                </defs>
+                <ellipse cx="80" cy="104" rx="64" ry="5" fill="rgba(0,0,0,0.35)"/>
+                <rect x="26" y="88" width="10" height="13" rx="2" fill="#2b343b"/>
+                <rect x="124" y="88" width="10" height="13" rx="2" fill="#2b343b"/>
+                <rect x="14" y="14" width="132" height="76" rx="10" fill="url(#silver)" stroke="#8a959d"/>
+                <rect x="12" y="9" width="136" height="12" rx="6" fill="#d5dbe0" stroke="#8a959d"/>
+                <rect x="24" y="28" width="58" height="58" rx="4" fill="#1a232a" stroke="#6d7a84"/>
+                <circle cx="53" cy="57" r="25" fill="none" stroke="#33414a"/>
+                <circle cx="53" cy="57" r="15" fill="none" stroke="#33414a"/>
+                <g transform="translate(53 57)">
+                    <g fill="#8fa0ab">
+                        <ellipse cx="0" cy="-12" rx="5" ry="11"/>
+                        <ellipse cx="0" cy="-12" rx="5" ry="11" transform="rotate(90)"/>
+                        <ellipse cx="0" cy="-12" rx="5" ry="11" transform="rotate(180)"/>
+                        <ellipse cx="0" cy="-12" rx="5" ry="11" transform="rotate(270)"/>
+                    </g>
+                    <circle r="3.5" fill="#d5dbe0"/>
+                </g>
+                <g stroke="#8a959d" stroke-width="1.5" stroke-linecap="round">
+                    <path d="M96 36h38M96 44h38M96 52h38"/>
+                </g>
+            </svg>
+            <div class="supply">
+                <div class="supply-label">Supply temperature</div>
+                <div class="supply-value"><span id="supply">–</span><small> °C</small></div>
+                <div class="supply-note" id="supplyNote"></div>
+            </div>
+        </div>
+
+        <div class="tiles" id="tiles"></div>
+
+        <div class="footer" id="footer"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        // PLACEHOLDER: these entities do not exist yet. They are what the card expects once the heat pump
+        // is connected (HAN reader / clamp meter for power and energy, probe sensor for the supply pipe,
+        // a relay for peak shaving). Rename them here to match whatever the real entities end up being.
+        const E = {
+            supply: 'sensor.heatpump_supply_temperature',
+            supplyTarget: 'sensor.heatpump_calculated_supply_temperature',
+            power: 'sensor.heatpump_power',              // W
+            energyToday: 'sensor.heatpump_energy_today', // kWh
+            runtimeToday: 'sensor.heatpump_compressor_runtime_today', // hours
+            startsToday: 'sensor.heatpump_compressor_starts_today',
+            compressor: 'binary_sensor.heatpump_compressor',
+            peakShaving: 'switch.heatpump_peak_shaving',
+        };
+        const OUTDOOR = 'weather.forecast_home';
+
+        // Dummy values fill in for every entity that does not exist yet, so the card can be judged before
+        // the heat pump is connected. Real values take over per entity as soon as they appear.
+        const DUMMY_STATES = {
+            [E.supply]: '38.5', [E.supplyTarget]: '40.0', [E.power]: '1850', [E.energyToday]: '12.4',
+            [E.compressor]: 'on', [E.peakShaving]: 'off', [E.runtimeToday]: '6.4', [E.startsToday]: '14',
+        };
+
+        function tile(label, entityId) {
+            const button = document.createElement('button');
+            button.className = 'tile';
+            button.innerHTML = '<div class="tile-label"></div><div class="tile-value"></div>';
+            button.querySelector('.tile-label').textContent = label;
+            button.addEventListener('click', () => { if (button.dataset.live) openHistory(entityId); });
+            document.getElementById('tiles').append(button);
+            return button;
+        }
+        const tiles = {
+            power: tile('Power now', E.power),
+            today: tile("Today's consumption", E.energyToday),
+            compressor: tile('Compressor', E.compressor),
+            peakShaving: tile('Peak shaving', E.peakShaving),
+            runtime: tile('Run time today', E.runtimeToday),
+            starts: tile('Starts today', E.startsToday),
+        };
+
+        function setTile(button, text, entityId, level) {
+            const value = button.querySelector('.tile-value');
+            value.innerHTML = text;
+            value.className = `tile-value ${level ?? ''}`;
+            button.dataset.live = text === '–' ? '' : '1';
+            button.classList.toggle('idle', !button.dataset.live);
+        }
+        const withUnit = (state, digits, unit) => {
+            const text = formatNumber(state, digits);
+            return text === null ? '–' : `${text} <small>${unit}</small>`;
+        };
+
+        async function render() {
+            try {
+                const real = await statesOf(Object.values(E));
+                const states = Object.fromEntries(Object.entries(real).map(([id, state]) => [id, state ?? DUMMY_STATES[id] ?? null]));
+                const usingDummy = Object.values(real).some(state => state === null);
+                const s = key => states[E[key]];
+
+                const supply = formatNumber(s('supply'), 1);
+                document.getElementById('supply').textContent = supply ?? '–';
+                const target = formatNumber(s('supplyTarget'), 1);
+                const weather = await callApi('GET', `states/${OUTDOOR}`).catch(() => null);
+                const outdoor = weather ? formatNumber(weather.attributes.temperature, 1) : null;
+                document.getElementById('supplyNote').textContent =
+                    [target === null ? null : `target ${target} °C`, outdoor === null ? null : `outdoors ${outdoor} °C`]
+                        .filter(Boolean).join(' · ') || 'Waiting for sensor';
+
+                const watts = parseFloat(s('power'));
+                setTile(tiles.power, Number.isNaN(watts) ? '–' : withUnit(watts / 1000, 1, 'kW'), E.power);
+                setTile(tiles.today, withUnit(s('energyToday'), 1, 'kWh'), E.energyToday);
+
+                const running = s('compressor') === 'on';
+                setTile(tiles.compressor, s('compressor') === null ? '–' : running ? 'On' : 'Off', E.compressor, running ? 'good' : '');
+                const shaving = s('peakShaving') === 'on';
+                const runtime = parseFloat(s('runtimeToday'));
+                setTile(tiles.runtime, Number.isNaN(runtime) ? '–'
+                    : `${Math.floor(runtime)} <small>h</small> ${Math.round((runtime % 1) * 60)} <small>min</small>`, E.runtimeToday);
+                setTile(tiles.starts, withUnit(s('startsToday'), 0, 'starts'), E.startsToday);
+                setTile(tiles.peakShaving, s('peakShaving') === null ? '–' : shaving ? 'Active' : 'Off', E.peakShaving, shaving ? 'good' : '');
+
+                const connected = Object.values(real).some(state => state !== null);
+                const status = document.getElementById('status');
+                status.textContent = !connected ? 'Dummy data' : running ? 'On' : 'Off';
+                status.className = `pill ${!connected ? 'fair' : running ? 'good' : ''}`;
+                document.getElementById('footer').textContent = usingDummy ? 'Dummy values until the heat pump is connected' : '';
+
+                showError(null);
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        render();
+        setInterval(render, 30e3);
+    </script>
+</body>
+</html>

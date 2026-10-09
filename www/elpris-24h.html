@@ -43,7 +43,7 @@
         }
         .legend-box { width: 24px; height: 4px; margin-left: 8px; border-radius: 2px; }
         .legend-box:first-child { margin-left: 0; }
-        .legend-box.night { background: #34c759; }
+        .legend-box.shave { background: #34c759; }
         .legend-box.normal { background: #ff9500; }
 
         .chart-wrapper { position: relative; flex: 1; min-height: 0; }
@@ -64,7 +64,7 @@
         <div id="error" class="error" hidden></div>
 
         <div id="legend" class="legend" hidden>
-            <span class="legend-box night"></span><span><strong>Peak shaving</strong></span>
+            <span class="legend-box shave"></span><span><strong>Peak shaving</strong></span>
             <span class="legend-box normal"></span><span><strong>Normal</strong></span>
         </div>
 
@@ -82,13 +82,13 @@
 
         // Greenely price = (hourly spot + fees) × VAT. Fees fitted to two Greenely readings on 2026-10-09
         // (spot 46.80 → 91 öre, spot 76.40 → 128 öre): slope is exactly 1.25, so fees = 26 öre before VAT.
-        // Total = Greenely + Ellevio grid fee + energy tax (both billed incl. VAT). See elpriskalkulator.md.
+        // Total = Greenely + Ellevio grid fee + energy tax (both billed incl. VAT). See docs/elpriskalkulator.md.
         const SUPPLIER_FEES_ORE = 26;
         const VAT = 1.25;
         const GRID_FEE_ORE = 26;
         const ENERGY_TAX_ORE = 45;
 
-        // Peak shaving rules (see peak-shaving-rules.md): per calendar day, up to PEAK_MAX_BLOCKS blocks of
+        // Peak shaving rules (see docs/peak-shaving-rules.md): per calendar day, up to PEAK_MAX_BLOCKS blocks of
         // PEAK_BLOCK_HOURS in a row, at least PEAK_RECOVERY_HOURS apart, each at least PEAK_MIN_PREMIUM times
         // the day's average spot price. The plan depends only on the day's published prices.
         const PEAK_BLOCK_HOURS = 2;
@@ -184,7 +184,7 @@
             return new Set(blocks.flatMap(b => [b.start, b.start + HOUR]));
         }
 
-        function isNightMode(now, offsetHours) {
+        function isPeakShaving(now, offsetHours) {
             return peaks.has(Math.floor((now + offsetHours * HOUR) / HOUR) * HOUR);
         }
 
@@ -198,7 +198,7 @@
             return String(new Date(now + offsetHours * HOUR).getHours()).padStart(2, '0');
         }
 
-        const NIGHT_COLOR = '#34c759';
+        const SHAVING_COLOR = '#34c759';
         const NORMAL_COLOR = '#ff9500';
 
         const nowLine = {
@@ -216,6 +216,28 @@
                 ctx.restore();
             },
         };
+
+        // Tomorrow's prices are published around 13:00; until then, say so in the empty part of the axis.
+        function pendingNote(lastX) {
+            return {
+                id: 'pendingNote',
+                afterDatasetsDraw(chart) {
+                    const { ctx, chartArea: area, scales: { x } } = chart;
+                    const dataEnd = x.getPixelForValue(lastX);
+                    if (area.right - dataEnd < 80) return;
+                    ctx.save();
+                    ctx.fillStyle = '#6d808c';
+                    ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    const centerX = (dataEnd + area.right) / 2;
+                    const centerY = (area.top + area.bottom) / 2;
+                    ctx.fillText("Tomorrow's prices", centerX, centerY - 8);
+                    ctx.fillText('arrive around 13:00', centerX, centerY + 8);
+                    ctx.restore();
+                },
+            };
+        }
 
         function draw(points, now, from, to) {
             // Like Greenely: 06 12 18 00 06 12 18 (no label at the very start).
@@ -238,8 +260,8 @@
                         fill: true,
                         pointRadius: 0,
                         segment: MODE === 'total' ? {
-                            borderColor: ctx => isNightMode(now, ctx.p0.parsed.x) ? NIGHT_COLOR : NORMAL_COLOR,
-                            backgroundColor: ctx => (isNightMode(now, ctx.p0.parsed.x) ? NIGHT_COLOR : NORMAL_COLOR) + '33',
+                            borderColor: ctx => isPeakShaving(now, ctx.p0.parsed.x) ? SHAVING_COLOR : NORMAL_COLOR,
+                            backgroundColor: ctx => (isPeakShaving(now, ctx.p0.parsed.x) ? SHAVING_COLOR : NORMAL_COLOR) + '33',
                         } : {},
                     }],
                 },
@@ -278,7 +300,7 @@
                         },
                     },
                 },
-                plugins: [nowLine],
+                plugins: [nowLine, pendingNote(points[points.length - 1].x)],
             });
         }
 

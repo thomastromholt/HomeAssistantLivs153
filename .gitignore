@@ -15,3 +15,6 @@ ssl/
 .env
 tools/node_modules/
 tools/*.png
+
+# Kia render cropped from the Kia app (not ours to publish)
+www/kia-car.png

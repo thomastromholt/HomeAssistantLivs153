@@ -1,160 +1,51 @@
 # HomeAssistant Livs153
 
-AI-assisted Home Assistant configuration for Raspberry Pi 4 (8GB).  
-Managed and deployed via Claude Code in VS Code over Tailscale SSH.
+Home Assistant for Livlandsgatan 153: dashboards, custom HTML cards and the notes behind them.
+Managed with Claude Code over SSH.
 
----
+## Setup
 
-## Hardware
+| Part | Details |
+|------|---------|
+| Host | Intel NUC (16 GB) running Home Assistant OS, `192.168.1.77` |
+| Zigbee | ZHA, temperature/humidity sensors (Sonoff SNZB-02P) in the bedroom, toilet and living room |
+| Air quality | Airthings Wave Plus (Bluetooth): radon, CO₂, VOC, temperature, humidity, pressure |
+| EV | Kia Ceed PHEV (Kia Uvo integration), Zaptec Go2 and Stugan chargers |
+| Prices | Nord Pool SE3 (15-minute), see [docs/elpriskalkulator.md](docs/elpriskalkulator.md) |
+| Heating | NIBE EVP 270, no open interface. Peak shaving via the heat-curve offset is planned, see [docs/peak-shaving-rules.md](docs/peak-shaving-rules.md) |
 
-| Device | Role |
-|--------|------|
-| Raspberry Pi 4 (8GB) | HAOS host, Zigbee coordinator, Bluetooth hub |
-| Zigbee USB dongle | Coordinator for climate sensors |
-| 10× Zigbee temp/humidity sensors | Room-by-room climate monitoring |
-| Eve Room (Bluetooth) | Indoor air quality — temp, humidity, VOC |
-| SaveEye Pulse | Real-time household power monitoring |
-
-**Planned (not yet integrated):**
-- Zaptec EV charger
-- Ngenic smart heating
-- Pax Bluetooth extractor fans
-
----
-
-## Integrations
-
-| Integration | Source | What it provides |
-|-------------|--------|-----------------|
-| Zigbee (ZHA) | Built-in | 10× climate sensors |
-| Bluetooth | Built-in | Eve Room, Pax fans |
-| Nord Pool | HACS | Hourly spot prices, SE3, SEK/kWh |
-| Greenely | HACS | Real-time consumption, daily/monthly cost |
-| SaveEye | HACS | Live household load (W), daily kWh |
-| Tailscale | HAOS Add-on | Always-on remote access + SSH |
-
----
-
-## Project Files
+## Layout
 
 ```
-HomeAssistantLivs153/
-├── README.md                  — this file
-├── AI_BOT_GUIDE.md            — MCP setup guide for AI assistants
-├── .claudeignore              — files never sent to external AI services
-├── remote_dashboard.yaml      — Lovelace UI for 10" wall tablet
-├── smart_energy_logic.yaml    — HA automations
-└── remote_access_setup.md     — Tailscale, SSH, HACS install guide
+www/       the dashboard cards (HTML), shared card-dark.css / card-common.js, kia-car.png (not committed)
+config/    HA YAML and a backup of the dashboard JSON (config/dashboards/)
+docs/      notes: price formula, peak-shaving rules, remote access, AI assistant guide
+tools/     deploy and headless-render scripts
 ```
 
-### [remote_dashboard.yaml](remote_dashboard.yaml)
+## Dashboards
 
-Lovelace dashboard optimised for a 10-inch wall-mounted tablet.  
-4-column grid layout with large touch targets.
+- **Livlandsgatan 153**: five cards (electricity price, Ceed, Zaptec, Radon, Temperatur) packed in one wide section.
+- **Elpriser**: the electricity price and the Nord Pool spot price side by side.
 
-| Section | Cards |
-|---------|-------|
-| Row 1 | SaveEye live power graph · Greenely cost today |
-| Row 2 | Nord Pool today (bar + avg line) · Nord Pool tomorrow |
-| Row 3 | Greenely monthly kWh + cost summary · Daily bar chart |
-| Row 4 | Eve Room air quality gauge · temp/humidity |
-| Row 5 | Zigbee temperature chips · 6h trend graph |
-| Row 6 | Humidity for all rooms inc. Eve Room |
-| Row 7 | Pax fan controls + humidity readouts |
+The cards are plain HTML served from `/config/www` as `/local/...` and shown with iframe cards.
+They read data through Home Assistant's own connection, and tapping a value opens HA's history pop-up.
 
-**Required HACS frontend cards:**
-- `apexcharts-card`
-- `mini-graph-card`
-- `mushroom`
-- `lovelace-layout-card` (for `custom:grid-layout`)
-
-### [smart_energy_logic.yaml](smart_energy_logic.yaml)
-
-| Automation | Trigger | Logic |
-|------------|---------|-------|
-| Eve Room air alert | VOC > 1100 ppb for 5 min | Push notification to mobile |
-| High load warning | SaveEye > max_kw for 5 min | Push notification with current price |
-| Daily briefing | 07:00 | Nord Pool avg/min/max, 3 cheapest hours |
-
-**Helpers required** (create in Settings → Devices → Helpers):
-
-| Helper | Type | Example value |
-|--------|------|---------------|
-| `input_number.cheap_price_threshold` | Number | `0.80` SEK/kWh |
-| `input_number.max_household_load_kw` | Number | `8.0` kW |
-
----
-
-## Key Entity IDs
-
-These are the expected entity IDs. **Verify all of them** in  
-Developer Tools → States after installing each integration.
-
-| Sensor | Entity ID |
-|--------|-----------|
-| Nord Pool current price | `sensor.nordpool_kwh_se3_sek_3_10_025` |
-| Nord Pool today (96×15min) | attribute `raw_today` — `[{start, end, value}]` |
-| Nord Pool avg/min/max | attributes `average`, `min`, `max` |
-| Nord Pool tomorrow | attribute `raw_tomorrow` (when `tomorrow_valid=true`) |
-| Greenely daily usage | `sensor.greenely_daily_usage` — attribute `data[]` `{localtime, usage}` |
-| Greenely prices | `sensor.greenely_prices` — attributes `current_day`, `next_day` |
-| SaveEye live power | pending — SaveEye integration loaded but no entities yet |
-| Eve Room temperature | `sensor.eve_room_temperature` |
-| Eve Room humidity | `sensor.eve_room_humidity` |
-| Eve Room VOC | `sensor.eve_room_voc` |
-| Pax bathroom fan | `fan.pax_bathroom` |
-| Pax basement fan | `fan.pax_basement` |
-
----
-
-## Deployment
-
-All files are deployed from VS Code via SSH over Tailscale.  
-See [remote_access_setup.md](remote_access_setup.md) for first-time setup.
-
-### Push a config update
-
-```bash
-# Copy files to HA config directory
-scp remote_dashboard.yaml ha:/config/
-scp smart_energy_logic.yaml ha:/config/
-
-# Reload without restarting HA
-ssh ha "ha lovelace reload"
-ssh ha "ha automation reload"
-```
-
-### Stream live logs
-
-```bash
-ssh ha "ha core logs --follow"
-```
-
-### SSH alias
-
-`ha` is defined in `~/.ssh/config` — points to `rpi.local` on the local network.
-After Tailscale is set up, update `HostName` in `~/.ssh/config` to the MagicDNS hostname.
-
----
-
-## Nord Pool price area
-
-**SE3** (Stockholm / central Sweden).  
-Adjust `region: "SE3"` in `configuration.yaml` if different.
-
----
-
-## Security
-
-`.claudeignore` prevents these from being read by AI tooling:
+## Deploy
 
 ```
-secrets.yaml      — credentials, tokens, API keys
-*.db              — HA state/history databases
-.storage/         — tokens, entity registry, auth data
-ssl/              — TLS certificates and keys
-*.log             — log files (contain IPs, entity states)
-backups/          — full HA snapshots
+tools/deploy.sh
 ```
 
-Never commit `secrets.yaml` to version control.
+Copies `www/` to the box, bumps the cache version on the card URLs, restarts HA Core and saves the dashboard JSON back into `config/dashboards/`.
+Needs SSH access to the box (`ssh root@192.168.1.77`).
+
+## Checking a card visually
+
+```
+cd tools && npm i puppeteer-core
+node page.js ../.env "http://192.168.1.77/local/zaptec.html" out.png 372 440
+node dash.js ../.env "http://192.168.1.77/livlandsgatan-153/home" dash.png 1500 900
+```
+
+`.env` holds `HOMEASSISTANT_URL` and `HOMEASSISTANT_TOKEN` (a long-lived token) and is never committed.

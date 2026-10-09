@@ -92,7 +92,7 @@ sensor:
 ```bash
 # 4. Restart HA, then verify entity in:
 #    Developer Tools → States → filter "nordpool"
-#    Note the exact entity ID and update smart_energy_logic.yaml if different
+#    Note the exact entity ID and update any automation that uses it if different
 ```
 
 ---
@@ -146,5 +146,5 @@ Key entities it provides:
 - `sensor.greenely_hourly_consumption` — kWh per hour
 
 > Note: Greenely is a community integration — if it breaks after a Greenely app
-> update, Nord Pool prices in `smart_energy_logic.yaml` keep all automations
+> update, Nord Pool prices keep price-based logic
 > running independently.
