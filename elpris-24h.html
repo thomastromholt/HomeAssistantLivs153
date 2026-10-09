@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elpris</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        [hidden] { display: none !important; }
+
+        html, body { height: 100%; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: white;
+            border-top: 4px solid var(--accent);
+        }
+
+        .container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 12px 16px;
+        }
+
+        .header { position: relative; text-align: center; margin-bottom: 8px; }
+        .header h1 { font-size: 18px; color: #333; margin-bottom: 2px; }
+        .info { color: #999; font-size: 14px; font-weight: normal; cursor: help; outline: none; }
+        .info-box {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            margin-top: 4px;
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: normal;
+            line-height: 1.5;
+            color: #fff;
+            background: #333;
+            border-radius: 8px;
+            z-index: 200;
+        }
+        .info:hover .info-box, .info:focus .info-box { display: block; }
+
+        .legend {
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            padding: 8px;
+            margin-bottom: 8px;
+            background: #f0f9f0;
+            border-radius: 8px;
+        }
+
+        .legend-box { width: 24px; height: 4px; border-radius: 2px; margin-left: 8px; }
+        .legend-box:first-child { margin-left: 0; }
+        .legend-box.night { background: #34c759; }
+        .legend-box.normal { background: #ff9500; }
+
+        .chart-wrapper { position: relative; flex: 1; min-height: 0; }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .stat-card { background: #f5f5f5; padding: 8px; border-radius: 8px; text-align: center; }
+        .stat-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .stat-value { font-size: 18px; font-weight: bold; color: var(--accent); }
+        .stat-value.low { color: #34c759; }
+        .stat-value.high { color: #ff3b30; }
+
+        .error { background: #ff3b30; color: white; padding: 8px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span id="title"></span> <span class="info" tabindex="0" aria-label="Details">ⓘ<div class="info-box" id="infoBox"></div></span></h1>
+        </div>
+
+        <div id="error" class="error" hidden></div>
+
+        <div id="legend" class="legend" hidden>
+            <span class="legend-box night"></span><span><strong>Peak shaving</strong></span>
+            <span class="legend-box normal"></span><span><strong>Normal</strong></span>
+        </div>
+
+        <div class="chart-wrapper"><canvas id="chart"></canvas></div>
+
+        <div class="stats">
+            <div class="stat-card"><div class="stat-label">Now</div><div class="stat-value" id="now">–</div></div>
+        </div>
+    </div>
+
+    <script>
+        const CONFIG_ENTRY = '01M4G69T394M8BKNHBNQ9E0246';
+        const AREA = 'SE3';
+        const HOUR = 3600e3;
+
+        // Greenely price = (hourly spot + fees) × VAT. Fees fitted to two Greenely readings on 2026-10-09
+        // (spot 46.80 → 91 öre, spot 76.40 → 128 öre): slope is exactly 1.25, so fees = 26 öre before VAT.
+        // Total = Greenely + Ellevio grid fee + energy tax (both billed incl. VAT). See elpriskalkulator.md.
+        const SUPPLIER_FEES_ORE = 26;
+        const VAT = 1.25;
+        const GRID_FEE_ORE = 26;
+        const ENERGY_TAX_ORE = 45;
+
+        // Peak shaving rules (see peak-shaving-rules.md): per calendar day, up to PEAK_MAX_BLOCKS blocks of
+        // PEAK_BLOCK_HOURS in a row, at least PEAK_RECOVERY_HOURS apart, each at least PEAK_MIN_PREMIUM times
+        // the day's average spot price. The plan depends only on the day's published prices.
+        const PEAK_BLOCK_HOURS = 2;
+        const PEAK_MAX_BLOCKS = 2;
+        const PEAK_RECOVERY_HOURS = 2;
+        const PEAK_MIN_PREMIUM = 1.25;
+        let peaks = new Set();
+
+        const MODE = new URLSearchParams(location.search).get('mode') === 'total' ? 'total' : 'spot';
+        const VIEW = MODE === 'total'
+            ? {
+                title: '💰 Total Electricity Price',
+                info: [
+                    'Nord Pool spot (SE3), hourly average of the 15-minute prices',
+                    `+ ${SUPPLIER_FEES_ORE} öre supplier fees (Greenely), then × ${VAT} VAT`,
+                    `+ ${GRID_FEE_ORE} öre grid fee (Ellevio), incl. VAT`,
+                    `+ ${ENERGY_TAX_ORE} öre energy tax, incl. VAT`,
+                    `Peak shaving: up to ${PEAK_MAX_BLOCKS} blocks of ${PEAK_BLOCK_HOURS} h a day, only if ${Math.round((PEAK_MIN_PREMIUM - 1) * 100)}% above the day's average spot`,
+                ],
+                color: '#34c759',
+                toPrice: spot => (spot + SUPPLIER_FEES_ORE) * VAT + GRID_FEE_ORE + ENERGY_TAX_ORE,
+            }
+            : {
+                title: '⚡ NordPool Spot Price',
+                info: ['Nord Pool spot (SE3), hourly average of the 15-minute prices, excl. VAT'],
+                color: '#667eea',
+                toPrice: spot => spot,
+            };
+
+        document.documentElement.style.setProperty('--accent', VIEW.color);
+        document.getElementById('title').textContent = VIEW.title;
+        for (const line of VIEW.info) {
+            const row = document.createElement('div');
+            row.textContent = line;
+            document.getElementById('infoBox').append(row);
+        }
+        document.getElementById('legend').hidden = MODE !== 'total';
+
+        let chart = null;
+
+        // Inside the dashboard, go through Home Assistant's own connection: it refreshes the login token itself.
+        // Opened standalone (e.g. headless tests), fall back to the token the frontend stores in localStorage.
+        async function callApi(method, path, body) {
+            let hass = null;
+            try { hass = window.parent.document.querySelector('home-assistant')?.hass; } catch (e) { /* cross-origin */ }
+            if (hass) return hass.callApi(method, path, body);
+
+            const tokens = JSON.parse(localStorage.getItem('hassTokens') || 'null');
+            if (!tokens) throw new Error('Not logged in to Home Assistant');
+            const res = await fetch('/api/' + path, {
+                method,
+                headers: { Authorization: `Bearer ${tokens.access_token}`, 'Content-Type': 'application/json' },
+                body: body === undefined ? undefined : JSON.stringify(body),
+            });
+            if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status_code: res.status });
+            return res.json();
+        }
+
+        function localDate(offsetDays) {
+            const d = new Date();
+            d.setDate(d.getDate() + offsetDays);
+            return d.toLocaleDateString('sv-SE');
+        }
+
+        async function pricesFor(date) {
+            const body = await callApi('POST', 'services/nordpool/get_prices_for_date?return_response', {
+                config_entry: CONFIG_ENTRY,
+                date,
+                areas: AREA,
+            });
+            return body.service_response[AREA].map(p => ({
+                start: new Date(p.start).getTime(),
+                end: new Date(p.end).getTime(),
+                ore: p.price / 10, // SEK/MWh → öre/kWh
+            }));
+        }
+
+        // Each hour is the average of its four 15-minute spot prices (Greenely bills hourly).
+        function hourlyAverage(slots) {
+            const byHour = new Map();
+            for (const s of slots) {
+                const start = Math.floor(s.start / HOUR) * HOUR;
+                if (!byHour.has(start)) byHour.set(start, []);
+                byHour.get(start).push(s.ore);
+            }
+            return [...byHour].map(([start, ores]) => ({
+                start,
+                end: start + HOUR,
+                ore: ores.reduce((a, b) => a + b, 0) / ores.length,
+            }));
+        }
+
+        function peakHours(day) {
+            const mean = day.reduce((sum, s) => sum + s.ore, 0) / day.length;
+            const oreAt = new Map(day.map(s => [s.start, s.ore]));
+            const windows = day
+                .map(s => s.start)
+                .filter(start => oreAt.has(start + HOUR))
+                .map(start => ({ start, avg: (oreAt.get(start) + oreAt.get(start + HOUR)) / 2 }))
+                .sort((a, b) => b.avg - a.avg);
+
+            const minStartDistance = (PEAK_BLOCK_HOURS + PEAK_RECOVERY_HOURS) * HOUR;
+            const blocks = [];
+            for (const w of windows) {
+                if (blocks.length >= PEAK_MAX_BLOCKS || w.avg < mean * PEAK_MIN_PREMIUM) break;
+                if (blocks.every(b => Math.abs(b.start - w.start) >= minStartDistance)) blocks.push(w);
+            }
+            return new Set(blocks.flatMap(b => [b.start, b.start + HOUR]));
+        }
+
+        function isNightMode(now, offsetHours) {
+            return peaks.has(Math.floor((now + offsetHours * HOUR) / HOUR) * HOUR);
+        }
+
+        function clockTime(now, offsetHours) {
+            const t = new Date(now + offsetHours * HOUR);
+            const day = t.toLocaleDateString('sv-SE', { weekday: 'short' });
+            return day + ' ' + t.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function axisLabel(now, offsetHours) {
+            return String(new Date(now + offsetHours * HOUR).getHours()).padStart(2, '0');
+        }
+
+        const NIGHT_COLOR = '#34c759';
+        const NORMAL_COLOR = '#ff9500';
+
+        const nowLine = {
+            id: 'nowLine',
+            afterDatasetsDraw(chart) {
+                const { ctx, chartArea: area, scales: { x } } = chart;
+                const px = x.getPixelForValue(0);
+                ctx.save();
+                ctx.strokeStyle = '#ff3b30';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(px, area.top);
+                ctx.lineTo(px, area.bottom);
+                ctx.stroke();
+                ctx.restore();
+            },
+        };
+
+        function draw(points, now, from, to) {
+            // Like Greenely: 06 12 18 00 06 12 18 (no label at the very start).
+            const hourTicks = [];
+            for (let t = from + HOUR; t < to; t += HOUR) {
+                if (new Date(t).getHours() % 6 === 0) hourTicks.push({ value: (t - now) / HOUR });
+            }
+
+            if (chart) chart.destroy();
+            chart = new Chart(document.getElementById('chart'), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'öre/kWh',
+                        data: points,
+                        stepped: 'after',
+                        borderColor: VIEW.color,
+                        backgroundColor: VIEW.color + '22',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0,
+                        segment: MODE === 'total' ? {
+                            borderColor: ctx => isNightMode(now, ctx.p0.parsed.x) ? NIGHT_COLOR : NORMAL_COLOR,
+                            backgroundColor: ctx => (isNightMode(now, ctx.p0.parsed.x) ? NIGHT_COLOR : NORMAL_COLOR) + '33',
+                        } : {},
+                    }],
+                },
+                options: {
+                    animation: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            displayColors: false,
+                            callbacks: {
+                                title: items => clockTime(now, items[0].parsed.x),
+                                label: item => `${item.parsed.y.toFixed(1)} öre/kWh`,
+                            },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: (from - now) / HOUR,
+                            max: (to - now) / HOUR,
+                            afterBuildTicks: axis => { axis.ticks = hourTicks; },
+                            ticks: { color: '#999', font: { size: 11 }, maxRotation: 0, autoSkip: false, callback: value => axisLabel(now, value) },
+                            grid: { display: false },
+                        },
+                        y: {
+                            ticks: { color: '#999', font: { size: 11 } },
+                            grid: { color: '#e0e0e0' },
+                        },
+                    },
+                },
+                plugins: [nowLine],
+            });
+        }
+
+        async function render() {
+            const errorBox = document.getElementById('error');
+            try {
+                const now = Date.now();
+                // Fixed two-day axis like Greenely: 00:00 today to 23:59 tomorrow.
+                const today = new Date(now);
+                const from = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+                const to = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2).getTime();
+
+                const [todayPrices, tomorrowPrices] = await Promise.all([
+                    pricesFor(localDate(0)),
+                    pricesFor(localDate(1)).catch(() => []), // tomorrow's prices are published around 13:00
+                ]);
+                const days = [todayPrices, tomorrowPrices].map(hourlyAverage);
+                // Only plan days with complete prices (tomorrow's are published around 13:00).
+                peaks = new Set(days.filter(day => day.length >= 23).flatMap(day => [...peakHours(day)]));
+
+                const slots = days
+                    .flat()
+                    .filter(s => s.end > from && s.start < to)
+                    .sort((a, b) => a.start - b.start);
+                if (!slots.length) throw new Error('No price data from Nord Pool');
+
+                const points = slots.map(s => ({ x: (s.start - now) / HOUR, y: VIEW.toPrice(s.ore) }));
+                const last = slots[slots.length - 1];
+                points.push({ x: (last.end - now) / HOUR, y: VIEW.toPrice(last.ore) });
+
+                draw(points, now, from, to);
+
+                const current = slots.find(s => s.start <= now && now < s.end);
+                const fmt = v => `${v.toFixed(1)} öre`;
+                document.getElementById('now').textContent = current ? fmt(VIEW.toPrice(current.ore)) : '–';
+                errorBox.hidden = true;
+            } catch (error) {
+                errorBox.textContent = error.message || error.error || 'Request failed';
+                errorBox.hidden = false;
+            }
+        }
+
+        render();
+        setInterval(render, 60e3);
+    </script>
+</body>
+</html>

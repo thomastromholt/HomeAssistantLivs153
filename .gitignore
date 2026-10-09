@@ -10,3 +10,8 @@ secrets.yaml
 backups/
 home-assistant.log*
 ssl/
+
+# Secrets and local tooling output
+.env
+tools/node_modules/
+tools/*.png

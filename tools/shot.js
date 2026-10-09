@@ -1,0 +1,23 @@
+const puppeteer = require('puppeteer-core');
+const fs = require('fs');
+const env = Object.fromEntries(fs.readFileSync(process.argv[2], 'utf8').split('\n').filter(l => l.includes('=')).map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1).replace(/^"|"$/g, '')]; }));
+const [url, out, w = 1100, h = 640] = process.argv.slice(3);
+(async () => {
+  const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
+  const p = await b.newPage();
+  await p.setViewport({ width: +w, height: +h });
+  p.on('console', m => console.log('console:', m.type(), m.text()));
+  p.on('pageerror', e => console.log('pageerror:', e.message));
+  p.on('requestfailed', r => console.log('reqfailed:', r.url(), r.failure().errorText));
+  p.on('response', r => { if (r.status() >= 400) console.log('http', r.status(), r.url()); });
+  const origin = new URL(url).origin;
+  await p.goto(origin + '/manifest.json');
+  await p.evaluate(t => localStorage.setItem('hassTokens', JSON.stringify({ access_token: t, expires: Date.now() + 1e9, token_type: 'Bearer' })), env.HOMEASSISTANT_TOKEN);
+  await p.goto(url, { waitUntil: 'networkidle0' });
+  await new Promise(r => setTimeout(r, 1500));
+  console.log('error box:', await p.$eval('#error', e => e.hidden ? '(hidden)' : e.textContent));
+  console.log('stats:', await p.$$eval('.stat-value', els => els.map(e => e.textContent)));
+  console.log('canvas:', await p.$eval('#chart', c => `${c.width}x${c.height}`));
+  await p.screenshot({ path: out });
+  await b.close();
+})();
