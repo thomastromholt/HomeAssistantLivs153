@@ -50,6 +50,7 @@
             <span class="name">Ceed <span class="muted">PHEV</span></span>
         </div>
         <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
 
         <div class="hero">
             <div class="soc"><span id="soc">–</span><span class="unit">%</span></div>
@@ -149,6 +150,11 @@
                     ? ''
                     : `Car data from ${updated.toLocaleString('sv-SE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
 
+                const problems = [];
+                const ageHours = (Date.now() - updated.getTime()) / 3600e3;
+                if (isMissing(s('battery')) && isMissing(s('lock'))) problems.push('No data from the car (Kia cloud)');
+                else if (ageHours > 24) problems.push(`Car data is ${Math.round(ageHours)} h old`);
+                showProblems(problems);
                 showError(null);
             } catch (error) {
                 showError(error);

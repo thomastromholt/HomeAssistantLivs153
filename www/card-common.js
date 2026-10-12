@@ -62,3 +62,19 @@ function createTile(parent, label, entityId) {
     parent.append(button);
     return button.querySelector('.tile-value');
 }
+
+// A state that means "this device or integration is not delivering data".
+const isMissing = state => state === null || state === 'unavailable' || state === 'unknown';
+
+// Writes warnings under the card header (the card needs <div id="problems" class="problems" hidden>).
+// An empty list hides the box.
+function showProblems(messages) {
+    const box = document.getElementById('problems');
+    if (!box) return;
+    box.hidden = messages.length === 0;
+    box.replaceChildren(...messages.map(message => {
+        const row = document.createElement('div');
+        row.textContent = `⚠ ${message}`;
+        return row;
+    }));
+}

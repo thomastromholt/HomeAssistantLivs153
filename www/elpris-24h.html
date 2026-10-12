@@ -90,11 +90,13 @@
 
         // Peak shaving rules (see docs/peak-shaving-rules.md): per calendar day, up to PEAK_MAX_BLOCKS blocks of
         // PEAK_BLOCK_HOURS in a row, at least PEAK_RECOVERY_HOURS apart, each at least PEAK_MIN_PREMIUM times
-        // the day's average spot price. The plan depends only on the day's published prices.
+        // the day's average spot price and at least PEAK_MIN_SPREAD_ORE öre/kWh dearer than the 4 hours after it.
+        // The plan depends only on the day's published prices.
         const PEAK_BLOCK_HOURS = 2;
         const PEAK_MAX_BLOCKS = 2;
         const PEAK_RECOVERY_HOURS = 2;
         const PEAK_MIN_PREMIUM = 1.25;
+        const PEAK_MIN_SPREAD_ORE = 40;
         let peaks = new Set();
 
         const MODE = new URLSearchParams(location.search).get('mode') === 'total' ? 'total' : 'spot';
@@ -107,7 +109,7 @@
                     `+ ${SUPPLIER_FEES_ORE} öre supplier fees (Greenely), then × ${VAT} VAT`,
                     `+ ${GRID_FEE_ORE} öre grid fee (Ellevio), incl. VAT`,
                     `+ ${ENERGY_TAX_ORE} öre energy tax, incl. VAT`,
-                    `Peak shaving: up to ${PEAK_MAX_BLOCKS} blocks of ${PEAK_BLOCK_HOURS} h a day, only if ${Math.round((PEAK_MIN_PREMIUM - 1) * 100)}% above the day's average spot`,
+                    `Peak shaving: up to ${PEAK_MAX_BLOCKS} blocks of ${PEAK_BLOCK_HOURS} h a day, only if ${Math.round((PEAK_MIN_PREMIUM - 1) * 100)}% above the day's average spot and at least ${PEAK_MIN_SPREAD_ORE} öre/kWh dearer than the 4 hours after`,
                 ],
                 color: '#34c759',
                 toPrice: spot => (spot + SUPPLIER_FEES_ORE) * VAT + GRID_FEE_ORE + ENERGY_TAX_ORE,
@@ -175,10 +177,18 @@
                 .map(start => ({ start, avg: (oreAt.get(start) + oreAt.get(start + HOUR)) / 2 }))
                 .sort((a, b) => b.avg - a.avg);
 
+            // How much cheaper the 4 hours after a block are, in öre/kWh you pay. That is where the held-back
+            // heat is made up, so that gap is what a block saves per kWh it shifts. No later hours: no check.
+            const spreadAfter = w => {
+                const after = [2, 3, 4, 5].map(k => oreAt.get(w.start + k * HOUR)).filter(v => v !== undefined);
+                return after.length ? (w.avg - after.reduce((a, b) => a + b) / after.length) * VAT : Infinity;
+            };
+
             const minStartDistance = (PEAK_BLOCK_HOURS + PEAK_RECOVERY_HOURS) * HOUR;
             const blocks = [];
             for (const w of windows) {
                 if (blocks.length >= PEAK_MAX_BLOCKS || w.avg < mean * PEAK_MIN_PREMIUM) break;
+                if (spreadAfter(w) < PEAK_MIN_SPREAD_ORE) continue;
                 if (blocks.every(b => Math.abs(b.start - w.start) >= minStartDistance)) blocks.push(w);
             }
             return new Set(blocks.flatMap(b => [b.start, b.start + HOUR]));
@@ -199,6 +209,17 @@
         }
 
         const SHAVING_COLOR = '#34c759';
+        // A flat piece (one hour) takes its own hour's colour. A vertical step takes green if the hour before or
+        // the hour after it is planned, so a green block is framed by green steps on both sides. The 1 s nudges
+        // keep the boundary x inside the intended hour despite floating-point rounding.
+        const NUDGE = 1000 / HOUR;
+        function pieceColor(now, ctx) {
+            const isFlat = ctx.p0.parsed.x !== ctx.p1.parsed.x;
+            const shaving = isFlat
+                ? isPeakShaving(now, ctx.p0.parsed.x + NUDGE)
+                : isPeakShaving(now, ctx.p0.parsed.x - NUDGE) || isPeakShaving(now, ctx.p1.parsed.x + NUDGE);
+            return shaving ? SHAVING_COLOR : NORMAL_COLOR;
+        }
         const NORMAL_COLOR = '#ff9500';
 
         const nowLine = {
@@ -253,15 +274,14 @@
                     datasets: [{
                         label: 'öre/kWh',
                         data: points,
-                        stepped: 'after',
                         borderColor: VIEW.color,
                         backgroundColor: VIEW.color + '22',
                         borderWidth: 2,
                         fill: true,
                         pointRadius: 0,
                         segment: MODE === 'total' ? {
-                            borderColor: ctx => isPeakShaving(now, ctx.p0.parsed.x) ? SHAVING_COLOR : NORMAL_COLOR,
-                            backgroundColor: ctx => (isPeakShaving(now, ctx.p0.parsed.x) ? SHAVING_COLOR : NORMAL_COLOR) + '33',
+                            borderColor: ctx => pieceColor(now, ctx),
+                            backgroundColor: ctx => pieceColor(now, ctx) + '33',
                         } : {},
                     }],
                 },
@@ -280,7 +300,7 @@
                             titleColor: '#8da0ad',
                             bodyColor: '#f2f5f7',
                             callbacks: {
-                                title: items => clockTime(now, items[0].parsed.x),
+                                title: items => clockTime(now, items[0].raw.hourStart),
                                 label: item => `${item.parsed.y.toFixed(1)} öre/kWh`,
                             },
                         },
@@ -327,9 +347,13 @@
                     .sort((a, b) => a.start - b.start);
                 if (!slots.length) throw new Error('No price data from Nord Pool');
 
-                const points = slots.map(s => ({ x: (s.start - now) / HOUR, y: VIEW.toPrice(s.ore) }));
-                const last = slots[slots.length - 1];
-                points.push({ x: (last.end - now) / HOUR, y: VIEW.toPrice(last.ore) });
+                // Two points per hour (start and end) instead of a stepped line: the vertical step between two
+                // hours is then its own piece, and can be coloured green if either neighbouring hour is planned.
+                const points = slots.flatMap(s => {
+                    const y = VIEW.toPrice(s.ore);
+                    const hourStart = (s.start - now) / HOUR;
+                    return [{ x: hourStart, y, hourStart }, { x: (s.end - now) / HOUR, y, hourStart }];
+                });
 
                 draw(points, now, from, to);
 

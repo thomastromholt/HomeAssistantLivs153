@@ -1,0 +1,115 @@
+# Peak shaving for the NIBE heat pump. Rules: docs/peak-shaving-rules.md
+#
+# Relay: switch.dry_relay (Zigbee dry contact). ON = contact closed = the NIBE applies its -3 heat-curve
+# offset ("night mode" in the NIBE app). OFF = open = normal comfort curve. After a power 1cut the relay
+# comes back OFF (its power-on behaviour), so the failure mode is normal heating.
+#
+# Helpers (created in the UI/API):
+#   input_select.peak_shaving_mode   Auto / On / Off  (Auto follows the plan, On and Off force the relay)
+#   input_text.peak_shaving_plan     the plan, e.g. "2026-10-11:18,19;2026-10-12:18,19,22,23"
+
+- id: peak_shaving_compute_plan
+  alias: "Peak shaving: compute plan"
+  description: >
+    Every hour (and at start) reads today's and tomorrow's Nord Pool SE3 prices and stores the peak-shaving
+    hours per day in input_text.peak_shaving_plan. Same rules as the price card in www/elpris-24h.html:
+    2-hour blocks, at most 2 a day, at least 2 hours apart, each at least 25 % above the day's average spot
+    and at least 40 öre/kWh dearer than the 4 hours after it.
+  mode: single
+  trigger:
+    - platform: time_pattern
+      minutes: "2"
+    - platform: homeassistant
+      event: start
+  action:
+    - service: nordpool.get_prices_for_date
+      data:
+        config_entry: 01M4G69T394M8BKNHBNQ9E0246
+        date: "{{ now().strftime('%Y-%m-%d') }}"
+        areas: SE3
+      response_variable: prices_today
+    # Tomorrow's prices are published around 13:00; until then this call fails and the plan only has today.
+    - service: nordpool.get_prices_for_date
+      continue_on_error: true
+      data:
+        config_entry: 01M4G69T394M8BKNHBNQ9E0246
+        date: "{{ (now() + timedelta(days=1)).strftime('%Y-%m-%d') }}"
+        areas: SE3
+      response_variable: prices_tomorrow
+    - variables:
+        slots_today: "{{ prices_today['SE3'] }}"
+        slots_tomorrow: "{{ prices_tomorrow['SE3'] if prices_tomorrow is defined and prices_tomorrow else [] }}"
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.peak_shaving_plan
+      data:
+        value: >-
+          {# PLAN-TEMPLATE-BEGIN #}
+          {%- macro day_plan(slots) -%}
+            {%- if slots | length >= 92 -%}
+              {%- set n = (slots | length) // 4 -%}
+              {%- set ns = namespace(avg=[], hr=[]) -%}
+              {%- for i in range(n) -%}
+                {%- set g = slots[i * 4:i * 4 + 4] -%}
+                {%- set ns.avg = ns.avg + [(g | map(attribute='price') | sum) / 4] -%}
+                {%- set ns.hr = ns.hr + [(as_datetime(g[0].start) | as_local).hour] -%}
+              {%- endfor -%}
+              {%- set mean = (ns.avg | sum) / n -%}
+              {%- set wins = namespace(l=[]) -%}
+              {%- for i in range(n - 1) -%}
+                {%- set wins.l = wins.l + [[(ns.avg[i] + ns.avg[i + 1]) / 2, i]] -%}
+              {%- endfor -%}
+              {%- set sel = namespace(c=[]) -%}
+              {%- for w in wins.l | sort(attribute='0', reverse=true) -%}
+                {#- spread: how much dearer the block is than the 4 hours after it, in öre/kWh paid (prices are SEK/MWh, VAT 1.25) -#}
+                {%- set after = ns.avg[w[1] + 2:w[1] + 6] -%}
+                {%- set spread = ((w[0] - (after | sum) / (after | length)) / 10 * 1.25) if (after | length) > 0 else 1000 -%}
+                {%- if sel.c | length < 2 and w[0] >= mean * 1.25 and spread >= 40 -%}
+                  {%- set ok = namespace(v=true) -%}
+                  {%- for j in sel.c -%}{%- if (w[1] - j) | abs < 4 -%}{%- set ok.v = false -%}{%- endif -%}{%- endfor -%}
+                  {%- if ok.v -%}{%- set sel.c = sel.c + [w[1]] -%}{%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- set hrs = namespace(l=[]) -%}
+              {%- for c in sel.c | sort -%}{%- set hrs.l = hrs.l + [ns.hr[c], ns.hr[c + 1]] -%}{%- endfor -%}
+              {{- (as_datetime(slots[0].start) | as_local).strftime('%Y-%m-%d') }}:{{ hrs.l | join(',') -}}
+            {%- endif -%}
+          {%- endmacro -%}
+          {{- [day_plan(slots_today), day_plan(slots_tomorrow)] | select | join(';') -}}
+          {# PLAN-TEMPLATE-END #}
+
+- id: peak_shaving_apply
+  alias: "Peak shaving: switch the heat pump relay"
+  description: >
+    On the hour, and whenever the mode or the plan changes: closes the relay (peak shaving) in a planned hour
+    and opens it otherwise. Mode On/Off overrides the plan. Anything unexpected means relay open (normal).
+  mode: restart
+  trigger:
+    - platform: time_pattern
+      minutes: "0"
+      seconds: "5"
+    - platform: state
+      entity_id:
+        - input_select.peak_shaving_mode
+        - input_text.peak_shaving_plan
+    - platform: homeassistant
+      event: start
+  action:
+    - variables:
+        mode: "{{ states('input_select.peak_shaving_mode') }}"
+        today_entry: >-
+          {{ states('input_text.peak_shaving_plan').split(';')
+             | select('match', now().strftime('%Y-%m-%d') ~ ':') | list | first | default('') }}
+        hours: "{{ today_entry.split(':')[1].split(',') if ':' in today_entry else [] }}"
+        want_on: "{{ mode == 'On' or (mode != 'Off' and (now().hour | string) in hours) }}"
+    - choose:
+        - conditions: "{{ want_on and is_state('switch.dry_relay', 'off') }}"
+          sequence:
+            - service: switch.turn_on
+              target:
+                entity_id: switch.dry_relay
+        - conditions: "{{ not want_on and is_state('switch.dry_relay', 'on') }}"
+          sequence:
+            - service: switch.turn_off
+              target:
+                entity_id: switch.dry_relay

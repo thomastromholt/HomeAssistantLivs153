@@ -35,6 +35,9 @@
 
         .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; gap: 6px; }
         .grid .tile { display: flex; flex-direction: column; justify-content: center; }
+        .grid .tile-label { font-size: 12px; }
+        .grid .tile-value { margin-top: 6px; font-size: 24px; font-weight: 400; }
+        .grid .tile-value small { font-size: 13px; }
     </style>
 </head>
 <body>
@@ -44,6 +47,7 @@
             <span class="pill" id="levelPill"></span>
         </div>
         <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
 
         <div class="top" id="top">
             <svg class="device" viewBox="0 0 100 100" role="img" aria-label="Airthings radon monitor">
@@ -149,6 +153,11 @@
                 const battery = formatNumber(s('battery'));
                 document.getElementById('footer').textContent = battery === null ? '' : `Battery ${battery} %`;
 
+                const problems = [];
+                const minutesSince = (Date.now() - reading.getTime()) / 60000;
+                if (['radon', 'co2', 'temperature'].every(key => isMissing(s(key)))) problems.push('No data from the Airthings');
+                else if (minutesSince > 30) problems.push(`No reading for ${Math.round(minutesSince)} min (out of Bluetooth range?)`);
+                showProblems(problems);
                 showError(null);
             } catch (error) {
                 showError(error);

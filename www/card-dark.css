@@ -54,3 +54,4 @@ body {
 .footer { margin-top: 8px; text-align: center; font-size: 11px; color: #6d808c; }
 
 .error { margin-bottom: 8px; padding: 8px; border-radius: 8px; background: #ff453a; font-size: 13px; }
+.problems { margin: 2px 0 6px; padding: 6px 10px; border-radius: 10px; background: rgba(255, 159, 10, 0.14); color: #ffb340; font-size: 12px; line-height: 1.4; }

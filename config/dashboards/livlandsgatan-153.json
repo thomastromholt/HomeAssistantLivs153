@@ -16,7 +16,7 @@
               "cards": [
                 {
                   "type": "iframe",
-                  "url": "/local/elpris-24h.html?mode=total&v=1791584522",
+                  "url": "/local/elpris-24h.html?mode=total&v=1791813455",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -24,7 +24,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/kia-ceed.html?v=1791584522",
+                  "url": "/local/kia-ceed.html?v=1791813455",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -32,7 +32,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/zaptec.html?v=1791584522",
+                  "url": "/local/zaptec.html?v=1791813455",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -40,26 +40,26 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/heatpump.html?v=1791584522",
+                  "url": "/local/heatpump.html?v=1791813455",
                   "grid_options": {
                     "columns": 12,
-                    "rows": 6
+                    "rows": 7
                   }
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/temperatur.html?v=1791584522",
+                  "url": "/local/temperatur.html?v=1791813455",
                   "grid_options": {
                     "columns": 12,
-                    "rows": 6
+                    "rows": 7
                   }
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/airthings.html?v=1791584522",
+                  "url": "/local/airthings.html?v=1791813455",
                   "grid_options": {
                     "columns": 12,
-                    "rows": 6
+                    "rows": 7
                   }
                 }
               ]

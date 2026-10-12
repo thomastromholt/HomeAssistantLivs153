@@ -21,7 +21,7 @@
         .mode { margin-top: 5px; font-size: 13px; color: #8da0ad; }
         .charging .mode { color: #5fe085; }
 
-        .sub { margin-top: 2px; font-size: 10px; font-weight: 400; color: #6d808c; }
+        .sub { margin-top: 3px; font-size: 12px; font-weight: 400; color: #8da0ad; }
         .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
     </style>
 </head>
@@ -32,6 +32,7 @@
             <span class="pill" id="online"></span>
         </div>
         <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
 
         <div class="gauge">
             <svg viewBox="0 0 120 120" role="img" aria-label="Charging power">
@@ -82,7 +83,7 @@
         const tiles = {
             session: createTile(document.getElementById('tiles'), 'Last session', E.lastSession),
             lifetime: createTile(document.getElementById('tiles'), 'Total', E.lifetime),
-            current: createTile(document.getElementById('tiles'), 'Current limit', E.current),
+            current: createTile(document.getElementById('tiles'), 'Available current', E.current),
         };
         const unit = (state, digits, suffix) => {
             const text = formatNumber(state, digits);
@@ -117,6 +118,10 @@
                 online.textContent = isOnline ? 'Online' : 'Offline';
                 online.className = `pill ${isOnline ? 'good' : 'fair'}`;
 
+                const problems = [];
+                if (['mode', 'power', 'lifetime'].every(key => isMissing(s(key)))) problems.push('No data from Zaptec (cloud connection)');
+                else if (s('online') === 'off') problems.push('Charger is offline: the values may be old');
+                showProblems(problems);
                 showError(null);
             } catch (error) {
                 showError(error);

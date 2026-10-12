@@ -43,6 +43,7 @@
     <div class="container">
         <div class="head"><span class="name">Temperatur</span></div>
         <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
         <div class="rooms" id="rooms"></div>
     </div>
 
@@ -85,14 +86,17 @@
                 const states = await statesOf(sensors.flatMap(room => [room.temp, room.humidity]));
                 const weather = Object.fromEntries(await Promise.all(ROOMS.filter(room => room.weather)
                     .map(async room => [room.name, (await callApi('GET', `states/${room.weather}`)).attributes])));
+                const problems = [];
                 ROOMS.forEach((room, i) => {
                     const temp = formatNumber(room.weather ? weather[room.name].temperature : states[room.temp], 1);
                     const humidity = formatNumber(room.weather ? weather[room.name].humidity : states[room.humidity], 0);
+                    if (temp === null) problems.push(room.weather ? 'Outdoor weather unavailable' : `${room.name}: sensor offline`);
                     cells[i].temp.innerHTML = temp === null ? '–' : `${temp}<small> °C</small>`;
                     cells[i].humidity.textContent = humidity === null ? '–' : `💧 ${humidity} %`;
                     cells[i].humidity.classList.remove('good', 'fair', 'poor');
                     if (humidity !== null && !room.weather) cells[i].humidity.classList.add(humidityLevel(parseFloat(states[room.humidity])));
                 });
+                showProblems(problems);
                 showError(null);
             } catch (error) {
                 showError(error);
