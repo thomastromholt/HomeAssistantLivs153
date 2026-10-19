@@ -1,6 +1,6 @@
 # Peak shaving for the NIBE heat pump. Rules: docs/peak-shaving-rules.md
 #
-# Relay: switch.dry_relay (Zigbee dry contact). ON = contact closed = the NIBE applies its -3 heat-curve
+# Relay: switch.dry_relay (Zigbee dry contact). ON = contact closed = the NIBE applies its -2 heat-curve
 # offset ("night mode" in the NIBE app). OFF = open = normal comfort curve. After a power 1cut the relay
 # comes back OFF (its power-on behaviour), so the failure mode is normal heating.
 #
@@ -45,26 +45,41 @@
       data:
         value: >-
           {# PLAN-TEMPLATE-BEGIN #}
-          {%- macro day_plan(slots) -%}
+          {%- macro day_plan(slots, next_slots) -%}
             {%- if slots | length >= 92 -%}
               {%- set n = (slots | length) // 4 -%}
-              {%- set ns = namespace(avg=[], hr=[]) -%}
+              {%- set ns = namespace(avg=[], hr=[], nxt=[]) -%}
               {%- for i in range(n) -%}
                 {%- set g = slots[i * 4:i * 4 + 4] -%}
                 {%- set ns.avg = ns.avg + [(g | map(attribute='price') | sum) / 4] -%}
                 {%- set ns.hr = ns.hr + [(as_datetime(g[0].start) | as_local).hour] -%}
               {%- endfor -%}
+              {#- the next day's hourly prices, so the 4 hours after a late block can run past midnight -#}
+              {%- if next_slots | length >= 92 -%}
+                {%- for i in range((next_slots | length) // 4) -%}
+                  {%- set ns.nxt = ns.nxt + [(next_slots[i * 4:i * 4 + 4] | map(attribute='price') | sum) / 4] -%}
+                {%- endfor -%}
+              {%- endif -%}
               {%- set mean = (ns.avg | sum) / n -%}
               {%- set wins = namespace(l=[]) -%}
               {%- for i in range(n - 1) -%}
                 {%- set wins.l = wins.l + [[(ns.avg[i] + ns.avg[i + 1]) / 2, i]] -%}
               {%- endfor -%}
+              {#- saving: how much dearer a block is than the 4 hours after it, where the held-back heat is made up,
+                  in öre/kWh paid (prices are SEK/MWh, VAT 1.25). The 4 hours may run into the next day; if they are
+                  not all known, the block does not count. Only blocks 25 % above the day's average and saving 40+. -#}
+              {%- set cand = namespace(l=[]) -%}
+              {%- for w in wins.l -%}
+                {%- set after = (ns.avg + ns.nxt)[w[1] + 2:w[1] + 6] -%}
+                {%- if (after | length) == 4 and w[0] >= mean * 1.25 -%}
+                  {%- set saving = (w[0] - (after | sum) / 4) / 10 * 1.25 -%}
+                  {%- if saving >= 40 -%}{%- set cand.l = cand.l + [[saving, w[1]]] -%}{%- endif -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {#- the biggest savings first, at most 2 blocks, at least 2 normal hours between them -#}
               {%- set sel = namespace(c=[]) -%}
-              {%- for w in wins.l | sort(attribute='0', reverse=true) -%}
-                {#- spread: how much dearer the block is than the 4 hours after it, in öre/kWh paid (prices are SEK/MWh, VAT 1.25) -#}
-                {%- set after = ns.avg[w[1] + 2:w[1] + 6] -%}
-                {%- set spread = ((w[0] - (after | sum) / (after | length)) / 10 * 1.25) if (after | length) > 0 else 1000 -%}
-                {%- if sel.c | length < 2 and w[0] >= mean * 1.25 and spread >= 40 -%}
+              {%- for w in cand.l | sort(attribute='0', reverse=true) -%}
+                {%- if sel.c | length < 2 -%}
                   {%- set ok = namespace(v=true) -%}
                   {%- for j in sel.c -%}{%- if (w[1] - j) | abs < 4 -%}{%- set ok.v = false -%}{%- endif -%}{%- endfor -%}
                   {%- if ok.v -%}{%- set sel.c = sel.c + [w[1]] -%}{%- endif -%}
@@ -75,7 +90,7 @@
               {{- (as_datetime(slots[0].start) | as_local).strftime('%Y-%m-%d') }}:{{ hrs.l | join(',') -}}
             {%- endif -%}
           {%- endmacro -%}
-          {{- [day_plan(slots_today), day_plan(slots_tomorrow)] | select | join(';') -}}
+          {{- [day_plan(slots_today, slots_tomorrow), day_plan(slots_tomorrow, [])] | select | join(';') -}}
           {# PLAN-TEMPLATE-END #}
 
 - id: peak_shaving_apply

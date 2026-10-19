@@ -12,7 +12,7 @@ Managed with Claude Code over SSH.
 | Air quality | Airthings Wave Plus (Bluetooth): radon, CO₂, VOC, temperature, humidity, pressure |
 | EV | Kia Ceed PHEV (Kia Uvo integration), Zaptec Go2 and Stugan chargers |
 | Prices | Nord Pool SE3 (15-minute), see [docs/elpriskalkulator.md](docs/elpriskalkulator.md) |
-| Heating | NIBE EVP 270, no open interface. Peak shaving (heat-curve −3) is switched by a Zigbee dry-contact relay from the price plan, with a manual override on the heat pump card, see [docs/peak-shaving-rules.md](docs/peak-shaving-rules.md) |
+| Heating | NIBE EVP 270, no open interface. Peak shaving (heat-curve −2) is switched by a Zigbee dry-contact relay from the price plan, with a manual override on the heat pump card, see [docs/peak-shaving-rules.md](docs/peak-shaving-rules.md) |
 
 ## Layout
 

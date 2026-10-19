@@ -1,6 +1,8 @@
-# Peak shaving (NIBE heat curve −3)
+# Peak shaving (NIBE heat curve −2)
 
-The only control is a fixed heat-curve offset: the normal curve is the comfort setting and peak shaving is **−3** (called night mode in the NIBE and eWeLink apps).
+The only control is a fixed heat-curve offset: the normal curve is the comfort setting and peak shaving is **−2** (called night mode in the NIBE and eWeLink apps). The offset is set on the NIBE itself (external adjustment), not in HA.
+
+Changed from −3 to −2 on 2026-10-14: −3 lowered the supply temperature from 36 to 28 °C, which felt like too much. One step is about 2–3 °C supply at autumn temperatures, so −2 gives roughly −5 °C. The measurements below were made at −3.
 There is no pre-heating (+3) and no night-time setback. The only goal is to hold back heat in the most expensive hours.
 
 ## Rules
@@ -10,14 +12,16 @@ Per calendar day, from that day's Nord Pool SE3 prices (hourly average of the 15
 1. A block is exactly **2 hours in a row**.
 2. At most **2 blocks per day**.
 3. At least **2 normal hours between blocks** (the house recovers; no new peak right after a block).
-4. Blocks are the highest-priced 2-hour windows, taken in order of price.
+4. Blocks are chosen by **saving, not by price**: the saving of a block is how much dearer it is than the 4 hours after it (price you pay, incl. VAT), because the held-back heat is made up in those hours. The blocks with the biggest saving are taken first.
 5. A block only counts if its average spot price is **at least 25 % above the day's average**. On a flat day there is no peak shaving.
-6. A block only counts if it is **at least 40 öre/kWh dearer than the 4 hours after it** (price you pay, incl. VAT; no later hours that day means no check). That gap is what a block saves per kWh it shifts, because the held-back heat is made up in those hours. Without it a block on a high-price day, where everything is above average, saves almost nothing.
-7. The plan depends only on that day's published prices, so it is the same whenever it is computed (tomorrow's prices appear around 13:00).
+6. A block only counts if it **saves at least 40 öre/kWh**. The 4 hours after it may run past midnight into the next day's prices; if any of them is not published yet, the block does not count (no free pass for late blocks).
+7. The plan depends on the published prices only. A late block of today is only planned once tomorrow's prices are out (around 13:00), which is always before it starts.
+
+Why saving and not price: on 2026-10-14 the peak was a plateau from 17 to 22 (≈ 140 öre). Peak shaving 17–19 would have saved ≈ 13 öre/kWh, because the heat is then made up at 19–23 at almost the same price. 21–23 saved ≈ 57 öre/kWh, because the heat is made up in the cheap night. On a day with a short, sharp peak, the peak itself saves most and is chosen. (With a power tariff, paying for peak kW in set hours, the peak hours would matter in themselves; this house pays a flat grid fee per kWh.)
 
 Spot price decides which hours are dear, not the total price: the grid fee and energy tax are fixed per kWh, so they don't change which hours are worth avoiding. The 40 öre gap is stated in the price you pay, which is 1.25 times the spot difference because of VAT.
 
-The 40 is a starting point (on 2026-10-12 it dropped a 09–11 block that saved 31 öre/kWh and kept ones saving 62 to 173). Once the meter reader shows how much energy a block really shifts, set it from the break-even.
+Before 2026-10-14 blocks were taken in order of price and a block with no later hours that day passed rule 6 unchecked. The 40 is a starting point (on 2026-10-12 it dropped a 09–11 block that saved 31 öre/kWh and kept ones saving 62 to 173). Once the meter reader shows how much energy a block really shifts, set it from the break-even.
 
 ## Why these numbers
 
@@ -31,7 +35,7 @@ If 2 hours is barely noticeable, try 3-hour blocks later (about −1.2 °C).
 
 ## How it controls the heat pump
 
-`switch.dry_relay` (Zigbee dry contact) is wired to the NIBE's external adjustment input. **Closed = peak shaving (−3), open = normal.**
+`switch.dry_relay` (Zigbee dry contact) is wired to the NIBE's external adjustment input. **Closed = peak shaving (−2), open = normal.**
 After a power cut the relay comes back open (its power-on behaviour), so a failure means normal heating.
 
 Two automations in `config/automations/peak_shaving.yaml` (this file *is* `/config/automations.yaml` on the box):

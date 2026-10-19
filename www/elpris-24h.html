@@ -168,9 +168,12 @@
             }));
         }
 
-        function peakHours(day) {
+        // allHours: every known hourly price (today and tomorrow), so the 4 hours after a late block can run
+        // into the next day.
+        function peakHours(day, allHours = day) {
             const mean = day.reduce((sum, s) => sum + s.ore, 0) / day.length;
             const oreAt = new Map(day.map(s => [s.start, s.ore]));
+            const oreAnyDay = new Map(allHours.map(s => [s.start, s.ore]));
             const windows = day
                 .map(s => s.start)
                 .filter(start => oreAt.has(start + HOUR))
@@ -178,17 +181,25 @@
                 .sort((a, b) => b.avg - a.avg);
 
             // How much cheaper the 4 hours after a block are, in öre/kWh you pay. That is where the held-back
-            // heat is made up, so that gap is what a block saves per kWh it shifts. No later hours: no check.
+            // heat is made up, so that gap is what a block saves per kWh it shifts. The 4 hours may run into
+            // the next day; if any of them is not published yet, the block does not count (no free pass).
             const spreadAfter = w => {
-                const after = [2, 3, 4, 5].map(k => oreAt.get(w.start + k * HOUR)).filter(v => v !== undefined);
-                return after.length ? (w.avg - after.reduce((a, b) => a + b) / after.length) * VAT : Infinity;
+                const after = [2, 3, 4, 5].map(k => oreAnyDay.get(w.start + k * HOUR));
+                if (after.some(v => v === undefined)) return -Infinity;
+                return (w.avg - after.reduce((a, b) => a + b) / after.length) * VAT;
             };
 
+            // Blocks are chosen by saving, not by price: on a long plateau the end of it saves most, because
+            // the held-back heat is then made up in cheaper hours.
             const minStartDistance = (PEAK_BLOCK_HOURS + PEAK_RECOVERY_HOURS) * HOUR;
+            const candidates = windows
+                .filter(w => w.avg >= mean * PEAK_MIN_PREMIUM)
+                .map(w => ({ ...w, saving: spreadAfter(w) }))
+                .filter(w => w.saving >= PEAK_MIN_SPREAD_ORE)
+                .sort((a, b) => b.saving - a.saving);
             const blocks = [];
-            for (const w of windows) {
-                if (blocks.length >= PEAK_MAX_BLOCKS || w.avg < mean * PEAK_MIN_PREMIUM) break;
-                if (spreadAfter(w) < PEAK_MIN_SPREAD_ORE) continue;
+            for (const w of candidates) {
+                if (blocks.length >= PEAK_MAX_BLOCKS) break;
                 if (blocks.every(b => Math.abs(b.start - w.start) >= minStartDistance)) blocks.push(w);
             }
             return new Set(blocks.flatMap(b => [b.start, b.start + HOUR]));
@@ -339,7 +350,7 @@
                 ]);
                 const days = [todayPrices, tomorrowPrices].map(hourlyAverage);
                 // Only plan days with complete prices (tomorrow's are published around 13:00).
-                peaks = new Set(days.filter(day => day.length >= 23).flatMap(day => [...peakHours(day)]));
+                peaks = new Set(days.filter(day => day.length >= 23).flatMap(day => [...peakHours(day, days.flat())]));
 
                 const slots = days
                     .flat()
