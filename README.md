@@ -12,14 +12,14 @@ Managed with Claude Code over SSH.
 | Air quality | Airthings Wave Plus (Bluetooth): radon, CO₂, VOC, temperature, humidity, pressure |
 | EV | Kia Ceed PHEV (Kia Uvo integration), Zaptec Go2 and Stugan chargers |
 | Prices | Nord Pool SE3 (15-minute), see [docs/elpriskalkulator.md](docs/elpriskalkulator.md) |
-| Heating | NIBE EVP 270, no open interface (the heat pump card shows dummy values for now) |
+| Heating | NIBE EVP 270 heating a 45–50 °C water tank, radiators in parallel with one LILJEBAGGE thermostat per room, see [docs/heating-system.md](docs/heating-system.md). No open interface to the heat pump (its card shows dummy values for now) |
 
 ## Layout
 
 ```
 www/       the dashboard cards (HTML), shared card-dark.css / card-common.js, kia-car.png (not committed)
 config/    HA YAML and a backup of the dashboard JSON (config/dashboards/)
-docs/      notes: price formula, Thread setup, radiator thermostat, remote access, AI assistant guide
+docs/      notes: price formula, Thread setup, heating system, radiator thermostat, remote access, AI assistant guide
 tools/     deploy and headless-render scripts
 ```
 

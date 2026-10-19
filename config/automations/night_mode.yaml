@@ -1,13 +1,13 @@
-# Night mode for the radiator thermostats: lower the target by input_number.night_setback between 00:00 and 06:00.
+# Night mode for the radiator thermostats: lower the target by input_number.night_setback between 23:00 and 06:30.
 # Per room: input_boolean.night_mode_<room> (on/off), input_boolean.night_active_<room> (set while lowered),
 # input_number.day_target_<room> (the target to go back to).
 # A target changed by hand during the night wins: the morning step only restores a target the automation set itself.
 # Rooms so far: Stue and Køkken. To add a room: create the three helpers, copy both automations and swap the names.
 - id: night_mode_stue_start
-  alias: Night mode Stue, start 00:00
+  alias: Night mode Stue, start 23:00
   triggers:
     - trigger: time
-      at: "00:00:00"
+      at: "23:00:00"
   conditions:
     - condition: state
       entity_id: input_boolean.night_mode_stue
@@ -33,10 +33,10 @@
         entity_id: input_boolean.night_active_stue
 
 - id: night_mode_stue_end
-  alias: Night mode Stue, end 06:00
+  alias: Night mode Stue, end 06:30
   triggers:
     - trigger: time
-      at: "06:00:00"
+      at: "06:30:00"
   conditions:
     - condition: state
       entity_id: input_boolean.night_active_stue
@@ -58,10 +58,10 @@
         entity_id: input_boolean.night_active_stue
 
 - id: night_mode_kokken_start
-  alias: Night mode Køkken, start 00:00
+  alias: Night mode Køkken, start 23:00
   triggers:
     - trigger: time
-      at: "00:00:00"
+      at: "23:00:00"
   conditions:
     - condition: state
       entity_id: input_boolean.night_mode_kokken
@@ -87,10 +87,10 @@
         entity_id: input_boolean.night_active_kokken
 
 - id: night_mode_kokken_end
-  alias: Night mode Køkken, end 06:00
+  alias: Night mode Køkken, end 06:30
   triggers:
     - trigger: time
-      at: "06:00:00"
+      at: "06:30:00"
   conditions:
     - condition: state
       entity_id: input_boolean.night_active_kokken

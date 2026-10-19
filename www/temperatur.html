@@ -182,7 +182,7 @@
                     night: { active: states['input_boolean.night_active_stue'] === 'on', setback: formatNumber(states['input_number.night_setback'], 1), dayTarget: formatNumber(states['input_number.day_target_stue'], 1) } });
                 document.getElementById('valveDot').className = `dot ${status.level === 'good' ? '' : status.level}`;
                 // The thermostat claims heating while its valve reading is far above the target: not worth showing on the card.
-                const unreliable = status.title === 'Reports heating';
+                const unreliable = status.title === 'Reports heating' || status.title.startsWith('Heating');
                 document.getElementById('valveDot').hidden = unreliable;
                 document.getElementById('valveTitle').textContent = unreliable ? '' : status.title;
                 document.getElementById('valveSub').textContent = status.note || '';
@@ -202,7 +202,7 @@
                     document.getElementById('kokkenTarget').textContent = formatNumber(kitchen.attributes.temperature, 1) ?? '–';
                     const ks = await thermostatStatus({ climate: kitchen, update: kitchenUpdate, battery: parseFloat(kitchenBattery), deviceId: '693637959f507ce567f16408ba4b712d',
                         night: { active: kitchenNight.active === 'on', setback: formatNumber(states['input_number.night_setback'], 1), dayTarget: formatNumber(kitchenNight.dayTarget, 1) } });
-                    const kUnreliable = ks.title === 'Reports heating' || ks.title.startsWith('Lowest setting');
+                    const kUnreliable = ks.title === 'Reports heating' || ks.title.startsWith('Heating') || ks.title.startsWith('Lowest setting');
                     document.getElementById('kokkenDot').className = `dot ${ks.level === 'good' ? '' : ks.level}`;
                     document.getElementById('kokkenDot').hidden = kUnreliable;
                     document.getElementById('kokkenTitle').textContent = kUnreliable ? '' : ks.title;

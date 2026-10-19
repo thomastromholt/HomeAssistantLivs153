@@ -128,7 +128,7 @@ async function thermostatStatus({ climate, update, battery, deviceId, night }) {
     const ago = Math.round((Date.now() - new Date(climate.last_updated)) / 60e3);
     const link = node ? `${node.network_type === 'thread' ? 'Thread' : node.network_type}${node.node_type === 'sleepy_end_device' ? ' (sleeps between reports)' : ''}` : 'connected';
     const contact = ago < 1 ? 'just now' : `${ago} min ago`;
-    const nightNote = night && night.active ? `Night mode: lowered ${night.setback} °C until 06:00 (day target ${night.dayTarget} °C) · ` : '';
+    const nightNote = night && night.active ? `Night mode: lowered ${night.setback} °C until 06:30 (day target ${night.dayTarget} °C) · ` : '';
     const note = nightNote.replace(/ · $/, '');
     const detail = nightNote + `${link} · last report ${contact}` + (battery !== null && battery < 15 ? ` · battery low (${battery} %)` : '');
 

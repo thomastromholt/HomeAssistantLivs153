@@ -33,7 +33,7 @@
         .switch.on { background: #4a7bd8; }
         .switch.on i { left: 23px; }
         .strip { position: relative; height: 12px; margin-top: 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
-        .strip .band { position: absolute; top: 0; bottom: 0; left: 0; width: 25%; background: rgba(110, 150, 255, 0.55); }
+        .strip .band { position: absolute; top: 0; bottom: 0; background: rgba(110, 150, 255, 0.55); }
         .strip.off .band { background: rgba(255, 255, 255, 0.12); }
         .strip .now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #ffb340; }
         .link-sub { margin-top: 6px; font-size: 12px; color: #8da0ad; line-height: 1.4; }
@@ -71,10 +71,10 @@
 
         <div class="night" id="nightBlock">
             <div class="night-head">
-                <span>🌙 Night mode <b id="nightRule">00–06 · −2 °C</b></span>
+                <span>🌙 Night mode <b id="nightRule">23–06:30 · −2 °C</b></span>
                 <button id="nightToggle" class="switch" role="switch" aria-label="Night mode"><i></i></button>
             </div>
-            <div class="strip" id="strip"><div class="band"></div><div class="now" id="stripNow"></div></div>
+            <div class="strip" id="strip"><div class="band" style="left:0;width:27.08%"></div><div class="band" style="left:95.83%;width:4.17%"></div><div class="now" id="stripNow"></div></div>
             <div class="strip-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
         </div>
 
@@ -183,15 +183,17 @@
                 ...(E.room ? [{ label: 'Room °C', data: last(num(data[E.room])), borderColor: '#5fe085', yAxisID: 'y', pointRadius: 0, borderWidth: 2, tension: 0.2 }] : []),
                 { label: 'Target °C', data: last(target), borderColor: '#8da0ad', borderDash: [5, 4], yAxisID: 'y', pointRadius: 0, borderWidth: 1.5, stepped: 'before' },
             ];
-            // Shade 00:00-06:00 of each day in the range.
+            // Shade the night hours (00:00-06:30 and 23:00-24:00) of each day in the range.
             const nightBands = { id: 'nightBands', beforeDatasetsDraw(c) {
                 const { ctx, chartArea: a, scales: { x } } = c;
                 ctx.save(); ctx.fillStyle = 'rgba(110,150,255,0.13)';
                 const day = new Date(start); day.setHours(0, 0, 0, 0);
                 for (; day < end; day.setDate(day.getDate() + 1)) {
-                    const from = Math.max(day.getTime(), start.getTime());
-                    const to = Math.min(day.getTime() + 6 * 3600e3, end.getTime());
-                    if (to > from) ctx.fillRect(x.getPixelForValue(from), a.top, x.getPixelForValue(to) - x.getPixelForValue(from), a.bottom - a.top);
+                    for (const [fromHour, toHour] of [[0, 6.5], [23, 24]]) {
+                        const from = Math.max(day.getTime() + fromHour * 3600e3, start.getTime());
+                        const to = Math.min(day.getTime() + toHour * 3600e3, end.getTime());
+                        if (to > from) ctx.fillRect(x.getPixelForValue(from), a.top, x.getPixelForValue(to) - x.getPixelForValue(from), a.bottom - a.top);
+                    }
                 }
                 ctx.restore();
             } };
@@ -233,13 +235,13 @@
                 const nightOn = states[E.nightMode] === 'on';
                 document.getElementById('nightToggle').classList.toggle('on', nightOn);
                 document.getElementById('strip').classList.toggle('off', !nightOn);
-                document.getElementById('nightRule').textContent = `00–06 · −${night.setback ?? '–'} °C`;
+                document.getElementById('nightRule').textContent = `23–06:30 · −${night.setback ?? '–'} °C`;
                 const nowHour = new Date().getHours() + new Date().getMinutes() / 60;
                 document.getElementById('stripNow').style.left = `${nowHour / 24 * 100}%`;
                 const status = await thermostatStatus({ climate, update: updateState, battery: parseFloat(states[E.battery]), deviceId: DEVICE_ID, night });
                 document.getElementById('dot').className = `dot ${status.level === 'good' ? '' : status.level}`;
                 // Detail lines (valve reading, Thread link, last report) only when something is wrong or busy; the thermostat's unreliable "Reports heating" is not shown at all.
-                const unreliable = status.title === 'Reports heating';
+                const unreliable = status.title === 'Reports heating' || status.title.startsWith('Heating');
                 const extra = status.level === 'good' || unreliable ? status.note : status.detail;
                 document.getElementById('status').hidden = unreliable && !extra;
                 document.getElementById('statusText').innerHTML = (unreliable ? '' : `<b>${status.title}</b>`) + (extra ? `${unreliable ? '' : '<br>'}<span class="muted">${extra}</span>` : '');

@@ -14,8 +14,8 @@
               "type": "grid",
               "column_span": 2,
               "cards": [
-                {"type": "iframe", "url": "/local/elpris-24h.html?mode=total&v=1792442369", "grid_options": {"columns": 12, "rows": 10}},
-                {"type": "iframe", "url": "/local/elpris-24h.html?mode=spot&v=1792442369", "grid_options": {"columns": 12, "rows": 10}}
+                {"type": "iframe", "url": "/local/elpris-24h.html?mode=total&v=1792443072", "grid_options": {"columns": 12, "rows": 10}},
+                {"type": "iframe", "url": "/local/elpris-24h.html?mode=spot&v=1792443072", "grid_options": {"columns": 12, "rows": 10}}
               ]
             }
           ]
