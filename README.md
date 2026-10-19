@@ -8,18 +8,18 @@ Managed with Claude Code over SSH.
 | Part | Details |
 |------|---------|
 | Host | Intel NUC (16 GB) running Home Assistant OS, `192.168.1.77` |
-| Zigbee | ZHA, temperature/humidity sensors (Sonoff SNZB-02P) in the bedroom, toilet and living room |
+| Thread / Matter | Sonoff ZBDongle-E V2 flashed as a Thread radio (OpenThread Border Router add-on) plus the Matter server, see [docs/thread.md](docs/thread.md). IKEA TIMMERFLOTTE sensor and LILJEBAGGE radiator thermostat in Stue, two KAJPLATS bulbs as Thread routers |
 | Air quality | Airthings Wave Plus (Bluetooth): radon, CO₂, VOC, temperature, humidity, pressure |
 | EV | Kia Ceed PHEV (Kia Uvo integration), Zaptec Go2 and Stugan chargers |
 | Prices | Nord Pool SE3 (15-minute), see [docs/elpriskalkulator.md](docs/elpriskalkulator.md) |
-| Heating | NIBE EVP 270, no open interface. Peak shaving (heat-curve −2) is switched by a Zigbee dry-contact relay from the price plan, with a manual override on the heat pump card, see [docs/peak-shaving-rules.md](docs/peak-shaving-rules.md) |
+| Heating | NIBE EVP 270, no open interface (the heat pump card shows dummy values for now) |
 
 ## Layout
 
 ```
 www/       the dashboard cards (HTML), shared card-dark.css / card-common.js, kia-car.png (not committed)
 config/    HA YAML and a backup of the dashboard JSON (config/dashboards/)
-docs/      notes: price formula, peak-shaving rules, remote access, AI assistant guide
+docs/      notes: price formula, Thread setup, radiator thermostat, remote access, AI assistant guide
 tools/     deploy and headless-render scripts
 ```
 

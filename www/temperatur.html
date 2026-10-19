@@ -6,7 +6,17 @@
     <title>Temperatur</title>
     <link rel="stylesheet" href="/local/card-dark.css?v=1">
     <style>
-        .rooms { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+        .rooms { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+        .zone { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 8px 6px; border-radius: 16px; border: 1px solid rgba(100, 210, 255, 0.28); background: rgba(100, 210, 255, 0.05); }
+        .zone-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 4px 6px; font-size: 15px; font-weight: 600; }
+        .zone-link { font-size: 11px; font-weight: 400; color: #8da0ad; text-align: right; }
+        .zone-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr auto 1.25fr; align-items: stretch; gap: 4px; }
+        .zone-join { align-self: center; color: #64d2ff; font-size: 18px; }
+        .outside { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
+        .outside .value { width: auto; padding: 2px 6px; }
+        .out-temp { font-size: 22px; font-weight: 300; color: #64d2ff; }
+        .out-temp small { font-size: 13px; color: #8da0ad; }
+        .out-humidity { font-size: 15px; color: #8da0ad; }
 
         .room {
             display: flex;
@@ -17,8 +27,9 @@
             background: rgba(255, 255, 255, 0.06);
             text-align: center;
         }
+        .room .tile-label { font-size: 12px; }
 
-        .value {
+        .value, .trv {
             display: block;
             width: 100%;
             padding: 3px 0;
@@ -29,14 +40,25 @@
             font-family: inherit;
             cursor: pointer;
         }
-        .value:hover, .value:focus-visible { background: rgba(255, 255, 255, 0.1); outline: none; }
-        .room .tile-label { font-size: 12px; }
-        .room-temp { margin-top: 6px; font-size: 38px; font-weight: 300; color: #64d2ff; }
+        .value:hover, .value:focus-visible, .trv:hover, .trv:focus-visible { background: rgba(255, 255, 255, 0.1); outline: none; }
+        .room-temp { margin-top: 4px; font-size: 32px; font-weight: 300; color: #64d2ff; }
         .room-temp small { font-size: 17px; color: #8da0ad; }
         .room-humidity { font-size: 19px; color: #8da0ad; }
         .room-humidity.good { color: #5fe085; }
         .room-humidity.fair { color: #ffb340; }
         .room-humidity.poor { color: #ff6b61; }
+
+        .valve { padding: 10px 6px; }
+        .trv-target { font-size: 30px; font-weight: 300; line-height: 1.1; }
+        .trv-target small { font-size: 15px; color: #8da0ad; }
+        .trv-status { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 4px; font-size: 14px; }
+        .dot { width: 9px; height: 9px; border-radius: 50%; background: #5fe085; }
+        .dot.busy { background: #ffb340; animation: pulse 1.2s infinite; }
+        .dot.bad { background: #ff6b61; }
+        @keyframes pulse { 50% { opacity: 0.3; } }
+        .trv-sub { margin-top: 4px; font-size: 13px; color: #8da0ad; }
+        .trv-sub b { font-weight: 600; color: #c5d1d9; }
+        .trv-sub b.heating { color: #ffb340; }
     </style>
 </head>
 <body>
@@ -44,58 +66,157 @@
         <div class="head"><span class="name">Temperatur</span></div>
         <div id="error" class="error" hidden></div>
         <div id="problems" class="problems" hidden></div>
-        <div class="rooms" id="rooms"></div>
+
+        <div class="rooms">
+            <div class="zone">
+                <div class="zone-head"><span>Stue</span></div>
+                <div class="zone-body">
+                    <div class="room">
+                        <div class="tile-label">Thermometer</div>
+                        <button class="value room-temp" id="stueTemp"></button>
+                        <button class="value room-humidity" id="stueHumidity"></button>
+                    </div>
+                    <div class="zone-join" aria-hidden="true">⇄</div>
+                    <div class="room valve">
+                        <button class="trv" id="valve">
+                            <div class="tile-label">Set temp</div>
+                            <div class="trv-target"><span id="valveTarget">–</span><small> °C</small></div>
+                            <div class="trv-status"><span class="dot" id="valveDot"></span><b id="valveTitle">–</b></div>
+                            <div class="trv-sub" id="valveSub"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="zone" id="kokkenZone">
+                <div class="zone-head"><span>Køkken</span></div>
+                <div class="zone-body">
+                    <div class="room">
+                        <div class="tile-label">Temperature</div>
+                        <button class="value room-temp" id="kokkenTemp"></button>
+                    </div>
+                    <div class="zone-join" aria-hidden="true"></div>
+                    <div class="room valve">
+                        <button class="trv" id="kokkenValve">
+                            <div class="tile-label">Set temp</div>
+                            <div class="trv-target"><span id="kokkenTarget">–</span><small> °C</small></div>
+                            <div class="trv-status"><span class="dot" id="kokkenDot"></span><b id="kokkenTitle">–</b></div>
+                            <div class="trv-sub" id="kokkenSub"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="outside">
+                <span class="tile-label">Ude</span>
+                <button class="value out-temp" id="outTemp"></button>
+                <button class="value out-humidity" id="outHumidity"></button>
+            </div>
+        </div>
     </div>
 
     <script src="/local/card-common.js?v=1"></script>
     <script>
-        const ROOMS = [
-            { name: 'Soveværelse', temp: 'sensor.ewelink_snzb_02p_temperatur', humidity: 'sensor.ewelink_snzb_02p_luftfugtighed' },
-            { name: 'Toilet', temp: 'sensor.toilet_temperatur', humidity: 'sensor.toilet_luftfugtighed' },
-            { name: 'Stue', temp: 'sensor.stue_stuen_temp_temperatur', humidity: 'sensor.stue_stuen_temp_luftfugtighed' },
-            // Outdoors comes from the internet (met.no weather forecast), not from a sensor.
-            { name: 'Ude', weather: 'weather.forecast_home' },
-        ];
+        // Stue: the IKEA TIMMERFLOTTE sensor (Thread/Matter). Radiator: the IKEA LILJEBAGGE radiator thermostat.
+        const E = {
+            stueTemp: 'sensor.timmerflotte_temp_hmd_sensor_temperatur',
+            stueHumidity: 'sensor.timmerflotte_temp_hmd_sensor_luftfugtighed',
+            sensorBattery: 'sensor.timmerflotte_temp_hmd_sensor_batteri',
+            valve: 'climate.liljebagge_radiator_thermostat',
+            valveUpdate: 'update.liljebagge_radiator_thermostat_firmware',
+            valveBattery: 'sensor.liljebagge_radiator_thermostat_batteri',
+            kokken: 'climate.liljebagge_radiator_thermostat_2',
+            kokkenUpdate: 'update.liljebagge_radiator_thermostat_firmware_2',
+            kokkenBattery: 'sensor.liljebagge_radiator_thermostat_batteri_2',
+            outdoor: 'weather.forecast_home',   // from the internet (met.no), not a sensor
+        };
 
         // Airthings' own guide values for humidity.
         const humidityLevel = pct => pct >= 25 && pct <= 60 ? 'good' : pct >= 15 && pct <= 70 ? 'fair' : 'poor';
 
-        function valueButton(className, entityId) {
-            const button = document.createElement('button');
-            button.className = `value ${className}`;
-            button.addEventListener('click', () => openHistory(entityId));
-            return button;
-        }
+        const bind = (id, entityId) => document.getElementById(id).addEventListener('click', () => openHistory(entityId));
+        bind('stueTemp', E.stueTemp);
+        bind('stueHumidity', E.stueHumidity);
+        bind('outTemp', E.outdoor);
+        bind('outHumidity', E.outdoor);
+        document.getElementById('kokkenValve').addEventListener('click', () => openPopup('/local/liljebagge.html?room=kokken&v=' + Date.now()));
+        document.getElementById('kokkenTemp').addEventListener('click', () => openPopup('/local/liljebagge.html?room=kokken&v=' + Date.now()));
+        document.getElementById('valve').addEventListener('click', () => openPopup('/local/liljebagge.html?v=' + Date.now()));
 
-        const cells = ROOMS.map(room => {
-            const card = document.createElement('div');
-            card.className = 'room';
-            const label = document.createElement('div');
-            label.className = 'tile-label';
-            label.textContent = room.name;
-            const temp = valueButton('room-temp', room.weather ?? room.temp);
-            const humidity = valueButton('room-humidity', room.weather ?? room.humidity);
-            card.append(label, temp, humidity);
-            document.getElementById('rooms').append(card);
-            return { temp, humidity };
-        });
+        const degrees = (value, digits = 1) => {
+            const text = formatNumber(value, digits);
+            return text === null ? '–' : `${text}<small> °C</small>`;
+        };
+        const percent = value => {
+            const text = formatNumber(value, 0);
+            return text === null ? '–' : `💧 ${text} %`;
+        };
+        const ACTIONS = { heating: ['Heating', 'heating'], idle: ['Idle', ''], off: ['Off', ''] };
 
         async function render() {
             try {
-                const sensors = ROOMS.filter(room => !room.weather);
-                const states = await statesOf(sensors.flatMap(room => [room.temp, room.humidity]));
-                const weather = Object.fromEntries(await Promise.all(ROOMS.filter(room => room.weather)
-                    .map(async room => [room.name, (await callApi('GET', `states/${room.weather}`)).attributes])));
+                const states = await statesOf([E.stueTemp, E.stueHumidity, E.sensorBattery, E.valveBattery, 'input_boolean.night_active_stue', 'input_number.day_target_stue', 'input_number.night_setback']);
+                const valve = await callApi('GET', `states/${E.valve}`).catch(() => null);
+                const valveUpdate = await callApi('GET', `states/${E.valveUpdate}`).catch(() => null);
+                const weather = await callApi('GET', `states/${E.outdoor}`).catch(() => null);
                 const problems = [];
-                ROOMS.forEach((room, i) => {
-                    const temp = formatNumber(room.weather ? weather[room.name].temperature : states[room.temp], 1);
-                    const humidity = formatNumber(room.weather ? weather[room.name].humidity : states[room.humidity], 0);
-                    if (temp === null) problems.push(room.weather ? 'Outdoor weather unavailable' : `${room.name}: sensor offline`);
-                    cells[i].temp.innerHTML = temp === null ? '–' : `${temp}<small> °C</small>`;
-                    cells[i].humidity.textContent = humidity === null ? '–' : `💧 ${humidity} %`;
-                    cells[i].humidity.classList.remove('good', 'fair', 'poor');
-                    if (humidity !== null && !room.weather) cells[i].humidity.classList.add(humidityLevel(parseFloat(states[room.humidity])));
-                });
+
+                document.getElementById('stueTemp').innerHTML = degrees(states[E.stueTemp]);
+                const humidity = document.getElementById('stueHumidity');
+                humidity.textContent = percent(states[E.stueHumidity]);
+                humidity.classList.remove('good', 'fair', 'poor');
+                if (!isMissing(states[E.stueHumidity])) humidity.classList.add(humidityLevel(parseFloat(states[E.stueHumidity])));
+                if (isMissing(states[E.stueTemp])) problems.push('Stue: Timmerflotte is offline');
+
+                const out = weather && weather.attributes;
+                document.getElementById('outTemp').innerHTML = degrees(out && out.temperature);
+                document.getElementById('outHumidity').textContent = percent(out && out.humidity);
+                if (!out || out.temperature === undefined) problems.push('Outdoor weather unavailable');
+
+                if (!valve || isMissing(valve.state)) {
+                    document.getElementById('valveTarget').textContent = '–';
+                    document.getElementById('valveSub').textContent = 'Radiator thermostat is offline';
+                    problems.push('Stue: radiator thermostat is offline');
+                } else {
+                    document.getElementById('valveTarget').textContent = formatNumber(valve.attributes.temperature, 1) ?? '–';
+                }
+                const status = await thermostatStatus({ climate: valve, update: valveUpdate, battery: parseFloat(states[E.valveBattery]), deviceId: '88a5efd90680fa98c6117641c9084aec',
+                    night: { active: states['input_boolean.night_active_stue'] === 'on', setback: formatNumber(states['input_number.night_setback'], 1), dayTarget: formatNumber(states['input_number.day_target_stue'], 1) } });
+                document.getElementById('valveDot').className = `dot ${status.level === 'good' ? '' : status.level}`;
+                // The thermostat claims heating while its valve reading is far above the target: not worth showing on the card.
+                const unreliable = status.title === 'Reports heating';
+                document.getElementById('valveDot').hidden = unreliable;
+                document.getElementById('valveTitle').textContent = unreliable ? '' : status.title;
+                document.getElementById('valveSub').textContent = status.note || '';
+                if (valve && valve.state === 'off') problems.push('Stue: radiator thermostat is switched off');
+                const kitchen = await callApi('GET', `states/${E.kokken}`).catch(() => null);
+                const kitchenUpdate = await callApi('GET', `states/${E.kokkenUpdate}`).catch(() => null);
+                const kitchenBattery = await stateOf(E.kokkenBattery).catch(() => null);
+                const kitchenNight = { active: await stateOf('input_boolean.night_active_kokken'), dayTarget: await stateOf('input_number.day_target_kokken') };
+                if (!kitchen || isMissing(kitchen.state)) {
+                    document.getElementById('kokkenTemp').innerHTML = degrees(null);
+                    document.getElementById('kokkenTarget').textContent = '–';
+                    document.getElementById('kokkenTitle').textContent = 'Offline';
+                    document.getElementById('kokkenDot').className = 'dot bad';
+                    problems.push('Køkken: radiator thermostat is offline');
+                } else {
+                    document.getElementById('kokkenTemp').innerHTML = degrees(kitchen.attributes.current_temperature);
+                    document.getElementById('kokkenTarget').textContent = formatNumber(kitchen.attributes.temperature, 1) ?? '–';
+                    const ks = await thermostatStatus({ climate: kitchen, update: kitchenUpdate, battery: parseFloat(kitchenBattery), deviceId: '693637959f507ce567f16408ba4b712d',
+                        night: { active: kitchenNight.active === 'on', setback: formatNumber(states['input_number.night_setback'], 1), dayTarget: formatNumber(kitchenNight.dayTarget, 1) } });
+                    const kUnreliable = ks.title === 'Reports heating' || ks.title.startsWith('Lowest setting');
+                    document.getElementById('kokkenDot').className = `dot ${ks.level === 'good' ? '' : ks.level}`;
+                    document.getElementById('kokkenDot').hidden = kUnreliable;
+                    document.getElementById('kokkenTitle').textContent = kUnreliable ? '' : ks.title;
+                    document.getElementById('kokkenSub').textContent = ks.note || '';
+                    if (kitchen.state === 'off') problems.push('Køkken: radiator thermostat is switched off');
+                }
+                const kBat = parseFloat(kitchenBattery);
+                if (!Number.isNaN(kBat) && kBat < 15) problems.push(`Køkken thermostat battery is low (${kBat} %)`);
+                const sensorBattery = parseFloat(states[E.sensorBattery]);
+                if (!Number.isNaN(sensorBattery) && sensorBattery < 15) problems.push(`Timmerflotte battery is low (${sensorBattery} %)`);
+
+                const valveBattery = parseFloat(states[E.valveBattery]);
+                if (!Number.isNaN(valveBattery) && valveBattery < 15) problems.push(`Radiator thermostat battery is low (${valveBattery} %)`);
+
                 showProblems(problems);
                 showError(null);
             } catch (error) {
@@ -103,6 +224,7 @@
             }
         }
 
+        watchEntities([E.valve, E.valveUpdate, E.kokken, E.kokkenUpdate, 'input_boolean.night_active_kokken', 'input_boolean.night_active_stue'], () => render());
         render();
         setInterval(render, 30e3);
     </script>

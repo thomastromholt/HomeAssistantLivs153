@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LILJEBAGGE</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        .container { overflow-y: auto; }
+        .close { border: 0; background: rgba(255, 255, 255, 0.08); color: #c5d1d9; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; }
+        .big { display: flex; gap: 6px; margin: 6px 0; }
+        .big .tile { flex: 1; text-align: center; cursor: default; }
+        .big .tile-value { font-size: 28px; font-weight: 300; }
+        .ranges { display: flex; gap: 6px; margin: 8px 0 4px; }
+        .ranges button { flex: 1; padding: 5px 0; border: 0; border-radius: 8px; background: rgba(255, 255, 255, 0.06); color: #8da0ad; font-family: inherit; cursor: pointer; }
+        .ranges button.on { background: rgba(100, 210, 255, 0.2); color: #64d2ff; }
+        .chart { position: relative; height: 230px; flex: none; }
+        .rows { margin-top: 10px; }
+        .rows div { display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); font-size: 14px; }
+        .rows span:first-child { color: #8da0ad; }
+        .setter { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+        .setter button { width: 52px; height: 52px; border: 0; border-radius: 14px; background: rgba(255, 255, 255, 0.08); color: #f2f5f7; font-size: 28px; cursor: pointer; }
+        .setter button:active { background: rgba(255, 255, 255, 0.2); }
+        .set-value { flex: 1; text-align: center; font-size: 34px; font-weight: 300; }
+        .set-value small { font-size: 16px; color: #8da0ad; }
+        .set-hint { font-size: 11px; color: #8da0ad; text-transform: uppercase; letter-spacing: 0.6px; }
+        .night { margin: 6px 0; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
+        .night-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+        .night-head b { color: #8fb4ff; font-weight: 600; margin-left: 4px; }
+        .switch { position: relative; width: 46px; height: 26px; border: 0; border-radius: 13px; background: rgba(255, 255, 255, 0.18); cursor: pointer; }
+        .switch i { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #f2f5f7; transition: left .15s; }
+        .switch.on { background: #4a7bd8; }
+        .switch.on i { left: 23px; }
+        .strip { position: relative; height: 12px; margin-top: 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+        .strip .band { position: absolute; top: 0; bottom: 0; left: 0; width: 25%; background: rgba(110, 150, 255, 0.55); }
+        .strip.off .band { background: rgba(255, 255, 255, 0.12); }
+        .strip .now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #ffb340; }
+        .link-sub { margin-top: 6px; font-size: 12px; color: #8da0ad; line-height: 1.4; }
+        .strip-axis { display: flex; justify-content: space-between; margin-top: 3px; font-size: 10px; color: #6d808c; }
+        .heat { color: #ffb340; }
+        .status { display: flex; align-items: center; line-height: 1.35; gap: 8px; margin: 4px 0 2px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); font-size: 14px; }
+        .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5fe085; }
+        .dot.busy { background: #ffb340; animation: pulse 1.2s infinite; }
+        .dot.bad { background: #ff6b61; }
+        @keyframes pulse { 50% { opacity: 0.3; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head">
+            <span class="name">Radiator <span class="muted">· <span id="roomName">Stue</span></span></span>
+            <button class="close" id="close" aria-label="Close">✕</button>
+        </div>
+        <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
+
+        <div class="status" id="status"><span class="dot" id="dot"></span><span id="statusText">–</span></div>
+
+        <div class="big">
+            <div class="tile"><div class="tile-label">Reads</div><div class="tile-value" id="current">–</div></div>
+            <div class="tile"><div class="tile-label">Target</div><div class="tile-value" id="target">–</div></div>
+            <div class="tile"><div class="tile-label">Status</div><div class="tile-value" id="action" style="font-size:20px;padding-top:6px">–</div></div>
+        </div>
+
+        <div class="setter">
+            <button id="down" aria-label="Lower">−</button>
+            <div class="set-value"><span id="setValue">–</span><small> °C</small><div class="set-hint" id="setHint">Set target</div></div>
+            <button id="up" aria-label="Raise">+</button>
+        </div>
+
+        <div class="night" id="nightBlock">
+            <div class="night-head">
+                <span>🌙 Night mode <b id="nightRule">00–06 · −2 °C</b></span>
+                <button id="nightToggle" class="switch" role="switch" aria-label="Night mode"><i></i></button>
+            </div>
+            <div class="strip" id="strip"><div class="band"></div><div class="now" id="stripNow"></div></div>
+            <div class="strip-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+        </div>
+
+        <div class="night" id="roomBlock">
+            <div class="night-head"><span>📍 Same zone as the room thermometer <b id="linkValue"></b></span></div>
+            <div class="link-sub" id="linkSub"></div>
+        </div>
+
+        <div class="ranges" id="ranges">
+            <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="72">3 d</button><button data-h="168">7 d</button>
+        </div>
+        <div class="chart"><canvas id="chart"></canvas></div>
+
+        <div class="rows" id="rows"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        // One page for every LILJEBAGGE thermostat: ?room=stue (default) or ?room=kokken.
+        // Only Stue has a room thermometer so far; that block is hidden elsewhere. Night mode runs in both rooms.
+        const ROOMS = {
+            stue: { name: 'Stue', suffix: '', deviceId: '88a5efd90680fa98c6117641c9084aec', room: 'sensor.timmerflotte_temp_hmd_sensor_temperatur',
+                    night: { mode: 'input_boolean.night_mode_stue', active: 'input_boolean.night_active_stue', dayTarget: 'input_number.day_target_stue' } },
+            kokken: { name: 'Køkken', suffix: '_2', deviceId: '693637959f507ce567f16408ba4b712d', room: null,
+                    night: { mode: 'input_boolean.night_mode_kokken', active: 'input_boolean.night_active_kokken', dayTarget: 'input_number.day_target_kokken' } },
+        };
+        const ROOM = ROOMS[new URLSearchParams(location.search).get('room')] || ROOMS.stue;
+        const S = ROOM.suffix, P = 'liljebagge_radiator_thermostat';
+        const DEVICE_ID = ROOM.deviceId;
+        const E = {
+            climate: `climate.${P}${S}`,
+            temp: `sensor.${P}_temperatur${S}`,
+            battery: `sensor.${P}_batteri${S}`,
+            voltage: `sensor.${P}_batterispaending${S}`,
+            offset: `number.${P}_temperature_offset${S}`,
+            update: `update.${P}_firmware${S}`,
+            nightMode: ROOM.night?.mode ?? null,
+            nightActive: ROOM.night?.active ?? null,
+            dayTarget: ROOM.night?.dayTarget ?? null,
+            setback: ROOM.night ? 'input_number.night_setback' : null,
+            room: ROOM.room,
+            remaining: `sensor.${P}_time_remaining${S}`,
+        };
+        document.getElementById('roomName').textContent = ROOM.name;
+        document.title = `Radiator ${ROOM.name}`;
+        if (!ROOM.night) document.getElementById('nightBlock').hidden = true;
+        if (!ROOM.room) document.getElementById('roomBlock').hidden = true;
+
+        // Manual target: +/- change a pending value, which is sent a moment after the last tap.
+        let deviceNote = 0;
+        let pending = null, sendTimer = null, limits = { min: 5, max: 35 }, shownTarget = null, mode = 'heat';
+        const showPending = () => {
+            document.getElementById('setValue').textContent = formatNumber(pending ?? shownTarget, 1) ?? '–';
+            document.getElementById('setHint').textContent = pending !== null ? 'Sending…' : Date.now() < deviceNote ? 'Changed on the thermostat' : 'Set target';
+        };
+        function nudge(delta) {
+            const base = pending ?? shownTarget;
+            if (base === null) return;
+            pending = Math.min(limits.max, Math.max(limits.min, Math.round((base + delta) * 2) / 2));
+            showPending();
+            clearTimeout(sendTimer);
+            sendTimer = setTimeout(async () => {
+                const value = pending;
+                try {
+                    await callApi('POST', 'services/climate/set_temperature', { entity_id: E.climate, temperature: value });
+                    shownTarget = value;
+                } catch (error) { showError(error); }
+                pending = null;
+                showPending();
+                render();
+            }, 1200);
+        }
+        document.getElementById('down').addEventListener('click', () => nudge(-0.5));
+        document.getElementById('up').addEventListener('click', () => nudge(0.5));
+        document.getElementById('nightToggle').addEventListener('click', async () => {
+            try {
+                await callApi('POST', 'services/input_boolean/toggle', { entity_id: E.nightMode });
+                render();
+            } catch (error) { showError(error); }
+        });
+
+        document.getElementById('close').addEventListener('click', () => closePopup());
+
+        let hours = Number(new URLSearchParams(location.search).get('h')) || 24;
+        let chart = null;
+
+        async function history(ids, start, end) {
+            const url = `history/period/${start.toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${encodeURIComponent(end.toISOString())}&significant_changes_only=0`;
+            const result = await callApi('GET', url);
+            return Object.fromEntries(result.map(rows => [rows[0].entity_id, rows]));
+        }
+        const at = row => new Date(row.last_updated || row.last_changed).getTime();
+
+        async function drawChart() {
+            const end = new Date();
+            const start = new Date(end - hours * 3600e3);
+            const data = await history([E.climate, E.temp, E.room].filter(Boolean), start, end);
+            const num = rows => (rows || []).filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ x: at(r), y: parseFloat(r.state) }));
+            const climate = data[E.climate] || [];
+            const target = climate.filter(r => r.attributes && r.attributes.temperature !== undefined).map(r => ({ x: at(r), y: r.attributes.temperature }));
+            const reads = climate.filter(r => r.attributes && r.attributes.current_temperature !== undefined).map(r => ({ x: at(r), y: r.attributes.current_temperature }));
+            const last = rows => rows.length ? [...rows, { x: end.getTime(), y: rows[rows.length - 1].y }] : rows;
+
+            const datasets = [
+                { label: 'Valve reading °C', data: last(reads.length ? reads : num(data[E.temp])), borderColor: '#64d2ff', backgroundColor: '#64d2ff', yAxisID: 'y', pointRadius: 0, borderWidth: 2, tension: 0.2 },
+                ...(E.room ? [{ label: 'Room °C', data: last(num(data[E.room])), borderColor: '#5fe085', yAxisID: 'y', pointRadius: 0, borderWidth: 2, tension: 0.2 }] : []),
+                { label: 'Target °C', data: last(target), borderColor: '#8da0ad', borderDash: [5, 4], yAxisID: 'y', pointRadius: 0, borderWidth: 1.5, stepped: 'before' },
+            ];
+            // Shade 00:00-06:00 of each day in the range.
+            const nightBands = { id: 'nightBands', beforeDatasetsDraw(c) {
+                const { ctx, chartArea: a, scales: { x } } = c;
+                ctx.save(); ctx.fillStyle = 'rgba(110,150,255,0.13)';
+                const day = new Date(start); day.setHours(0, 0, 0, 0);
+                for (; day < end; day.setDate(day.getDate() + 1)) {
+                    const from = Math.max(day.getTime(), start.getTime());
+                    const to = Math.min(day.getTime() + 6 * 3600e3, end.getTime());
+                    if (to > from) ctx.fillRect(x.getPixelForValue(from), a.top, x.getPixelForValue(to) - x.getPixelForValue(from), a.bottom - a.top);
+                }
+                ctx.restore();
+            } };
+            if (chart) chart.destroy();
+            chart = new Chart(document.getElementById('chart'), {
+                type: 'line',
+                plugins: [nightBands],
+                data: { datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    scales: {
+                        x: { type: 'linear', min: start.getTime(), max: end.getTime(), ticks: { color: '#8da0ad', maxTicksLimit: 6, callback: v => new Date(v).toLocaleString('sv-SE', hours > 24 ? { weekday: 'short', hour: '2-digit' } : { hour: '2-digit', minute: '2-digit' }) }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: { ticks: { color: '#8da0ad' }, grid: { color: 'rgba(255,255,255,0.07)' } },
+                    },
+                    plugins: { legend: { labels: { color: '#c5d1d9', boxWidth: 12 } },
+                        tooltip: { callbacks: { title: items => new Date(items[0].parsed.x).toLocaleString('sv-SE') } } },
+                },
+            });
+        }
+
+        const ACTIONS = { heating: ['Heating', 'heat'], idle: ['Idle', ''], off: ['Off', ''] };
+
+        async function render() {
+            try {
+                const [climate, states] = await Promise.all([
+                    callApi('GET', `states/${E.climate}`).catch(() => null),
+                    statesOf([E.temp, E.battery, E.voltage, E.offset, E.update, E.remaining, E.nightMode, E.nightActive, E.dayTarget, E.setback, E.room].filter(Boolean)),
+                ]);
+                const problems = [];
+                const updateState = await callApi('GET', `states/${E.update}`).catch(() => null);
+                const night = { active: states[E.nightActive] === 'on', setback: formatNumber(states[E.setback], 1), dayTarget: formatNumber(states[E.dayTarget], 1) };
+                const roomTemp = formatNumber(states[E.room], 1);
+                document.getElementById('linkValue').textContent = roomTemp === null ? '' : `${roomTemp} °C`;
+                const reading = parseFloat(climate && climate.attributes.current_temperature);
+                const skew = Number.isNaN(reading) || roomTemp === null ? null : reading - parseFloat(states[E.room]);
+                document.getElementById('linkSub').textContent = skew === null ? 'Room thermometer: Timmerflotte (Stue).'
+                    : `The valve reads ${formatNumber(reading, 1)} °C, ${formatNumber(Math.abs(skew), 1)} °C ${skew >= 0 ? 'above' : 'below'} the room thermometer (Timmerflotte): the radiator warms the air around the valve.`;
+                const nightOn = states[E.nightMode] === 'on';
+                document.getElementById('nightToggle').classList.toggle('on', nightOn);
+                document.getElementById('strip').classList.toggle('off', !nightOn);
+                document.getElementById('nightRule').textContent = `00–06 · −${night.setback ?? '–'} °C`;
+                const nowHour = new Date().getHours() + new Date().getMinutes() / 60;
+                document.getElementById('stripNow').style.left = `${nowHour / 24 * 100}%`;
+                const status = await thermostatStatus({ climate, update: updateState, battery: parseFloat(states[E.battery]), deviceId: DEVICE_ID, night });
+                document.getElementById('dot').className = `dot ${status.level === 'good' ? '' : status.level}`;
+                // Detail lines (valve reading, Thread link, last report) only when something is wrong or busy; the thermostat's unreliable "Reports heating" is not shown at all.
+                const unreliable = status.title === 'Reports heating';
+                const extra = status.level === 'good' || unreliable ? status.note : status.detail;
+                document.getElementById('status').hidden = unreliable && !extra;
+                document.getElementById('statusText').innerHTML = (unreliable ? '' : `<b>${status.title}</b>`) + (extra ? `${unreliable ? '' : '<br>'}<span class="muted">${extra}</span>` : '');
+                if (!climate || isMissing(climate.state)) {
+                    problems.push('Radiator thermostat is offline');
+                } else {
+                    const a = climate.attributes;
+                    limits = { min: a.min_temp, max: a.max_temp };
+                    shownTarget = a.temperature ?? null;
+                    mode = climate.state;
+                    if (pending === null) showPending();
+                    document.getElementById('current').textContent = `${formatNumber(a.current_temperature, 1) ?? '–'} °C`;
+                    document.getElementById('target').textContent = `${formatNumber(a.temperature, 1) ?? '–'} °C`;
+                    const atMin = a.temperature != null && a.temperature <= a.min_temp;
+                    const [action, cls] = atMin ? ['Min', ''] : (ACTIONS[a.hvac_action] ?? [climate.state, '']);
+                    const el = document.getElementById('action');
+                    el.textContent = action; el.className = `tile-value ${cls}`;
+                    const rows = [
+                        ['Mode', climate.state],
+                        ['Preset', a.preset_mode],
+                        ['Range', `${a.min_temp}–${a.max_temp} °C`],
+                        ['Temperature offset', `${formatNumber(states[E.offset], 1) ?? '–'} °C`],
+                        ['Battery', `${formatNumber(states[E.battery], 0) ?? '–'} %  ·  ${formatNumber(states[E.voltage], 2) ?? '–'} V`],
+                        ['Firmware', states[E.update] === 'on'
+                            ? `${(await callApi('GET', `states/${E.update}`)).attributes.installed_version} (update available)`
+                            : (await callApi('GET', `states/${E.update}`).catch(() => null))?.attributes?.installed_version ?? '–'],
+                        ['Last changed', new Date(climate.last_changed).toLocaleString('sv-SE')],
+                        ['Last reported', new Date(climate.last_updated).toLocaleString('sv-SE')],
+                    ];
+                    document.getElementById('rows').replaceChildren(...rows.map(([k, v]) => {
+                        const d = document.createElement('div');
+                        d.innerHTML = '<span></span><span></span>';
+                        d.children[0].textContent = k; d.children[1].textContent = v ?? '–';
+                        return d;
+                    }));
+                }
+                if (climate && climate.state === 'off') problems.push('Thermostat is switched off, it should always be on (turn it on at the thermostat or in Home Assistant)');
+                const battery = parseFloat(states[E.battery]);
+                if (!Number.isNaN(battery) && battery < 15) problems.push(`Battery is low (${battery} %)`);
+                showProblems(problems);
+                showError(null);
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        document.querySelectorAll('#ranges button').forEach(b => b.classList.toggle('on', Number(b.dataset.h) === hours));
+        document.getElementById('ranges').addEventListener('click', event => {
+            const button = event.target.closest('button');
+            if (!button) return;
+            hours = Number(button.dataset.h);
+            document.querySelectorAll('#ranges button').forEach(b => b.classList.toggle('on', b === button));
+            drawChart().catch(showError);
+        });
+
+        // A change made on the thermostat itself shows up at once. Changes from Home Assistant carry a user id; the device's own do not.
+        watchEntities([E.climate, E.update, E.nightMode, E.nightActive].filter(Boolean), (state, event) => {
+            const old = event.data.old_state;
+            const targetChanged = old && old.attributes.temperature !== state.attributes.temperature;
+            if (targetChanged && !event.context.user_id && pending === null) {
+                deviceNote = Date.now() + 30e3;
+                document.getElementById('setHint').textContent = 'Changed on the thermostat';
+                setTimeout(() => { if (Date.now() >= deviceNote && pending === null) showPending(); }, 30e3 + 100);
+            }
+            render();
+            if (targetChanged || old?.attributes.hvac_action !== state.attributes.hvac_action) drawChart().catch(() => {});
+        });
+
+        render();
+        drawChart().catch(showError);
+        setInterval(render, 30e3);
+        setInterval(() => drawChart().catch(() => {}), 60e3);
+    </script>
+</body>
+</html>

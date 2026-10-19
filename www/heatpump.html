@@ -17,18 +17,9 @@
 
         .tiles { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; gap: 6px; }
         .tiles .tile { display: flex; flex-direction: column; justify-content: center; }
+        .tiles .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
         .tile.idle { cursor: default; }
-        .sub { margin-top: 3px; font-size: 13px; font-weight: 400; color: #8da0ad; }
 
-        .mode { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
-        .mode-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #8da0ad; }
-        .segments { display: flex; flex: 1; max-width: 200px; padding: 3px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); }
-        .segment { flex: 1; padding: 6px 0; border: 0; border-radius: 8px; background: none; color: #a9b8c2; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-        .segment:hover { color: #fff; }
-        .segment.selected { color: #fff; background: rgba(255, 255, 255, 0.16); }
-        .segment.selected.auto { color: #64d2ff; background: rgba(100, 210, 255, 0.18); }
-        .segment.selected.on { color: #5fe085; background: rgba(52, 199, 89, 0.22); }
-        .segment.selected.off { color: #ffb340; background: rgba(255, 159, 10, 0.2); }
 
     </style>
 </head>
@@ -39,7 +30,6 @@
             <span class="pill" id="status"></span>
         </div>
         <div id="error" class="error" hidden></div>
-        <div id="problems" class="problems" hidden></div>
 
         <div class="unit">
             <svg viewBox="0 0 160 110" role="img" aria-label="Heat pump outdoor unit">
@@ -79,19 +69,13 @@
 
         <div class="tiles" id="tiles"></div>
 
-        <div class="mode">
-            <span class="mode-label">Peak shaving mode</span>
-            <div class="segments" id="segments"></div>
-        </div>
-
         <div class="footer" id="footer"></div>
     </div>
 
     <script src="/local/card-common.js?v=1"></script>
     <script>
-        // The relay, the mode and the plan are real (config/automations/peak_shaving.yaml). The other entities
-        // do not exist yet: they are what the card expects once the heat pump is connected (HAN reader or
-        // clamp meter for power and energy, probe sensor for the supply pipe). Rename them here to match.
+        // These entities do not exist yet: they are what the card expects once the heat pump is connected
+        // (HAN reader or clamp meter for power and energy, probe sensor for the supply pipe). Rename them here to match.
         const E = {
             supply: 'sensor.heatpump_supply_temperature',
             supplyTarget: 'sensor.heatpump_calculated_supply_temperature',
@@ -100,9 +84,6 @@
             runtimeToday: 'sensor.heatpump_compressor_runtime_today', // hours
             startsToday: 'sensor.heatpump_compressor_starts_today',
             compressor: 'binary_sensor.heatpump_compressor',
-            peakShaving: 'switch.dry_relay',               // closed = the NIBE applies its -2 offset
-            mode: 'input_select.peak_shaving_mode',        // Auto / On / Off
-            plan: 'input_text.peak_shaving_plan',          // "2026-10-11:18,19;2026-10-12:9,10,17,18"
         };
         const OUTDOOR = 'weather.forecast_home';
 
@@ -122,49 +103,10 @@
             document.getElementById('tiles').append(button);
             return button;
         }
-        const MODES = ['Auto', 'On', 'Off'];
-        MODES.forEach(option => {
-            const button = document.createElement('button');
-            button.className = `segment ${option.toLowerCase()}`;
-            button.textContent = option;
-            button.addEventListener('click', async () => {
-                await callApi('POST', 'services/input_select/select_option', { entity_id: E.mode, option });
-                render();
-                // the relay answers a moment after the mode changes, so look again a few times
-                [1000, 2500, 5000].forEach(ms => setTimeout(render, ms));
-            });
-            document.getElementById('segments').append(button);
-        });
-
-        const clock = t => new Date(t).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
-
-        // "2026-10-11:18,19;2026-10-12:9,10" -> start time (ms) of every planned hour, sorted
-        function plannedHours(plan) {
-            return (plan ?? '').split(';').flatMap(entry => {
-                const [date, hours] = entry.split(':');
-                return hours ? hours.split(',').map(h => new Date(`${date}T${h.padStart(2, '0')}:00:00`).getTime()) : [];
-            }).sort((a, b) => a - b);
-        }
-
-        function describePlan(plan, now) {
-            const HOUR = 3600e3;
-            const starts = plannedHours(plan);
-            const current = starts.find(t => t <= now && now < t + HOUR);
-            if (current !== undefined) {
-                let end = current + HOUR;
-                while (starts.includes(end)) end += HOUR;
-                return `until ${clock(end)}`;
-            }
-            const next = starts.find(t => t > now);
-            if (next === undefined) return 'no peak planned';
-            return `next ${new Date(next).toDateString() === new Date(now).toDateString() ? '' : 'tomorrow '}${clock(next)}`;
-        }
-
         const tiles = {
             power: tile('Power now', E.power),
             today: tile("Today's consumption", E.energyToday),
             compressor: tile('Compressor', E.compressor),
-            peakShaving: tile('Peak shaving', E.peakShaving),
             runtime: tile('Run time today', E.runtimeToday),
             starts: tile('Starts today', E.startsToday),
         };
@@ -203,42 +145,16 @@
 
                 const running = s('compressor') === 'on';
                 setTile(tiles.compressor, s('compressor') === null ? '–' : running ? 'On' : 'Off', E.compressor, running ? 'good' : '');
-                const shaving = s('peakShaving') === 'on';
                 const runtime = parseFloat(s('runtimeToday'));
                 setTile(tiles.runtime, Number.isNaN(runtime) ? '–'
                     : `${Math.floor(runtime)} <small>h</small> ${Math.round((runtime % 1) * 60)} <small>min</small>`, E.runtimeToday);
                 setTile(tiles.starts, withUnit(s('startsToday'), 0, 'starts'), E.startsToday);
-                const mode = s('mode');
-                const summary = mode === 'On' ? 'manual on' : mode === 'Off' ? 'manual off' : `auto · ${describePlan(s('plan'), Date.now())}`;
-                const relayDown = isMissing(real[E.peakShaving]);
-                // What the automation should make the relay do right now. While the relay still differs, a change
-                // is in progress and its old state must not be shown as the answer.
-                const hourNow = Date.now();
-                const shouldBeOn = mode === 'On' || (mode !== 'Off' && plannedHours(s('plan')).some(t => t <= hourNow && hourNow < t + 3600e3));
-                const switching = !relayDown && shaving !== shouldBeOn;
-                setTile(tiles.peakShaving, relayDown ? 'Offline<div class="sub">relay not responding</div>'
-                    : switching ? 'Switching…<div class="sub">relay is changing</div>'
-                    : `${shaving ? 'Active' : 'Off'}<div class="sub">${summary}</div>`,
-                    E.peakShaving, relayDown ? 'poor' : switching ? 'fair' : shaving ? 'good' : '');
-                document.querySelectorAll('.segment').forEach(b => b.classList.toggle('selected', b.textContent === mode));
 
                 const compressorIsDummy = real[E.compressor] === null;
                 const status = document.getElementById('status');
                 status.textContent = compressorIsDummy ? 'Dummy data' : running ? 'On' : 'Off';
                 status.className = `pill ${compressorIsDummy ? 'fair' : running ? 'good' : ''}`;
                 document.getElementById('footer').textContent = usingDummy ? 'Dummy values until the heat pump is connected' : '';
-
-                const problems = [];
-                if (relayDown) problems.push('Relay offline: peak shaving cannot be switched');
-                if (isMissing(real[E.mode])) problems.push('Peak shaving mode is not available');
-                else if (real[E.mode] === 'Auto') {
-                    const todayKey = new Date().toLocaleDateString('sv-SE');
-                    if (isMissing(real[E.plan])) problems.push('No peak-shaving plan yet');
-                    else if (!real[E.plan].split(';').some(entry => entry.startsWith(todayKey + ':'))) {
-                        problems.push('No peak-shaving plan for today (waiting for prices)');
-                    }
-                }
-                showProblems(problems);
                 showError(null);
             } catch (error) {
                 showError(error);
