@@ -1,6 +1,7 @@
 # Livlandsgatan 153 — Home Assistant
 
 HA runs on an Intel NUC at `192.168.1.77` (port 80). SSH: `ssh root@192.168.1.77`.
+Away from home the box is not reachable on that address: use the remote address in `.env` (`HA_SSH_HOST`, `HOMEASSISTANT_URL_REMOTE`), see `docs/remote_access_setup.md`. If `ping 192.168.1.77` fails, work on files and deploy later instead of retrying.
 
 ## Layout
 

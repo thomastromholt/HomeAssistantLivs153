@@ -1,0 +1,17 @@
+# Compressor run time (hours) and number of starts today, counted from binary_sensor.heatpump_compressor.
+- platform: history_stats
+  name: Heatpump compressor runtime today
+  unique_id: heatpump_compressor_runtime_today
+  entity_id: binary_sensor.heatpump_compressor
+  state: "on"
+  type: time
+  start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+  end: "{{ now() }}"
+- platform: history_stats
+  name: Heatpump compressor starts today
+  unique_id: heatpump_compressor_starts_today
+  entity_id: binary_sensor.heatpump_compressor
+  state: "on"
+  type: count
+  start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+  end: "{{ now() }}"

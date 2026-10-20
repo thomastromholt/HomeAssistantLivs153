@@ -1,0 +1,30 @@
+# Heat pump from the P1 meter. The outdoor unit is fixed speed and draws about 1 kW on each of the three phases
+# at once, or nothing. Running = all three phases at 800 W or more (house base load is 90-250 W per phase).
+# Delays ride out spikes: single-phase loads (kettle, oven) never lift all three phases.
+# Known false positives: 3-phase EV charging and a 3-phase hob plus oven. Compare with the Zaptec state if it matters.
+- binary_sensor:
+    - name: Heatpump compressor
+      unique_id: heatpump_compressor
+      device_class: running
+      delay_on: "00:00:15"
+      delay_off: "00:00:30"
+      availability: >-
+        {{ is_number(states('sensor.p1_meter_power_phase_1')) and is_number(states('sensor.p1_meter_power_phase_2'))
+           and is_number(states('sensor.p1_meter_power_phase_3')) }}
+      state: >-
+        {{ [states('sensor.p1_meter_power_phase_1') | float(0), states('sensor.p1_meter_power_phase_2') | float(0),
+            states('sensor.p1_meter_power_phase_3') | float(0)] | min >= 800 }}
+
+# Estimates, not measurements: 3 kW while the compressor runs (1 kW x 3 phases), 0 otherwise.
+- sensor:
+    - name: Heatpump power
+      unique_id: heatpump_power
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      state: "{{ 3000 if is_state('binary_sensor.heatpump_compressor', 'on') else 0 }}"
+    - name: Heatpump energy today
+      unique_id: heatpump_energy_today
+      unit_of_measurement: kWh
+      device_class: energy
+      state: "{{ (states('sensor.heatpump_compressor_runtime_today') | float(0) * 3) | round(1) }}"

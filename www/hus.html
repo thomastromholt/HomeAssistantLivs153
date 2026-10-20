@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strømforbrug</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        .now { display: flex; align-items: baseline; gap: 6px; margin: 2px 0 0; }
+        .now button { border: 0; background: none; color: inherit; font-family: inherit; cursor: pointer; padding: 0; }
+        .now-value { font-size: 44px; font-weight: 300; line-height: 1.05; }
+        .now-value small { font-size: 16px; color: #8da0ad; }
+        .now-note { font-size: 12px; color: #6d808c; }
+        .range { margin-left: auto; align-self: center; display: flex; gap: 4px; }
+        .range button { padding: 3px 9px; border: 0; border-radius: 8px; background: rgba(255,255,255,.06); color: #8da0ad; font: inherit; font-size: 11px; cursor: pointer; }
+        .range button.on { background: rgba(100,210,255,.2); color: #64d2ff; }
+
+        .chart { flex: 1; min-height: 70px; position: relative; margin: 4px 0 6px; }
+        .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .tiles.two { margin-top: 6px; grid-template-columns: 1fr; }
+        .tile.wide .tile-value { font-size: 20px; }
+        .mix { margin-top: 6px; padding: 8px 12px 9px; border-radius: 12px; background: rgba(255,255,255,.06); cursor: pointer; }
+        .mix-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: #8da0ad; text-transform: uppercase; letter-spacing: .6px; }
+        .mix-head b { color: #f2f5f7; font-size: 17px; letter-spacing: 0; text-transform: none; font-weight: 600; }
+        .mix-head small { font-size: 12px; font-weight: 400; color: #8da0ad; text-transform: none; letter-spacing: 0; }
+        .bar { display: flex; height: 10px; margin: 7px 0 6px; border-radius: 5px; overflow: hidden; background: rgba(255,255,255,.08); }
+        .bar i { display: block; height: 100%; transition: width .4s; }
+        .legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 11px; color: #8da0ad; }
+        .legend > span { display: flex; flex-direction: column; }
+        .legend > span > span { display: flex; align-items: center; }
+        .legend b { color: #f2f5f7; font-size: 13px; font-weight: 600; }
+        .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head"><span class="name">Strømforbrug</span><span class="pill" id="status"></span></div>
+        <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
+
+        <div class="now">
+            <button id="nowButton"><span class="now-value"><span id="power">–</span><small> kW</small></span></button>
+            <span class="now-note" id="powerNote"></span>
+            <div class="range" id="range"><button data-h="1" class="on">1 h</button><button data-h="24">24 h</button></div>
+        </div>
+        <div class="chart"><canvas id="chart"></canvas></div>
+
+        <div class="mix" id="mix">
+            <div class="mix-head"><span id="mixLabel">Today</span><span><b id="mixTotal">–</b> <small id="mixCost"></small></span></div>
+            <div class="bar"><i id="barHp" style="background:#ffb340"></i><i id="barEv" style="background:#5fe085"></i><i id="barOther" style="background:#64d2ff"></i></div>
+            <div class="legend">
+                <span><span><i style="background:#ffb340"></i>Heat pump</span><b id="lgHp">–</b></span>
+                <span><span><i style="background:#5fe085"></i>Car charging</span><b id="lgEv">–</b></span>
+                <span><span><i style="background:#64d2ff"></i>Everything else</span><b id="lgOther">–</b></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        // HomeWizard P1 meter (whole-house import from the grid).
+        const E = {
+            power: 'sensor.p1_meter_elektrisk_effekt',      // W, positive = import
+            l1: 'sensor.p1_meter_power_phase_1',
+            l2: 'sensor.p1_meter_power_phase_2',
+            l3: 'sensor.p1_meter_power_phase_3',
+            importKwh: 'sensor.p1_meter_energy_import',     // kWh, total counter
+            heatpumpKwh: 'sensor.heatpump_energy_today',    // estimate: run time x 3 kW, see config/templates.yaml
+            evKwh: 'sensor.go2_energy_meter',                // Zaptec Go2 (home charger), lifetime kWh
+        };
+
+        const tile = (parent, label, entityId, cls = '') => {   // (kept for later tiles)
+            const button = document.createElement('button');
+            button.className = `tile ${cls}`;
+            button.innerHTML = '<div class="tile-label"></div><div class="tile-value">–</div>';
+            button.querySelector('.tile-label').textContent = label;
+            if (entityId) button.addEventListener('click', () => openHistory(entityId));
+            parent.append(button);
+            return button.querySelector('.tile-value');
+        };
+        // Everything on this card opens the detailed pop-up (month history, phases).
+        const detail = () => openPopup('/local/stromforbrug.html?v=' + Date.now());
+        document.getElementById('mix').addEventListener('click', detail);
+        document.getElementById('nowButton').addEventListener('click', detail);
+        document.querySelector('.chart').addEventListener('click', detail);
+
+        const watts = state => { const v = parseFloat(state); return Number.isNaN(v) ? null : v; };
+        const withUnit = (v, digits, unit) => v === null ? '–' : `${formatNumber(v, digits)} <small>${unit}</small>`;
+
+        async function history(id, start, end) {
+            const url = `history/period/${start.toISOString()}?filter_entity_id=${id}&end_time=${encodeURIComponent(end.toISOString())}&significant_changes_only=0&minimal_response&no_attributes`;
+            const result = await callApi('GET', url);
+            return (result[0] || []).filter(r => !Number.isNaN(parseFloat(r.state)))
+                .map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: parseFloat(r.state) }));
+        }
+        // The counter's value at time t (last report at or before t).
+        const counterAt = (rows, t) => { let best = null; for (const r of rows) { if (r.t <= t) best = r.v; else break; } return best ?? rows[0]?.v ?? null; };
+
+        let chart = null;
+        let hours = 1;   // chart window: the last hour by default
+        async function render() {
+            try {
+                const states = await statesOf(Object.values(E));
+                const problems = [];
+                if (isMissing(states[E.power])) problems.push('The P1 meter is not delivering data (check HomeWizard and its Wi-Fi)');
+                const p = watts(states[E.power]);
+                document.getElementById('power').textContent = p === null ? '–' : formatNumber(p / 1000, 2);
+                document.getElementById('powerNote').textContent = p !== null && p < 0 ? 'exporting to the grid' : '';
+                const status = document.getElementById('status');
+                status.textContent = p === null ? 'Offline' : 'Live';
+                status.className = `pill ${p === null ? 'poor' : 'good'}`;
+
+                const end = new Date();
+                const midnight = new Date(end); midnight.setHours(0, 0, 0, 0);
+                const dayAgo = new Date(end - 24 * 3600e3);
+                const from = new Date(end - hours * 3600e3);
+                const [counter, power] = await Promise.all([history(E.importKwh, new Date(Math.min(midnight, dayAgo) - 3600e3), end), history(E.power, from, end)]);
+                const evHistory = await history(E.evKwh, new Date(midnight - 3600e3), end).catch(() => []);
+
+                const startOfDay = counterAt(counter, midnight.getTime());
+                const nowKwh = watts(states[E.importKwh]);
+                // Today: total from the P1 meter, the heat pump (estimate), car charging (Zaptec Go2 meter), the rest is everything else.
+                const first = counter[0]?.t ?? null;
+                const partial = first !== null && first > midnight.getTime() + 60e3;
+                const totalToday = startOfDay === null || nowKwh === null ? null : nowKwh - startOfDay;
+                const hp = Math.max(0, parseFloat(states[E.heatpumpKwh]) || 0);
+                const evNow = watts(states[E.evKwh]);
+                const evStart = evHistory.length ? counterAt(evHistory, midnight.getTime()) : null;
+                const ev = evNow !== null && evStart !== null ? Math.max(0, evNow - evStart) : 0;
+                const other = totalToday === null ? null : Math.max(0, totalToday - hp - ev);
+
+                const prices = await hourlyTotalPrices(localDateString(midnight));
+                let cost = 0, priced = prices.size > 0;
+                for (let h = midnight.getTime(); h < end.getTime() && priced; h += 3600e3) {
+                    const used = counterAt(counter, Math.min(h + 3600e3, end.getTime())) - counterAt(counter, h);
+                    if (!prices.has(h)) priced = false; else cost += used * prices.get(h) / 100;
+                }
+                document.getElementById('mixLabel').textContent = partial ? `Today (since ${new Date(first).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })})` : 'Today';
+                document.getElementById('mixTotal').textContent = totalToday === null ? '–' : `${formatNumber(totalToday, 1)} kWh`;
+                document.getElementById('mixCost').textContent = priced && totalToday !== null ? `· ${formatNumber(cost, cost < 10 ? 1 : 0)} kr` : '';
+                const share = v => totalToday > 0 && v !== null ? Math.max(0, Math.min(100, v / totalToday * 100)) : 0;
+                document.getElementById('barHp').style.width = `${share(hp)}%`;
+                document.getElementById('barEv').style.width = `${share(ev)}%`;
+                document.getElementById('barOther').style.width = `${share(other)}%`;
+                const fmt = v => v === null ? '–' : `${formatNumber(v, 1)} kWh`;
+                document.getElementById('lgHp').textContent = fmt(totalToday === null ? null : hp);
+                document.getElementById('lgEv').textContent = fmt(totalToday === null ? null : ev);
+                document.getElementById('lgOther').textContent = fmt(other);
+
+                // 24 h power curve, averaged per 15 minutes.
+                const bucket = (hours <= 1 ? 30e3 : 15 * 60e3), sums = new Map();   // 30 s points for the last hour, 15 min for a day
+                for (const r of power) { const k = Math.floor(r.t / bucket) * bucket; const s = sums.get(k) || [0, 0]; s[0] += r.v; s[1]++; sums.set(k, s); }
+                const points = [...sums].sort((a, b) => a[0] - b[0]).map(([t, [s, n]]) => ({ x: t, y: s / n / 1000 }));
+                if (chart) chart.destroy();
+                chart = new Chart(document.getElementById('chart'), {
+                    type: 'line',
+                    data: { datasets: [{ data: points, borderColor: '#64d2ff', backgroundColor: 'rgba(100,210,255,0.16)', fill: true, pointRadius: 0, borderWidth: 1.6, tension: 0.2 }] },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                        scales: {
+                            x: { type: 'linear', min: from.getTime(), max: end.getTime(), ticks: { color: '#8da0ad', maxTicksLimit: 5, callback: v => new Date(v).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { beginAtZero: true, ticks: { color: '#8da0ad', maxTicksLimit: 4, callback: v => `${v} kW` }, grid: { color: 'rgba(255,255,255,0.07)' } },
+                        },
+                        plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => new Date(i[0].parsed.x).toLocaleString('sv-SE'), label: i => `${formatNumber(i.parsed.y, 2)} kW` } } },
+                    },
+                });
+
+                showProblems(problems);
+                showError(null);
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        document.getElementById('range').addEventListener('click', event => {
+            const button = event.target.closest('button');
+            if (!button) return;
+            hours = Number(button.dataset.h);
+            document.querySelectorAll('#range button').forEach(b => b.classList.toggle('on', b === button));
+            render();
+        });
+        render();
+        setInterval(render, 30e3);
+    </script>
+</body>
+</html>

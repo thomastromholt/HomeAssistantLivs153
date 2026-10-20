@@ -89,7 +89,7 @@ function openPopup(url) {
     backdrop.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px';
     const frame = doc.createElement('iframe');
     frame.src = url;
-    frame.style.cssText = 'width:min(560px,100%);height:min(720px,100%);border:0;border-radius:18px;background:#131f28;box-shadow:0 12px 40px rgba(0,0,0,.6)';
+    frame.style.cssText = 'width:min(1000px,100%);height:min(920px,100%);border:0;border-radius:18px;background:#131f28;box-shadow:0 12px 40px rgba(0,0,0,.6)';
     backdrop.append(frame);
     backdrop.addEventListener('click', event => { if (event.target === backdrop) closePopup(); });
     doc.addEventListener('keydown', escapeClosesPopup);
@@ -166,3 +166,31 @@ function watchEntities(entityIds, onChange) {
         window.addEventListener('pagehide', () => unsubscribe.then(stop => stop()).catch(() => {}));
     } catch (e) { /* polling covers it */ }
 }
+
+// What a kWh costs: Nord Pool SE3 spot + supplier fees, VAT, grid fee and energy tax (docs/elpriskalkulator.md).
+// Keep in sync with the constants in elpris-24h.html.
+const PRICE = { entry: '01M4G69T394M8BKNHBNQ9E0246', area: 'SE3', supplierFeesOre: 26, vat: 1.25, gridFeeOre: 26, taxOre: 45 };
+const totalPriceOre = spotOre => (spotOre + PRICE.supplierFeesOre) * PRICE.vat + PRICE.gridFeeOre + PRICE.taxOre;
+
+// Total price in öre/kWh for each hour of a calendar day (YYYY-MM-DD, local): Map(hour start in ms → öre/kWh).
+// An hour is the average of its four 15-minute spot prices. Cached per day; an empty Map when the day is not available.
+const priceCache = new Map();
+async function hourlyTotalPrices(date) {
+    if (priceCache.has(date)) return priceCache.get(date);
+    let hours = new Map();
+    try {
+        const body = await callApi('POST', 'services/nordpool/get_prices_for_date?return_response', { config_entry: PRICE.entry, date, areas: PRICE.area });
+        const sums = new Map();
+        for (const p of body.service_response[PRICE.area]) {
+            const start = Math.floor(new Date(p.start).getTime() / 3600e3) * 3600e3;
+            const s = sums.get(start) || [0, 0];
+            s[0] += p.price / 10; s[1]++;   // SEK/MWh → öre/kWh
+            sums.set(start, s);
+        }
+        for (const [start, [sum, n]] of sums) hours.set(start, totalPriceOre(sum / n));
+    } catch (e) { hours = new Map(); }
+    // Only cache a full day (or a past one); today's prices are complete from the morning.
+    if (hours.size >= 20) priceCache.set(date, hours);
+    return hours;
+}
+const localDateString = d => d.toLocaleDateString('sv-SE');

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the dashboard cards to Home Assistant and restart HA Core.
 #   tools/deploy.sh
+#   HA_SSH_HOST=root@<tailscale-name> tools/deploy.sh   (away from home, see docs/remote_access_setup.md)
 # - copies www/ to /config/www (served as /local/)
 # - stamps a fresh ?v= on the card URLs so browsers skip the 31-day cache
 # - restarts HA Core (dashboards are held in memory)
@@ -8,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-HOST=root@192.168.1.77
+HOST=${HA_SSH_HOST:-root@192.168.1.77}
 STAMP=$(date +%s)
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT

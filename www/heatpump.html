@@ -19,6 +19,10 @@
         .tiles .tile { display: flex; flex-direction: column; justify-content: center; }
         .tiles .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
         .tile.idle { cursor: default; }
+        /* Same type sizes as the Temperatur card: 12 px labels, 32 px light values with 17 px units. */
+        .tiles .tile-label { font-size: 12px; }
+        .tiles .tile-value { margin-top: 6px; font-size: 32px; font-weight: 300; line-height: 1.1; }
+        .tiles .tile-value small { font-size: 17px; }
 
 
     </style>
@@ -87,13 +91,6 @@
         };
         const OUTDOOR = 'weather.forecast_home';
 
-        // Dummy values fill in for every entity that does not exist yet, so the card can be judged before
-        // the heat pump is connected. Real values take over per entity as soon as they appear.
-        const DUMMY_STATES = {
-            [E.supply]: '38.5', [E.supplyTarget]: '40.0', [E.power]: '1850', [E.energyToday]: '12.4',
-            [E.compressor]: 'on', [E.runtimeToday]: '6.4', [E.startsToday]: '14',
-        };
-
         function tile(label, entityId) {
             const button = document.createElement('button');
             button.className = 'tile';
@@ -104,10 +101,9 @@
             return button;
         }
         const tiles = {
-            power: tile('Power now', E.power),
             today: tile("Today's consumption", E.energyToday),
-            compressor: tile('Compressor', E.compressor),
-            runtime: tile('Run time today', E.runtimeToday),
+            compressor: tile('Outdoor unit', E.compressor),
+            runtime: tile('Duty cycle today', E.runtimeToday),
             starts: tile('Starts today', E.startsToday),
         };
 
@@ -125,9 +121,7 @@
 
         async function render() {
             try {
-                const real = await statesOf(Object.values(E));
-                const states = Object.fromEntries(Object.entries(real).map(([id, state]) => [id, state ?? DUMMY_STATES[id] ?? null]));
-                const usingDummy = Object.values(real).some(state => state === null);
+                const states = await statesOf(Object.values(E));
                 const s = key => states[E[key]];
 
                 const supply = formatNumber(s('supply'), 1);
@@ -136,25 +130,25 @@
                 const weather = await callApi('GET', `states/${OUTDOOR}`).catch(() => null);
                 const outdoor = weather ? formatNumber(weather.attributes.temperature, 1) : null;
                 document.getElementById('supplyNote').textContent =
-                    [target === null ? null : `target ${target} °C`, outdoor === null ? null : `outdoors ${outdoor} °C`]
-                        .filter(Boolean).join(' · ') || 'Waiting for sensor';
+                    [supply === null ? 'no supply probe yet' : null, target === null ? null : `target ${target} °C`, outdoor === null ? null : `outdoors ${outdoor} °C`]
+                        .filter(Boolean).join(' · ');
 
-                const watts = parseFloat(s('power'));
-                setTile(tiles.power, Number.isNaN(watts) ? '–' : withUnit(watts / 1000, 1, 'kW'), E.power);
                 setTile(tiles.today, withUnit(s('energyToday'), 1, 'kWh'), E.energyToday);
 
                 const running = s('compressor') === 'on';
-                setTile(tiles.compressor, s('compressor') === null ? '–' : running ? 'On' : 'Off', E.compressor, running ? 'good' : '');
+                setTile(tiles.compressor, s('compressor') === null ? '–' : running ? 'Running' : 'Idle', E.compressor, running ? 'good' : '');
                 const runtime = parseFloat(s('runtimeToday'));
-                setTile(tiles.runtime, Number.isNaN(runtime) ? '–'
-                    : `${Math.floor(runtime)} <small>h</small> ${Math.round((runtime % 1) * 60)} <small>min</small>`, E.runtimeToday);
+                // Duty cycle: the share of today (since midnight) the compressor has run.
+                const now = new Date(), midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
+                const hoursToday = (now - midnight) / 3600e3;
+                setTile(tiles.runtime, Number.isNaN(runtime) || hoursToday < 0.05 ? '–'
+                    : `${formatNumber(Math.min(100, runtime / hoursToday * 100), 0)} <small>%</small>`, E.runtimeToday);
                 setTile(tiles.starts, withUnit(s('startsToday'), 0, 'starts'), E.startsToday);
 
-                const compressorIsDummy = real[E.compressor] === null;
+                const compressorMissing = states[E.compressor] === null;
                 const status = document.getElementById('status');
-                status.textContent = compressorIsDummy ? 'Dummy data' : running ? 'On' : 'Off';
-                status.className = `pill ${compressorIsDummy ? 'fair' : running ? 'good' : ''}`;
-                document.getElementById('footer').textContent = usingDummy ? 'Dummy values until the heat pump is connected' : '';
+                status.textContent = compressorMissing ? 'No data' : running ? 'Running' : 'Idle';
+                status.className = `pill ${compressorMissing ? 'fair' : running ? 'good' : ''}`;
                 showError(null);
             } catch (error) {
                 showError(error);
