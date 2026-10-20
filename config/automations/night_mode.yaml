@@ -2,7 +2,7 @@
 # Per room: input_boolean.night_mode_<room> (on/off), input_boolean.night_active_<room> (set while lowered),
 # input_number.day_target_<room> (the target to go back to).
 # A target changed by hand during the night wins: the morning step only restores a target the automation set itself.
-# Rooms so far: Stue and Køkken. To add a room: create the three helpers, copy both automations and swap the names.
+# Rooms so far: Stue and Køkken. Not Soveværelse (warmer at night: 20 °C when sleeping, 18 °C otherwise) and not Astrid. To add a room: create the three helpers, copy both automations and swap the names.
 - id: night_mode_stue_start
   alias: Night mode Stue, start 23:00
   triggers:

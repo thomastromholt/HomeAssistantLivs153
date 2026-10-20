@@ -16,7 +16,21 @@
               "cards": [
                 {
                   "type": "iframe",
-                  "url": "/local/elpris-24h.html?mode=total&v=1792511977",
+                  "url": "/local/hus.html?v=1792525576",
+                  "grid_options": {
+                    "columns": 12,
+                    "rows": 7
+                  },
+                  "visibility": [
+                    {
+                      "condition": "screen",
+                      "media_query": "(max-width: 767px)"
+                    }
+                  ]
+                },
+                {
+                  "type": "iframe",
+                  "url": "/local/elpris-24h.html?mode=total&v=1792525576",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -24,7 +38,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/kia-ceed.html?v=1792511977",
+                  "url": "/local/kia-ceed.html?v=1792525576",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -32,7 +46,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/zaptec.html?v=1792511977",
+                  "url": "/local/zaptec.html?v=1792525576",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -40,7 +54,21 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/hus.html?v=1792511977",
+                  "url": "/local/hus.html?v=1792525576",
+                  "grid_options": {
+                    "columns": 12,
+                    "rows": 7
+                  },
+                  "visibility": [
+                    {
+                      "condition": "screen",
+                      "media_query": "(min-width: 768px)"
+                    }
+                  ]
+                },
+                {
+                  "type": "iframe",
+                  "url": "/local/temperatur.html?v=1792525576",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -48,7 +76,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/temperatur.html?v=1792511977",
+                  "url": "/local/heatpump.html?v=1792525576",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -56,15 +84,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/heatpump.html?v=1792511977",
-                  "grid_options": {
-                    "columns": 12,
-                    "rows": 7
-                  }
-                },
-                {
-                  "type": "iframe",
-                  "url": "/local/airthings.html?v=1792511977",
+                  "url": "/local/airthings.html?v=1792525576",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7

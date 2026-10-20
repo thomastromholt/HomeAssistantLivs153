@@ -153,10 +153,12 @@
                 const battery = formatNumber(s('battery'));
                 document.getElementById('footer').textContent = battery === null ? '' : `Battery ${battery} %`;
 
+                const STALE_AFTER_MIN = 90;
                 const problems = [];
                 const minutesSince = (Date.now() - reading.getTime()) / 60000;
                 if (['radon', 'co2', 'temperature'].every(key => isMissing(s(key)))) problems.push('No data from the Airthings');
-                else if (minutesSince > 30) problems.push(`No reading for ${Math.round(minutesSince)} min (out of Bluetooth range?)`);
+                // The Airthings reports once an hour, so only warn when a whole reading has been missed.
+                else if (minutesSince > STALE_AFTER_MIN) problems.push(`No reading for ${Math.round(minutesSince / 60 * 10) / 10} h (out of Bluetooth range?)`);
                 showProblems(problems);
                 showError(null);
             } catch (error) {

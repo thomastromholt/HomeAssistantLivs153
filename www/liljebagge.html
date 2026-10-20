@@ -36,6 +36,15 @@
         .strip .band { position: absolute; top: 0; bottom: 0; background: rgba(110, 150, 255, 0.55); }
         .strip.off .band { background: rgba(255, 255, 255, 0.12); }
         .strip .now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #ffb340; }
+        .plan-row { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #8da0ad; }
+        .plan-row .strip { margin-top: 0; height: 16px; }
+        .plan-row .strip .seg { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: rgba(0,0,0,.65); }
+        .plan-row .strip .seg.warm { background: #e0b15e; }
+        .plan-row .strip .seg.low { background: #8fa2ad; }
+        .plan-row .strip .seg.pre { background: repeating-linear-gradient(135deg, rgba(224,177,94,.7) 0 3px, rgba(224,177,94,.25) 3px 6px); }
+        .plan-row.today .strip { box-shadow: 0 0 0 1px rgba(100,210,255,.7); }
+        .plan-row.today > span { color: #64d2ff; font-weight: 600; }
+        .plan-axis { margin: 3px 0 0 64px; }
         .link-sub { margin-top: 6px; font-size: 12px; color: #8da0ad; line-height: 1.4; }
         .strip-axis { display: flex; justify-content: space-between; margin-top: 3px; font-size: 10px; color: #6d808c; }
         .heat { color: #ffb340; }
@@ -69,6 +78,14 @@
             <button id="up" aria-label="Raise">+</button>
         </div>
 
+        <div class="night" id="planBlock">
+            <div class="night-head"><span>📅 Day plan <b id="planRule"></b></span></div>
+            <div class="plan-row"><span>Mon–Fri</span><div class="strip" id="planWeek"></div></div>
+            <div class="plan-row"><span>Sat–Sun</span><div class="strip" id="planEnd"></div></div>
+            <div class="strip-axis plan-axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+            <div class="link-sub" id="planNext"></div>
+        </div>
+
         <div class="night" id="nightBlock">
             <div class="night-head">
                 <span>🌙 Night mode <b id="nightRule">23–06:30 · −2 °C</b></span>
@@ -93,13 +110,17 @@
 
     <script src="/local/card-common.js?v=1"></script>
     <script>
-        // One page for every LILJEBAGGE thermostat: ?room=stue (default) or ?room=kokken.
+        // One page for every LILJEBAGGE thermostat: ?room=stue (default), kokken, sovevaerelse or astrid.
         // Only Stue has a room thermometer so far; that block is hidden elsewhere. Night mode runs in both rooms.
         const ROOMS = {
             stue: { name: 'Stue', suffix: '', deviceId: '88a5efd90680fa98c6117641c9084aec', room: 'sensor.timmerflotte_temp_hmd_sensor_temperatur',
                     night: { mode: 'input_boolean.night_mode_stue', active: 'input_boolean.night_active_stue', dayTarget: 'input_number.day_target_stue' } },
             kokken: { name: 'Køkken', suffix: '_2', deviceId: '693637959f507ce567f16408ba4b712d', room: null,
                     night: { mode: 'input_boolean.night_mode_kokken', active: 'input_boolean.night_active_kokken', dayTarget: 'input_number.day_target_kokken' } },
+            sovevaerelse: { name: 'Soveværelse', suffix: '_3', deviceId: '6cc6d13bf6e043fa587d7ca0f61089d0', room: null, night: null,   // no night setback: warmer at night
+                    plan: { warm: 20, low: 18, weekday: [[0, 7, 'warm'], [7, 15, 'low'], [15, 24, 'warm']], weekend: [[0, 24, 'warm']], switches: [{ hour: 7, days: [1, 2, 3, 4, 5], temp: 18 }, { hour: 15, days: [0, 1, 2, 3, 4, 5, 6], temp: 20 }] } },
+            astrid: { name: 'Astrid', suffix: '_4', deviceId: 'd5c9bb2a681637513a7bde75b298a786', room: 'sensor.airthings_wave_270668_temperatur', roomName: 'Airthings', night: null,
+                    plan: { warm: 20, low: 18, weekday: [[0, 7, 'warm'], [7, 15, 'low'], [15, 24, 'warm']], weekend: [[0, 24, 'warm']], switches: [{ hour: 7, days: [1, 2, 3, 4, 5], temp: 18 }, { hour: 15, days: [0, 1, 2, 3, 4, 5, 6], temp: 20 }] } },   // no night setback
         };
         const ROOM = ROOMS[new URLSearchParams(location.search).get('room')] || ROOMS.stue;
         const S = ROOM.suffix, P = 'liljebagge_radiator_thermostat';
@@ -121,6 +142,7 @@
         document.getElementById('roomName').textContent = ROOM.name;
         document.title = `Radiator ${ROOM.name}`;
         if (!ROOM.night) document.getElementById('nightBlock').hidden = true;
+        if (!ROOM.plan) document.getElementById('planBlock').hidden = true;
         if (!ROOM.room) document.getElementById('roomBlock').hidden = true;
 
         // Manual target: +/- change a pending value, which is sent a moment after the last tap.
@@ -155,6 +177,40 @@
                 render();
             } catch (error) { showError(error); }
         });
+
+        // Day plan: the strips show the target for each hour; the hatched part is the lead before the comfort time.
+        function drawPlan() {
+            const plan = ROOM.plan;
+            if (!plan) return;
+            const strip = (el, parts) => {
+                el.replaceChildren(...parts.map(([from, to, kind]) => {
+                    const seg = document.createElement('div');
+                    seg.className = `seg ${kind}`;
+                    seg.style.cssText = `left:${from / 24 * 100}%;width:${(to - from) / 24 * 100}%`;
+                    seg.textContent = (to - from) >= 3 ? `${kind === 'warm' ? plan.warm : plan.low}°` : '';
+                    return seg;
+                }));
+            };
+            strip(document.getElementById('planWeek'), plan.weekday);
+            strip(document.getElementById('planEnd'), plan.weekend);
+            document.getElementById('planRule').textContent = `${plan.warm}° warm · ${plan.low}° otherwise`;
+            const now = new Date(), weekend = [0, 6].includes(now.getDay());
+            document.getElementById('planWeek').parentElement.classList.toggle('today', !weekend);
+            document.getElementById('planEnd').parentElement.classList.toggle('today', weekend);
+            // Next switch: the thermostat is told at the listed hours, on the listed weekdays (0 = Sunday).
+            for (let d = 0; d < 8; d++) {
+                const day = new Date(now); day.setDate(now.getDate() + d);
+                const hits = plan.switches.filter(s => s.days.includes(day.getDay())).map(s => ({ ...s, at: new Date(day.getFullYear(), day.getMonth(), day.getDate(), s.hour) }))
+                    .filter(s => s.at > now).sort((a, b) => a.at - b.at);
+                if (hits.length) {
+                    const s = hits[0], when = d === 0 ? 'today' : d === 1 ? 'tomorrow' : s.at.toLocaleDateString('en-GB', { weekday: 'long' });
+                    document.getElementById('planNext').textContent = `Next: ${s.temp} °C ${when} at ${String(s.hour).padStart(2, '0')}:00. The thermostat is told one hour before the warm period starts.`;
+                    return;
+                }
+            }
+        }
+        drawPlan();
+        setInterval(drawPlan, 60e3);
 
         document.getElementById('close').addEventListener('click', () => closePopup());
 
@@ -230,8 +286,8 @@
                 document.getElementById('linkValue').textContent = roomTemp === null ? '' : `${roomTemp} °C`;
                 const reading = parseFloat(climate && climate.attributes.current_temperature);
                 const skew = Number.isNaN(reading) || roomTemp === null ? null : reading - parseFloat(states[E.room]);
-                document.getElementById('linkSub').textContent = skew === null ? 'Room thermometer: Timmerflotte (Stue).'
-                    : `The valve reads ${formatNumber(reading, 1)} °C, ${formatNumber(Math.abs(skew), 1)} °C ${skew >= 0 ? 'above' : 'below'} the room thermometer (Timmerflotte): the radiator warms the air around the valve.`;
+                document.getElementById('linkSub').textContent = skew === null ? `Room thermometer: ${ROOM.roomName || 'Timmerflotte'}.`
+                    : `The valve reads ${formatNumber(reading, 1)} °C, ${formatNumber(Math.abs(skew), 1)} °C ${skew >= 0 ? 'above' : 'below'} the room thermometer (${ROOM.roomName || 'Timmerflotte'}): the radiator warms the air around the valve.`;
                 const nightOn = states[E.nightMode] === 'on';
                 document.getElementById('nightToggle').classList.toggle('on', nightOn);
                 document.getElementById('strip').classList.toggle('off', !nightOn);

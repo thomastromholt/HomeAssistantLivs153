@@ -1,0 +1,31 @@
+
+# Day plan for the two bedrooms (Soveværelse and Astrid):
+#   weekdays: 20 °C from 16:00 to 07:00 (family home and asleep), 18 °C the rest of the day
+#   weekends: 20 °C all day (Friday 15:00 sets 20, nothing lowers it again until Monday 07:00)
+# The thermostats are told at 15:00 so the cast iron radiators are warm by 16:00 (a one hour lead).
+# Runs only at the two switch times, so a change made by hand stays until the next switch.
+- id: bedroom_day_plan
+  alias: Soveværelse og Astrid, døgnplan 15:00 og 07:00
+  mode: single
+  triggers:
+    - trigger: time
+      at: "15:00:00"
+    - trigger: time
+      at: "07:00:00"
+  actions:
+    # 15:00 raises to 20 every day; 07:00 lowers to 18 on weekdays only (Monday to Friday), so Saturday and Sunday stay warm.
+    - condition: template
+      value_template: "{{ now().hour >= 15 or now().weekday() < 5 }}"
+    - variables:
+        target: "{{ 20 if now().hour >= 15 else 18 }}"
+    - repeat:
+        for_each:
+          - climate.liljebagge_radiator_thermostat_3
+          - climate.liljebagge_radiator_thermostat_4
+        sequence:
+          - action: climate.set_temperature
+            continue_on_error: true
+            target:
+              entity_id: "{{ repeat.item }}"
+            data:
+              temperature: "{{ target }}"

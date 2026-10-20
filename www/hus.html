@@ -42,7 +42,7 @@
         <div class="now">
             <button id="nowButton"><span class="now-value"><span id="power">–</span><small> kW</small></span></button>
             <span class="now-note" id="powerNote"></span>
-            <div class="range" id="range"><button data-h="1" class="on">1 h</button><button data-h="24">24 h</button></div>
+            <div class="range" id="range"><button data-h="1" class="on">1 h</button><button data-h="6">6 h</button><button data-h="24">24 h</button></div>
         </div>
         <div class="chart"><canvas id="chart"></canvas></div>
 
@@ -149,15 +149,16 @@
                 document.getElementById('lgOther').textContent = fmt(other);
 
                 // 24 h power curve, averaged per 15 minutes.
-                const bucket = (hours <= 1 ? 30e3 : 15 * 60e3), sums = new Map();   // 30 s points for the last hour, 15 min for a day
+                const bucket = hours <= 1 ? 30e3 : hours <= 6 ? 5 * 60e3 : 15 * 60e3, sums = new Map();   // 30 s points for an hour, 5 min for 6 h, 15 min for a day
                 for (const r of power) { const k = Math.floor(r.t / bucket) * bucket; const s = sums.get(k) || [0, 0]; s[0] += r.v; s[1]++; sums.set(k, s); }
                 const points = [...sums].sort((a, b) => a[0] - b[0]).map(([t, [s, n]]) => ({ x: t, y: s / n / 1000 }));
                 if (chart) chart.destroy();
                 chart = new Chart(document.getElementById('chart'), {
                     type: 'line',
-                    data: { datasets: [{ data: points, borderColor: '#64d2ff', backgroundColor: 'rgba(100,210,255,0.16)', fill: true, pointRadius: 0, borderWidth: 1.6, tension: 0.2 }] },
+                    data: { datasets: [{ data: points, borderColor: '#64d2ff', backgroundColor: 'rgba(100,210,255,0.16)', fill: true, pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: '#64d2ff', borderWidth: 1.6, tension: 0.2 }] },
                     options: {
                         responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                        interaction: { mode: 'index', intersect: false, axis: 'x' },
                         scales: {
                             x: { type: 'linear', min: from.getTime(), max: end.getTime(), ticks: { color: '#8da0ad', maxTicksLimit: 5, callback: v => new Date(v).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) }, grid: { color: 'rgba(255,255,255,0.05)' } },
                             y: { beginAtZero: true, ticks: { color: '#8da0ad', maxTicksLimit: 4, callback: v => `${v} kW` }, grid: { color: 'rgba(255,255,255,0.07)' } },

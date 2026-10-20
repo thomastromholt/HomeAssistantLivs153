@@ -25,6 +25,8 @@ The heat pump heats a **water tank**, and the radiators draw from that tank.
 | Soveværelse (upstairs) | west | Afternoon and evening sun: warm in the evening, so the 16:00 pre-heat can be shorter on sunny days. Heat also rises from downstairs. |
 | Kælder | (below ground) | Stable and cool; the target barely matters for how it cools. |
 
+**Radiators:** Stue (120 cm) and Køkken (80 cm) have cast iron radiators, 60 cm high. **Soveværelse also has cast iron** (size not noted). **Astrid has a new radiator** (a modern one, type and size not noted), which reacts faster and holds less heat than cast iron. Stue therefore has about **1.5 times the capacity** of Køkken (2:3 by width), while Køkken faces south and airs often. At a fixed 45–50 °C supply the Køkken radiator has the least capacity to catch up after airing, which fits what we see (Køkken lags 2–3 °C behind its target in the afternoon). Cast iron holds a lot of water and iron, so it stays warm for hours after the valve closes (the thermostat on it reads high and says "heating" long after), reacts slowly, and radiates a larger share of its heat than a panel radiator (so reflector foil behind it is worth more than behind a panel radiator).
+
 Because of this the same schedule behaves differently per room. Check each room against its own thermometer over a few days before copying settings between rooms. A later improvement is to skip or shorten pre-heat when the weather forecast promises sun.
 
 ## Open question: the outdoor sensor
@@ -80,11 +82,19 @@ What this means for the sensors above (not changed yet, to be done when it first
 - Peak shaving with the radiators looks like a small gain: the compressor runs roughly 20–30 % of the time, so a 2-hour block avoids about 1.5–2 kWh, and with a 1 kr/kWh price spread that is about 2 kr per block (60–120 kr a month), and the rooms get a bit colder. Earlier tests with the supply-curve offset only lowered the rooms by about 0.7 °C in the morning and barely in the evening. These are estimates; the meter and the price give the data to check them after a couple of weeks.
 - Bigger levers, in order: (1) charge the car in the cheapest hours (Zaptec Go2), (2) avoid the elpatron (it adds about 3 kW), (3) check the outdoor sensor and supply temperature (ESP32 probes on order), (4) control the basement. Peak shaving can wait for measured data.
 
+## Bedrooms: day plan (Soveværelse and Astrid)
+
+Both bedrooms follow the same plan. **Weekdays:** **20 °C from 16:00 to 07:00**, when the family is home and sleeping, and **18 °C the rest of the day**. **Weekends:** **20 °C all day** (Friday 15:00 raises it, and nothing lowers it again until Monday 07:00). They have no night setback (the opposite of Stue and Køkken). `config/automations/bedroom_schedule.yaml` tells the two thermostats at **15:00** (a one hour lead, because the cast iron radiators are slow) and at **07:00**. It only runs at those two times, so a change made by hand stays until the next switch. Soveværelse has cast iron (slow), Astrid a new radiator (faster): the one hour lead fits the bedroom; Astrid's room probably needs less (about 30 minutes) and can get its own time once its warm-up has been measured. The Airthings stands in Astrid's room for now and is shown there as the room thermometer.
+
 ## Settings used now
 
-| Room | Day target (thermostat) | Night (23:00–06:30) |
-|------|-------------------------|---------------------|
-| Stue | 21 °C (room thermometer shows the real value) | 19 °C |
-| Køkken | 21 °C (the thermostat reads about 2 °C high, so the room is about 19–20 °C) | 19 °C |
+| Room | Weekdays | Weekends | Night |
+|------|----------|----------|-------|
+| Stue | 20 °C, but 18 °C from 08:00 to 15:00 (away; told 08:00, back to 20 °C at 15:00 for 16:00) | 20 °C all day | −2 °C (18 °C) from 23:00 to 06:30 |
+| Køkken | same as Stue (the thermostat reads about 2 °C high, so the room is about 18–19 °C) | 20 °C all day | −2 °C from 23:00 to 06:30 |
+| Soveværelse | 20 °C from 16:00 to 07:00, 18 °C otherwise | 20 °C all day | no setback |
+| Astrid | same as Soveværelse | 20 °C all day | no setback |
+
+`config/automations/living_weekday_plan.yaml` runs the weekday away plan for Stue and Køkken; the switch `input_boolean.weekday_away_plan` turns it off. The 18 °C away value is an assumption; change it in that file if another value is wanted.
 
 Regulation on the room thermometer is **not** used: the thermostat's temperature offset does not change what it reports, see [liljebagge.md](liljebagge.md). The two rooms are left to run on their own readings first, so the difference can be compared.
