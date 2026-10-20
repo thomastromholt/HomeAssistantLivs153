@@ -1,0 +1,78 @@
+
+
+# Room plans (the bedrooms only). Each room has a standard "warm" and "low" temperature (input_number.warm_<room>, low_<room>;
+# default 21 and 18). Soveværelse and Astrid: weekdays warm from 16:00 (told 15:00) and low from 07:00; weekends warm all day.
+# Stue and Køkken have no day plan, only night mode (night_mode.yaml: -input_number.night_setback from 23:00 to 06:30).
+# If someone turns a thermostat up or down by hand (on the thermostat or on the card), the value is remembered as that room's
+# standard for the level that was active, and used the next time (see the learning automation at the bottom).
+- id: room_plans
+  alias: Rumplaner soveværelser, skift 07:00 og 15:00
+  mode: queued
+  triggers:
+    - trigger: time
+      at: "07:00:00"
+      id: t0700
+    - trigger: time
+      at: "15:00:00"
+      id: t1500
+  actions:
+    - choose:
+        # 07:00 weekdays: the bedrooms go down to their low value
+        - conditions:
+            - condition: trigger
+              id: t0700
+            - condition: time
+              weekday: [mon, tue, wed, thu, fri]
+          sequence:
+            - action: script.apply_room_level
+              data: { climate: climate.liljebagge_radiator_thermostat_3, room: sovevaerelse, level: low }
+            - action: script.apply_room_level
+              data: { climate: climate.liljebagge_radiator_thermostat_4, room: astrid, level: low }
+        # 15:00 every day: the bedrooms go warm (a one hour lead for the slow radiators)
+        - conditions:
+            - condition: trigger
+              id: t1500
+          sequence:
+            - action: script.apply_room_level
+              data: { climate: climate.liljebagge_radiator_thermostat_3, room: sovevaerelse, level: warm }
+            - action: script.apply_room_level
+              data: { climate: climate.liljebagge_radiator_thermostat_4, room: astrid, level: warm }
+
+- id: room_learn_manual
+  alias: Husk manuelle ændringer af rumtemperatur
+  mode: queued
+  triggers:
+    - trigger: state
+      entity_id:
+        - climate.liljebagge_radiator_thermostat
+        - climate.liljebagge_radiator_thermostat_2
+        - climate.liljebagge_radiator_thermostat_3
+        - climate.liljebagge_radiator_thermostat_4
+      attribute: temperature
+  conditions:
+    - condition: template
+      value_template: >-
+        {{ trigger.from_state is not none and trigger.to_state is not none
+           and is_number(trigger.from_state.attributes.temperature) and is_number(trigger.to_state.attributes.temperature) }}
+  actions:
+    - variables:
+        room: >-
+          {{ {'climate.liljebagge_radiator_thermostat': 'stue', 'climate.liljebagge_radiator_thermostat_2': 'kokken',
+              'climate.liljebagge_radiator_thermostat_3': 'sovevaerelse', 'climate.liljebagge_radiator_thermostat_4': 'astrid'}[trigger.entity_id] }}
+        new: "{{ trigger.to_state.attributes.temperature | float }}"
+        last: "{{ states('input_number.last_cmd_' ~ room) | float(-1) }}"
+        level: "{{ states('input_select.last_level_' ~ room) }}"
+    # Only a real change counts: not the plan's own command or its echo (equal to the last command), not night mode,
+    # and not the lowest setting or something out of the normal range.
+    - condition: template
+      value_template: "{{ level in ['warm', 'low'] and (new - last) | abs >= 0.25 and 15 <= new <= 26 }}"
+    - action: input_number.set_value
+      target:
+        entity_id: "input_number.{{ level }}_{{ room }}"
+      data:
+        value: "{{ new }}"
+    - action: input_number.set_value
+      target:
+        entity_id: "input_number.last_cmd_{{ room }}"
+      data:
+        value: "{{ new }}"

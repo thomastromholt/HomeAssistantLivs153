@@ -118,11 +118,14 @@
             kokken: { name: 'Køkken', suffix: '_2', deviceId: '693637959f507ce567f16408ba4b712d', room: null,
                     night: { mode: 'input_boolean.night_mode_kokken', active: 'input_boolean.night_active_kokken', dayTarget: 'input_number.day_target_kokken' } },
             sovevaerelse: { name: 'Soveværelse', suffix: '_3', deviceId: '6cc6d13bf6e043fa587d7ca0f61089d0', room: null, night: null,   // no night setback: warmer at night
-                    plan: { warm: 20, low: 18, weekday: [[0, 7, 'warm'], [7, 15, 'low'], [15, 24, 'warm']], weekend: [[0, 24, 'warm']], switches: [{ hour: 7, days: [1, 2, 3, 4, 5], temp: 18 }, { hour: 15, days: [0, 1, 2, 3, 4, 5, 6], temp: 20 }] } },
+                    plan: { weekday: [[0, 7, 'warm'], [7, 15, 'low'], [15, 24, 'warm']], weekend: [[0, 24, 'warm']], switches: [{ hour: 7, days: [1, 2, 3, 4, 5], level: 'low' }, { hour: 15, days: [0, 1, 2, 3, 4, 5, 6], level: 'warm' }] } },
             astrid: { name: 'Astrid', suffix: '_4', deviceId: 'd5c9bb2a681637513a7bde75b298a786', room: 'sensor.airthings_wave_270668_temperatur', roomName: 'Airthings', night: null,
-                    plan: { warm: 20, low: 18, weekday: [[0, 7, 'warm'], [7, 15, 'low'], [15, 24, 'warm']], weekend: [[0, 24, 'warm']], switches: [{ hour: 7, days: [1, 2, 3, 4, 5], temp: 18 }, { hour: 15, days: [0, 1, 2, 3, 4, 5, 6], temp: 20 }] } },   // no night setback
+                    plan: { weekday: [[0, 7, 'warm'], [7, 15, 'low'], [15, 24, 'warm']], weekend: [[0, 24, 'warm']], switches: [{ hour: 7, days: [1, 2, 3, 4, 5], level: 'low' }, { hour: 15, days: [0, 1, 2, 3, 4, 5, 6], level: 'warm' }] } },   // no night setback
         };
-        const ROOM = ROOMS[new URLSearchParams(location.search).get('room')] || ROOMS.stue;
+        const ROOM_KEY = ROOMS[new URLSearchParams(location.search).get('room')] ? new URLSearchParams(location.search).get('room') : 'stue';
+        const ROOM = ROOMS[ROOM_KEY];
+        // Standard temperatures of the room (remembered when someone turns the dial): input_number.warm_<room> and low_<room>.
+        if (ROOM.plan) { ROOM.plan.warmEntity = `input_number.warm_${ROOM_KEY}`; ROOM.plan.lowEntity = `input_number.low_${ROOM_KEY}`; ROOM.plan.warm = 21; ROOM.plan.low = 18; }
         const S = ROOM.suffix, P = 'liljebagge_radiator_thermostat';
         const DEVICE_ID = ROOM.deviceId;
         const E = {
@@ -187,13 +190,13 @@
                     const seg = document.createElement('div');
                     seg.className = `seg ${kind}`;
                     seg.style.cssText = `left:${from / 24 * 100}%;width:${(to - from) / 24 * 100}%`;
-                    seg.textContent = (to - from) >= 3 ? `${kind === 'warm' ? plan.warm : plan.low}°` : '';
+                    seg.textContent = (to - from) >= 3 ? `${formatNumber(kind === 'warm' ? plan.warm : plan.low, 1)}°` : '';
                     return seg;
                 }));
             };
             strip(document.getElementById('planWeek'), plan.weekday);
             strip(document.getElementById('planEnd'), plan.weekend);
-            document.getElementById('planRule').textContent = `${plan.warm}° warm · ${plan.low}° otherwise`;
+            document.getElementById('planRule').textContent = `${formatNumber(plan.warm, 1)}° warm · ${formatNumber(plan.low, 1)}° low`;
             const now = new Date(), weekend = [0, 6].includes(now.getDay());
             document.getElementById('planWeek').parentElement.classList.toggle('today', !weekend);
             document.getElementById('planEnd').parentElement.classList.toggle('today', weekend);
@@ -204,7 +207,8 @@
                     .filter(s => s.at > now).sort((a, b) => a.at - b.at);
                 if (hits.length) {
                     const s = hits[0], when = d === 0 ? 'today' : d === 1 ? 'tomorrow' : s.at.toLocaleDateString('en-GB', { weekday: 'long' });
-                    document.getElementById('planNext').textContent = `Next: ${s.temp} °C ${when} at ${String(s.hour).padStart(2, '0')}:00. The thermostat is told one hour before the warm period starts.`;
+                    const temp = formatNumber(s.level === 'warm' ? plan.warm : plan.low, 1);
+                    document.getElementById('planNext').textContent = `Next: ${temp} °C ${when} at ${String(s.hour).padStart(2, '0')}:00. If someone turns the thermostat up or down, that value is remembered as this room's ${s.level} temperature.`;
                     return;
                 }
             }
@@ -277,10 +281,16 @@
             try {
                 const [climate, states] = await Promise.all([
                     callApi('GET', `states/${E.climate}`).catch(() => null),
-                    statesOf([E.temp, E.battery, E.voltage, E.offset, E.update, E.remaining, E.nightMode, E.nightActive, E.dayTarget, E.setback, E.room].filter(Boolean)),
+                    statesOf([E.temp, E.battery, E.voltage, E.offset, E.update, E.remaining, E.nightMode, E.nightActive, E.dayTarget, E.setback, E.room, ROOM.plan && ROOM.plan.warmEntity, ROOM.plan && ROOM.plan.lowEntity].filter(Boolean)),
                 ]);
                 const problems = [];
                 const updateState = await callApi('GET', `states/${E.update}`).catch(() => null);
+                if (ROOM.plan) {
+                    const w = parseFloat(states[ROOM.plan.warmEntity]), l = parseFloat(states[ROOM.plan.lowEntity]);
+                    if (!Number.isNaN(w)) ROOM.plan.warm = w;
+                    if (!Number.isNaN(l)) ROOM.plan.low = l;
+                    drawPlan();
+                }
                 const night = { active: states[E.nightActive] === 'on', setback: formatNumber(states[E.setback], 1), dayTarget: formatNumber(states[E.dayTarget], 1) };
                 const roomTemp = formatNumber(states[E.room], 1);
                 document.getElementById('linkValue').textContent = roomTemp === null ? '' : `${roomTemp} °C`;
@@ -354,7 +364,7 @@
         });
 
         // A change made on the thermostat itself shows up at once. Changes from Home Assistant carry a user id; the device's own do not.
-        watchEntities([E.climate, E.update, E.nightMode, E.nightActive].filter(Boolean), (state, event) => {
+        watchEntities([E.climate, E.update, E.nightMode, E.nightActive, ROOM.plan && ROOM.plan.warmEntity, ROOM.plan && ROOM.plan.lowEntity].filter(Boolean), (state, event) => {
             const old = event.data.old_state;
             const targetChanged = old && old.attributes.temperature !== state.attributes.temperature;
             if (targetChanged && !event.context.user_id && pending === null) {

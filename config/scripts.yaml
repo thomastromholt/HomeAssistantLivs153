@@ -1,0 +1,32 @@
+# Sets a room's thermostat to its "warm" or "low" temperature (the values in input_number.warm_<room> / low_<room>).
+# The helpers are written BEFORE the command is sent, so the learning automation (room_plans.yaml) knows the change came
+# from the plan and does not mistake it (or the thermostat's echo of it) for someone turning the dial.
+apply_room_level:
+  alias: Apply room level
+  mode: queued
+  fields:
+    climate:
+      description: The climate entity of the room
+    room:
+      description: Room key (stue, kokken, sovevaerelse, astrid)
+    level:
+      description: warm or low
+  sequence:
+    - variables:
+        target: "{{ states('input_number.' ~ level ~ '_' ~ room) | float(20) }}"
+    - action: input_number.set_value
+      target:
+        entity_id: "input_number.last_cmd_{{ room }}"
+      data:
+        value: "{{ target }}"
+    - action: input_select.select_option
+      target:
+        entity_id: "input_select.last_level_{{ room }}"
+      data:
+        option: "{{ level }}"
+    - action: climate.set_temperature
+      continue_on_error: true
+      target:
+        entity_id: "{{ climate }}"
+      data:
+        temperature: "{{ target }}"

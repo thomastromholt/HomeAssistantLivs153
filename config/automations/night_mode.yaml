@@ -21,13 +21,26 @@
         entity_id: input_number.day_target_stue
       data:
         value: "{{ state_attr('climate.liljebagge_radiator_thermostat', 'temperature') }}"
+    - variables:
+        night_target: >-
+          {{ [state_attr('climate.liljebagge_radiator_thermostat', 'temperature') | float
+              - states('input_number.night_setback') | float, 5] | max }}
+    # Mark the change as coming from night mode first, so the learning automation (room_plans.yaml) ignores it.
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.last_cmd_stue
+      data:
+        value: "{{ night_target }}"
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.last_level_stue
+      data:
+        option: night
     - action: climate.set_temperature
       target:
         entity_id: climate.liljebagge_radiator_thermostat
       data:
-        temperature: >-
-          {{ [state_attr('climate.liljebagge_radiator_thermostat', 'temperature') | float
-              - states('input_number.night_setback') | float, 5] | max }}
+        temperature: "{{ night_target }}"
     - action: input_boolean.turn_on
       target:
         entity_id: input_boolean.night_active_stue
@@ -48,11 +61,21 @@
             {{ (state_attr('climate.liljebagge_radiator_thermostat', 'temperature') | float(0)
                 - ([states('input_number.day_target_stue') | float - states('input_number.night_setback') | float, 5] | max)) | abs < 0.1 }}
       then:
+        - action: input_number.set_value
+          target:
+            entity_id: input_number.last_cmd_stue
+          data:
+            value: "{{ states('input_number.day_target_stue') | float }}"
         - action: climate.set_temperature
           target:
             entity_id: climate.liljebagge_radiator_thermostat
           data:
             temperature: "{{ states('input_number.day_target_stue') | float }}"
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.last_level_stue
+      data:
+        option: warm
     - action: input_boolean.turn_off
       target:
         entity_id: input_boolean.night_active_stue
@@ -75,13 +98,26 @@
         entity_id: input_number.day_target_kokken
       data:
         value: "{{ state_attr('climate.liljebagge_radiator_thermostat_2', 'temperature') }}"
+    - variables:
+        night_target: >-
+          {{ [state_attr('climate.liljebagge_radiator_thermostat_2', 'temperature') | float
+              - states('input_number.night_setback') | float, 5] | max }}
+    # Mark the change as coming from night mode first, so the learning automation (room_plans.yaml) ignores it.
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.last_cmd_kokken
+      data:
+        value: "{{ night_target }}"
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.last_level_kokken
+      data:
+        option: night
     - action: climate.set_temperature
       target:
         entity_id: climate.liljebagge_radiator_thermostat_2
       data:
-        temperature: >-
-          {{ [state_attr('climate.liljebagge_radiator_thermostat_2', 'temperature') | float
-              - states('input_number.night_setback') | float, 5] | max }}
+        temperature: "{{ night_target }}"
     - action: input_boolean.turn_on
       target:
         entity_id: input_boolean.night_active_kokken
@@ -102,11 +138,21 @@
             {{ (state_attr('climate.liljebagge_radiator_thermostat_2', 'temperature') | float(0)
                 - ([states('input_number.day_target_kokken') | float - states('input_number.night_setback') | float, 5] | max)) | abs < 0.1 }}
       then:
+        - action: input_number.set_value
+          target:
+            entity_id: input_number.last_cmd_kokken
+          data:
+            value: "{{ states('input_number.day_target_kokken') | float }}"
         - action: climate.set_temperature
           target:
             entity_id: climate.liljebagge_radiator_thermostat_2
           data:
             temperature: "{{ states('input_number.day_target_kokken') | float }}"
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.last_level_kokken
+      data:
+        option: warm
     - action: input_boolean.turn_off
       target:
         entity_id: input_boolean.night_active_kokken

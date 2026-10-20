@@ -88,13 +88,13 @@ Both bedrooms follow the same plan. **Weekdays:** **20 °C from 16:00 to 07:00**
 
 ## Settings used now
 
+Standard temperature is **21 °C** in all four rooms (the "warm" value), 18 °C is the "low" value. If someone turns a thermostat up or down by hand, HA remembers it as that room's warm (or low) temperature for next time (`input_number.warm_<room>` and `low_<room>`, `config/automations/room_plans.yaml`).
+
 | Room | Weekdays | Weekends | Night |
 |------|----------|----------|-------|
-| Stue | 20 °C, but 18 °C from 08:00 to 15:00 (away; told 08:00, back to 20 °C at 15:00 for 16:00) | 20 °C all day | −2 °C (18 °C) from 23:00 to 06:30 |
-| Køkken | same as Stue (the thermostat reads about 2 °C high, so the room is about 18–19 °C) | 20 °C all day | −2 °C from 23:00 to 06:30 |
-| Soveværelse | 20 °C from 16:00 to 07:00, 18 °C otherwise | 20 °C all day | no setback |
-| Astrid | same as Soveværelse | 20 °C all day | no setback |
-
-`config/automations/living_weekday_plan.yaml` runs the weekday away plan for Stue and Køkken; the switch `input_boolean.weekday_away_plan` turns it off. The 18 °C away value is an assumption; change it in that file if another value is wanted.
+| Stue | warm all day | warm all day | −2 °C from 23:00 to 06:30 |
+| Køkken | warm all day (the thermostat reads about 2 °C high) | warm all day | −2 °C from 23:00 to 06:30 |
+| Soveværelse | warm from 16:00 (told 15:00) to 07:00, low from 07:00 to 15:00 | warm all day | no setback |
+| Astrid | same as Soveværelse | warm all day | no setback |
 
 Regulation on the room thermometer is **not** used: the thermostat's temperature offset does not change what it reports, see [liljebagge.md](liljebagge.md). The two rooms are left to run on their own readings first, so the difference can be compared.

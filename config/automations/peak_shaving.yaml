@@ -1,3 +1,5 @@
+# NOT IN USE and NOT deployed: the old version that switched a relay to the NIBE supply curve (replaced by thermostats per room).
+# HA's /config/automations.yaml is made from night_mode.yaml and room_plans.yaml only. Kept as history; see commit e75cb80.
 # Peak shaving for the NIBE heat pump. Rules: docs/peak-shaving-rules.md
 #
 # Relay: switch.dry_relay (Zigbee dry contact). ON = contact closed = the NIBE applies its -2 heat-curve
