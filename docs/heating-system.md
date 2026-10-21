@@ -86,15 +86,23 @@ What this means for the sensors above (not changed yet, to be done when it first
 
 Both bedrooms follow the same plan. **Weekdays:** **20 °C from 16:00 to 07:00**, when the family is home and sleeping, and **18 °C the rest of the day**. **Weekends:** **20 °C all day** (Friday 15:00 raises it, and nothing lowers it again until Monday 07:00). They have no night setback (the opposite of Stue and Køkken). `config/automations/bedroom_schedule.yaml` tells the two thermostats at **15:00** (a one hour lead, because the cast iron radiators are slow) and at **07:00**. It only runs at those two times, so a change made by hand stays until the next switch. Soveværelse has cast iron (slow), Astrid a new radiator (faster): the one hour lead fits the bedroom; Astrid's room probably needs less (about 30 minutes) and can get its own time once its warm-up has been measured. The Airthings stands in Astrid's room for now and is shown there as the room thermometer.
 
-## Settings used now
+## Firmware updates of the thermostats
 
-Standard temperature is **21 °C** in all four rooms (the "warm" value), 18 °C is the "low" value. If someone turns a thermostat up or down by hand, HA remembers it as that room's warm (or low) temperature for next time (`input_number.warm_<room>` and `low_<room>`, `config/automations/room_plans.yaml`).
+All four LILJEBAGGE thermostats are on firmware 1.1.6 (2026-10-21). `config/automations/firmware_updates.yaml` installs pending updates on weekdays at 10:00, one thermostat at a time and only if its battery is above 30 %. An update that has been "skipped" in Home Assistant is not installed (the update entity reads "off"; run `update.clear_skipped` to offer it again). HA's `automations.yaml` on the box is `room_plans.yaml` followed by `firmware_updates.yaml` (not `peak_shaving.yaml`).
 
-| Room | Weekdays | Weekends | Night |
-|------|----------|----------|-------|
-| Stue | warm all day | warm all day | −2 °C from 23:00 to 06:30 |
-| Køkken | warm all day (the thermostat reads about 2 °C high) | warm all day | −2 °C from 23:00 to 06:30 |
-| Soveværelse | warm from 16:00 (told 15:00) to 07:00, low from 07:00 to 15:00 | warm all day | no setback |
-| Astrid | same as Soveværelse | warm all day | no setback |
+## Settings used now: one plan per room
+
+Every room has a plan for **weekdays** and one for **weekends**, stored in Home Assistant as text (`input_text.plan_<room>_weekday` and `plan_<room>_weekend`), for example `0:low,6.5:warm,8:low,15:warm,23:low` = from 00:00 low, from 06:30 warm, from 08:00 low, from 15:00 warm, from 23:00 low (hours as numbers, 6.5 = 06:30). The level is **warm** or **low**; their temperatures are `input_number.warm_<room>` and `low_<room>`. Night mode is simply part of the plan: it is the "low" level in the night. The pop-up of each room shows the plan with a marker for where we are now.
+
+`config/automations/room_plans.yaml` checks every 5 minutes (and when Home Assistant starts) whether a room's level has changed and only then sends a command, so a temperature set by hand stays until the next change. If someone turns a thermostat up or down by hand, the value is remembered as the room's temperature for the level that was active (the learning automation in the same file).
+
+| Room | Warm | Low | Weekday plan | Weekend plan |
+|------|------|-----|--------------|--------------|
+| Stue | 21 | 19 | low until 06:30, warm 06:30–08:00, low 08:00–15:00, warm 15:00–23:00, low from 23:00 | low until 06:30, warm 06:30–23:00, low from 23:00 |
+| Køkken | 21 | 19 | same as Stue (the thermostat reads about 2 °C high) | same as Stue |
+| Soveværelse | 21 | 18 | warm until 07:00, low 07:00–15:00, warm from 15:00 (told an hour before 16:00) | warm all day |
+| Astrid | 21 | 18 | same as Soveværelse | warm all day |
+
+To change a plan, edit the text of the helper (Settings → Devices & services → Helpers), or change the temperatures there. The 5 minute check picks it up. The old night mode (a separate automation with its own helpers) is gone.
 
 Regulation on the room thermometer is **not** used: the thermostat's temperature offset does not change what it reports, see [liljebagge.md](liljebagge.md). The two rooms are left to run on their own readings first, so the difference can be compared.

@@ -1,42 +1,54 @@
 
-
-# Room plans (the bedrooms only). Each room has a standard "warm" and "low" temperature (input_number.warm_<room>, low_<room>;
-# default 21 and 18). Soveværelse and Astrid: weekdays warm from 16:00 (told 15:00) and low from 07:00; weekends warm all day.
-# Stue and Køkken have no day plan, only night mode (night_mode.yaml: -input_number.night_setback from 23:00 to 06:30).
-# If someone turns a thermostat up or down by hand (on the thermostat or on the card), the value is remembered as that room's
-# standard for the level that was active, and used the next time (see the learning automation at the bottom).
+# Room plans: one schedule per room for weekdays and for weekends, stored as text in HA (input_text.plan_<room>_weekday and
+# plan_<room>_weekend), for example "0:low,6.5:warm,8:low,15:warm,23:low" = from midnight low, from 06:30 warm, from 08:00
+# low, from 15:00 warm, from 23:00 low (hours as numbers, 6.5 = 06:30). The level is "warm" or "low"; the temperatures are
+# in input_number.warm_<room> and low_<room> (defaults 21 and 18; Stue and Køkken have low 19). The cards read the same text.
+# Night mode is part of this: for Stue and Køkken the low level covers the night (23:00-06:30) and the away hours (08:00-15:00).
+# Every 5 minutes (and when Home Assistant starts) each room's level now is compared with the level last applied
+# (input_select.last_level_<room>); only a change sends a command, so a temperature set by hand stays until the next change.
+# The thermostats of the bedrooms are told at 15:00, an hour before the warm period; edit the plan text to change that.
+# If someone turns a thermostat up or down by hand, the value is remembered as that room's standard for the level that was
+# active, and used the next time (see the learning automation at the bottom).
 - id: room_plans
-  alias: Rumplaner soveværelser, skift 07:00 og 15:00
+  alias: Rumplaner, tjek hvert 5. minut
   mode: queued
   triggers:
-    - trigger: time
-      at: "07:00:00"
-      id: t0700
-    - trigger: time
-      at: "15:00:00"
-      id: t1500
+    - trigger: time_pattern
+      minutes: "/5"
+    - trigger: homeassistant
+      event: start
   actions:
-    - choose:
-        # 07:00 weekdays: the bedrooms go down to their low value
-        - conditions:
-            - condition: trigger
-              id: t0700
-            - condition: time
-              weekday: [mon, tue, wed, thu, fri]
-          sequence:
-            - action: script.apply_room_level
-              data: { climate: climate.liljebagge_radiator_thermostat_3, room: sovevaerelse, level: low }
-            - action: script.apply_room_level
-              data: { climate: climate.liljebagge_radiator_thermostat_4, room: astrid, level: low }
-        # 15:00 every day: the bedrooms go warm (a one hour lead for the slow radiators)
-        - conditions:
-            - condition: trigger
-              id: t1500
-          sequence:
-            - action: script.apply_room_level
-              data: { climate: climate.liljebagge_radiator_thermostat_3, room: sovevaerelse, level: warm }
-            - action: script.apply_room_level
-              data: { climate: climate.liljebagge_radiator_thermostat_4, room: astrid, level: warm }
+    - repeat:
+        for_each:
+          - { room: stue, climate: climate.liljebagge_radiator_thermostat }
+          - { room: kokken, climate: climate.liljebagge_radiator_thermostat_2 }
+          - { room: sovevaerelse, climate: climate.liljebagge_radiator_thermostat_3 }
+          - { room: astrid, climate: climate.liljebagge_radiator_thermostat_4 }
+        sequence:
+          - variables:
+              level: >-
+                {% set h = now().hour + now().minute / 60 %}
+                {% set kind = 'weekday' if now().weekday() < 5 else 'weekend' %}
+                {% set ns = namespace(level='', best=-1) %}
+                {% for item in states('input_text.plan_' ~ repeat.item.room ~ '_' ~ kind).split(',') %}
+                  {% set p = item.split(':') %}
+                  {% if p | length == 2 and (p[0] | float(-1)) >= 0 and (p[0] | float(-1)) <= h and (p[0] | float(-1)) >= ns.best %}
+                    {% set ns.level = p[1] | trim %}
+                    {% set ns.best = p[0] | float(-1) %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.level }}
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ level in ['warm', 'low'] and level != states('input_select.last_level_' ~ repeat.item.room)
+                     and not is_state(repeat.item.climate, 'unavailable') }}
+            then:
+              - action: script.apply_room_level
+                data:
+                  climate: "{{ repeat.item.climate }}"
+                  room: "{{ repeat.item.room }}"
+                  level: "{{ level }}"
 
 - id: room_learn_manual
   alias: Husk manuelle ændringer af rumtemperatur

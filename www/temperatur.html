@@ -55,12 +55,12 @@
         const OUTDOOR = 'weather.forecast_home';   // from the internet (met.no), not a sensor
 
         // One LILJEBAGGE thermostat per room. A room with a `thermometer` shows that sensor (and humidity) instead of the
-        // thermostat's own reading. `night: false` = no night setback in that room (bedroom and Astrid are warmer at night).
+        // thermostat's own reading. `night: false` = no night-mode helpers (night mode is part of the room plans now).
         const ZONES = [
-            { key: 'stue', name: 'Stue', suffix: '', deviceId: '88a5efd90680fa98c6117641c9084aec',
+            { key: 'stue', name: 'Stue', suffix: '', deviceId: '88a5efd90680fa98c6117641c9084aec', night: false,
               thermometer: { label: 'Thermometer', name: 'Timmerflotte', temperature: 'sensor.timmerflotte_temp_hmd_sensor_temperatur',
                              humidity: 'sensor.timmerflotte_temp_hmd_sensor_luftfugtighed', battery: 'sensor.timmerflotte_temp_hmd_sensor_batteri' } },
-            { key: 'kokken', name: 'Køkken', suffix: '_2', deviceId: '693637959f507ce567f16408ba4b712d' },
+            { key: 'kokken', name: 'Køkken', suffix: '_2', deviceId: '693637959f507ce567f16408ba4b712d', night: false },
             { key: 'sovevaerelse', name: 'Soveværelse', suffix: '_3', deviceId: '6cc6d13bf6e043fa587d7ca0f61089d0', night: false },
             { key: 'astrid', name: 'Astrid', suffix: '_4', deviceId: 'd5c9bb2a681637513a7bde75b298a786', night: false,
               // The Airthings stands in this room for now and works as its thermometer.
@@ -156,7 +156,7 @@
         async function render() {
             try {
                 const problems = [];
-                const setback = formatNumber(await stateOf('input_number.night_setback'), 1);
+                const setback = null;   // night mode is part of the room plans now (input_text.plan_<room>_...)
                 for (const z of ZONES) await renderZone(z, setback, problems);
 
                 const weather = await callApi('GET', `states/${OUTDOOR}`).catch(() => null);

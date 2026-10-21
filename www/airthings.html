@@ -101,16 +101,27 @@
         const levelVoc = ppb => ppb < 250 ? 'good' : ppb < 2000 ? 'fair' : 'poor';
         const levelHumidity = pct => pct >= 25 && pct <= 60 ? 'good' : pct >= 15 && pct <= 70 ? 'fair' : 'poor';
 
-        document.getElementById('radonButton').addEventListener('click', () => openHistory(E.radon));
+        // Everything on the card opens the detail pop-up (radon.html) with that measurement selected.
+        const detail = metric => () => openPopup(`/local/radon.html?metric=${metric}&v=` + Date.now());
+        document.getElementById('radonButton').addEventListener('click', detail('radon'));
+        function metricTile(parent, label, metric) {
+            const button = document.createElement('button');
+            button.className = 'tile';
+            button.innerHTML = '<div class="tile-label"></div><div class="tile-value"></div>';
+            button.querySelector('.tile-label').textContent = label;
+            button.addEventListener('click', detail(metric));
+            parent.append(button);
+            return button.querySelector('.tile-value');
+        }
 
         const grid = document.getElementById('grid');
         const tiles = {
-            co2: createTile(grid, 'CO₂', E.co2),
-            voc: createTile(grid, 'VOC', E.voc),
-            humidity: createTile(grid, 'Humidity', E.humidity),
-            temperature: createTile(grid, 'Temperature', E.temperature),
-            pressure: createTile(grid, 'Pressure', E.pressure),
-            radonLongterm: createTile(grid, 'Long-term', E.radonLongterm),
+            co2: metricTile(grid, 'CO₂', 'co2'),
+            voc: metricTile(grid, 'VOC', 'voc'),
+            humidity: metricTile(grid, 'Humidity', 'humidity'),
+            temperature: metricTile(grid, 'Temperature', 'temperature'),
+            pressure: metricTile(grid, 'Pressure', 'pressure'),
+            radonLongterm: metricTile(grid, 'Long-term', 'radonLong'),
         };
 
         function setTile(tile, state, digits, suffix, level) {

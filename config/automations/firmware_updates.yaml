@@ -1,0 +1,36 @@
+
+# Installs pending firmware updates on the four LILJEBAGGE thermostats on weekdays at 10:00, when the family is away
+# (the LED blinks and the valve does not react for a few minutes while a thermostat updates).
+# (The keys are called firmware and charge: "update" is a reserved word in the templates and breaks them.)
+# One thermostat at a time, and only if its battery is above 30 %. An update that has been "skipped" in Home Assistant is not
+# installed (its update entity then reads "off"; use update.clear_skipped to offer it again).
+- id: thermostat_firmware_updates
+  alias: Opdatér termostat-firmware hverdage 10:00
+  mode: single
+  triggers:
+    - trigger: time
+      at: "10:00:00"
+  conditions:
+    - condition: time
+      weekday: [mon, tue, wed, thu, fri]
+  actions:
+    - repeat:
+        for_each:
+          - { firmware: update.liljebagge_radiator_thermostat_firmware, charge: sensor.liljebagge_radiator_thermostat_batteri }
+          - { firmware: update.liljebagge_radiator_thermostat_firmware_2, charge: sensor.liljebagge_radiator_thermostat_batteri_2 }
+          - { firmware: update.liljebagge_radiator_thermostat_firmware_3, charge: sensor.liljebagge_radiator_thermostat_batteri_3 }
+          - { firmware: update.liljebagge_radiator_thermostat_firmware_4, charge: sensor.liljebagge_radiator_thermostat_batteri_4 }
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ is_state(repeat.item.firmware, 'on') and states(repeat.item.charge) | float(0) > 30 }}"
+            then:
+              - action: update.install
+                continue_on_error: true
+                target:
+                  entity_id: "{{ repeat.item.firmware }}"
+              # Give it a moment to start, then wait (at most 30 minutes) until it is finished before the next one.
+              - delay: "00:00:30"
+              - wait_template: "{{ not state_attr(repeat.item.firmware, 'in_progress') }}"
+                timeout: "00:30:00"
+                continue_on_timeout: true

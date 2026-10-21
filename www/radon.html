@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radon</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        .container { overflow-y: auto; gap: 10px; padding: 18px 20px 16px; }
+        .close { border: 0; background: rgba(255, 255, 255, 0.08); color: #c5d1d9; width: 32px; height: 32px; border-radius: 50%; font-size: 16px; cursor: pointer; }
+
+        .hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-radius: 16px; background: rgba(255, 255, 255, 0.06); }
+        .hero-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #8da0ad; }
+        .hero-value { font-size: 58px; font-weight: 200; line-height: 1.05; letter-spacing: -1px; color: var(--level, #f2f5f7); }
+        .hero-value small { font-size: 18px; font-weight: 400; letter-spacing: 0; color: #8da0ad; }
+        .hero-sub { margin-top: 2px; font-size: 12px; color: #8da0ad; }
+        .hero-side { display: grid; gap: 8px; text-align: right; }
+        .hero-side .pill { justify-self: end; font-size: 13px; padding: 5px 14px; }
+        .hero-note { font-size: 12px; color: #8da0ad; line-height: 1.5; }
+
+        .row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .chip { flex: 1; min-width: 90px; padding: 8px 10px; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: #8da0ad; font: inherit; font-size: 13px; cursor: pointer; text-align: center; transition: background .15s; }
+        .chip b { display: block; margin-top: 2px; font-size: 16px; font-weight: 600; color: #f2f5f7; }
+        .chip.on { background: rgba(100, 210, 255, 0.2); color: #64d2ff; }
+        .chip.on b { color: #64d2ff; }
+        .ranges .chip { min-width: 60px; padding: 7px 4px; }
+
+        .panel { padding: 12px 14px 10px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); }
+        .panel-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+        .panel-title { font-size: 14px; font-weight: 600; }
+        .panel-sub { font-size: 11px; color: #8da0ad; }
+        .chart { position: relative; height: clamp(220px, 36vh, 420px); }
+
+        .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        .kpi { padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); }
+        .kpi .big { margin-top: 3px; font-size: 22px; font-weight: 300; }
+        .kpi .big small { font-size: 12px; color: #8da0ad; margin-left: 2px; }
+        .kpi .sub { font-size: 11px; color: #6d808c; margin-top: 1px; }
+
+        .levels { display: flex; height: 14px; margin: 8px 0 6px; border-radius: 7px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
+        .levels i { display: block; height: 100%; transition: width .3s; }
+        .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: #8da0ad; }
+        .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+        .legend b { color: #f2f5f7; font-weight: 600; margin-left: 4px; }
+        .note { font-size: 11px; color: #8da0ad; line-height: 1.5; }
+        @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, 1fr); } .hero-value { font-size: 44px; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head">
+            <span class="name">Radon <span class="muted">· Airthings</span></span>
+            <button class="close" id="close" aria-label="Close">✕</button>
+        </div>
+        <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
+
+        <div class="hero" id="hero">
+            <div>
+                <div class="hero-label" id="heroLabel">1-day average</div>
+                <div class="hero-value"><span id="heroValue">–</span> <small id="heroUnit">Bq/m³</small></div>
+                <div class="hero-sub" id="heroSub"></div>
+            </div>
+            <div class="hero-side">
+                <span class="pill" id="heroPill"></span>
+                <div class="hero-note" id="heroNote"></div>
+            </div>
+        </div>
+
+        <div class="row" id="metrics"></div>
+        <div class="row ranges" id="ranges"></div>
+
+        <div class="panel">
+            <div class="panel-head"><span class="panel-title" id="chartTitle"></span><span class="panel-sub" id="chartSub"></span></div>
+            <div class="chart"><canvas id="chart"></canvas></div>
+        </div>
+
+        <div class="kpis" id="kpis"></div>
+
+        <div class="panel" id="levelPanel">
+            <div class="panel-head"><span class="panel-title">Time in each level</span><span class="panel-sub" id="levelSub"></span></div>
+            <div class="levels" id="levels"></div>
+            <div class="legend" id="legend"></div>
+        </div>
+        <div class="note" id="note"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        document.getElementById('close').addEventListener('click', () => closePopup());
+        const P = 'sensor.airthings_wave_270668_';
+        const COLORS = { good: '#5fe085', fair: '#ffb340', poor: '#ff6b61' };
+        const LABEL = { good: 'Good', fair: 'Fair', poor: 'Poor' };
+
+        // What each measurement is, how it is graded, and where the lines in the graph go.
+        // Radon: Airthings' regional limits for Sweden (fair from 100, poor from 200 Bq/m³).
+        const METRICS = {
+            radon: { name: 'Radon', entity: P + 'radon_1_day_average',
+                     unit: 'Bq/m³', digits: 0, min0: true, label: '1-day average',
+                     level: v => v < 100 ? 'good' : v < 200 ? 'fair' : 'poor', lines: [100, 200] },
+            radonLong: { name: 'Long-term', entity: P + 'radon_longterm_average',
+                     unit: 'Bq/m³', digits: 0, min0: true, label: 'Radon long-term average',
+                     level: v => v < 100 ? 'good' : v < 200 ? 'fair' : 'poor', lines: [100, 200] },
+            co2: { name: 'CO₂', entity: P + 'carbon_dioxide', unit: 'ppm', digits: 0, min0: false, label: 'Carbon dioxide',
+                   level: v => v < 800 ? 'good' : v < 1000 ? 'fair' : 'poor', lines: [800, 1000] },
+            voc: { name: 'VOC', entity: P + 'volatile_organic_compounds_parts', unit: 'ppb', digits: 0, min0: true, label: 'Volatile organic compounds',
+                   level: v => v < 250 ? 'good' : v < 2000 ? 'fair' : 'poor', lines: [250, 2000] },
+            humidity: { name: 'Humidity', entity: P + 'luftfugtighed', unit: '%', digits: 0, min0: false, label: 'Relative humidity',
+                        level: v => v >= 25 && v <= 60 ? 'good' : v >= 15 && v <= 70 ? 'fair' : 'poor', lines: [25, 60] },
+            temperature: { name: 'Temperature', entity: P + 'temperatur', unit: '°C', digits: 1, min0: false, label: 'Temperature', level: null, lines: [] },
+            pressure: { name: 'Pressure', entity: P + 'atmospheric_pressure', unit: 'hPa', digits: 0, min0: false, label: 'Air pressure', level: null, lines: [] },
+        };
+        // 'raw' windows use the recorded readings, longer ones the long-term statistics (kept for years).
+        const RANGES = [
+            { key: '24h', label: '24 h', hours: 24, source: 'raw', bucket: 15 * 60e3 },
+            { key: '3d', label: '3 d', hours: 72, source: 'raw', bucket: 60 * 60e3 },
+            { key: '7d', label: '7 d', hours: 168, source: 'hour', bucket: 3600e3 },
+            { key: '30d', label: '30 d', hours: 720, source: 'hour', bucket: 6 * 3600e3 },
+            { key: '90d', label: '90 d', hours: 2160, source: 'day', bucket: 86400e3 },
+            { key: '1y', label: '1 y', hours: 8760, source: 'day', bucket: 86400e3 },
+        ];
+
+        const params = new URLSearchParams(location.search);
+        let metricKey = METRICS[params.get('metric')] ? params.get('metric') : 'radon';
+        let rangeKey = RANGES.find(r => r.key === params.get('range')) ? params.get('range') : '7d';
+        let chart = null;
+        const fmt = (v, d = 0) => v === null || v === undefined || Number.isNaN(v) ? '–' : v.toLocaleString('sv-SE', { minimumFractionDigits: d, maximumFractionDigits: d });
+        const levelColor = (m, v) => m.level ? COLORS[m.level(v)] : '#64d2ff';
+
+        // ---- data -----------------------------------------------------------------------------------------------
+        async function rawHistory(entity, start, end) {
+            const url = `history/period/${start.toISOString()}?filter_entity_id=${entity}&end_time=${encodeURIComponent(end.toISOString())}&significant_changes_only=0&minimal_response&no_attributes`;
+            const result = await callApi('GET', url);
+            return (result[0] || []).filter(r => !Number.isNaN(parseFloat(r.state)))
+                .map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: parseFloat(r.state) }));
+        }
+        async function statistics(entity, period, start, end) {
+            const result = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: [entity], period, types: ['mean', 'min', 'max'] });
+            return ((result && result[entity]) || []).filter(r => r.mean != null).map(r => ({ t: +new Date(r.start), v: r.mean, lo: r.min, hi: r.max }));
+        }
+        // Averages the points into equal time buckets, so a year and a day both draw as a few hundred points.
+        function bucketize(points, size) {
+            const map = new Map();
+            for (const p of points) {
+                const k = Math.floor(p.t / size) * size, b = map.get(k) || { n: 0, sum: 0, lo: Infinity, hi: -Infinity };
+                b.n++; b.sum += p.v; b.lo = Math.min(b.lo, p.lo ?? p.v); b.hi = Math.max(b.hi, p.hi ?? p.v); map.set(k, b);
+            }
+            return [...map].sort((a, b) => a[0] - b[0]).map(([t, b]) => ({ t: t + size / 2, v: b.sum / b.n, lo: b.lo, hi: b.hi }));
+        }
+        async function series(entity, range) {
+            const end = new Date(), start = new Date(end - range.hours * 3600e3);
+            const points = range.source === 'raw' ? await rawHistory(entity, start, end) : await statistics(entity, range.source, start, end);
+            return { points: bucketize(points, range.bucket), start, end };
+        }
+
+        // ---- drawing ----------------------------------------------------------------------------------------------
+        const bandsPlugin = metric => ({
+            id: 'bands',
+            beforeDatasetsDraw(c) {
+                if (!metric.level) return;
+                const { ctx, chartArea: a, scales: { y } } = c;
+                const top = y.max, bottom = y.min;
+                const cuts = [bottom, ...metric.lines.filter(l => l > bottom && l < top), top];
+                ctx.save();
+                for (let i = 0; i + 1 < cuts.length; i++) {
+                    const mid = (cuts[i] + cuts[i + 1]) / 2, color = COLORS[metric.level(mid)];
+                    ctx.fillStyle = color + '14';
+                    ctx.fillRect(a.left, y.getPixelForValue(cuts[i + 1]), a.right - a.left, y.getPixelForValue(cuts[i]) - y.getPixelForValue(cuts[i + 1]));
+                }
+                ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '11px sans-serif';
+                for (const l of metric.lines) if (l > bottom && l < top) {
+                    const py = y.getPixelForValue(l);
+                    ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+                    ctx.fillText(`${l} ${metric.unit}`, a.left + 6, py - 4);
+                }
+                ctx.restore();
+            },
+        });
+
+        async function draw() {
+            const metric = METRICS[metricKey], range = RANGES.find(r => r.key === rangeKey);
+            try {
+                const main = await series(metric.entity, range);
+                const second = metric.second ? await series(metric.second.entity, range) : null;
+                const pts = main.points;
+                const datasets = [];
+                if (range.source !== 'raw' || range.key === '3d') {
+                    // A faint band for the lowest and highest reading in each bucket.
+                    datasets.push({ label: 'High', data: pts.map(p => ({ x: p.t, y: p.hi })), borderWidth: 0, pointRadius: 0, backgroundColor: 'rgba(100,210,255,0.10)', fill: '+1', order: 3 });
+                    datasets.push({ label: 'Low', data: pts.map(p => ({ x: p.t, y: p.lo })), borderWidth: 0, pointRadius: 0, fill: false, order: 3 });
+                }
+                datasets.push({ label: metric.label, data: pts.map(p => ({ x: p.t, y: p.v })), borderColor: '#64d2ff', backgroundColor: '#64d2ff', borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, order: 1 });
+                if (second) datasets.push({ label: metric.second.label, data: second.points.map(p => ({ x: p.t, y: p.v })), borderColor: '#b794f6', backgroundColor: '#b794f6', borderWidth: 1.6, borderDash: [6, 4], pointRadius: 0, tension: 0.25, order: 2 });
+
+                if (chart) chart.destroy();
+                chart = new Chart(document.getElementById('chart'), {
+                    type: 'line',
+                    plugins: [bandsPlugin(metric)],
+                    data: { datasets },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                        interaction: { mode: 'index', intersect: false, axis: 'x' },
+                        scales: {
+                            x: { type: 'linear', min: main.start.getTime(), max: main.end.getTime(), grid: { color: 'rgba(255,255,255,0.05)' },
+                                 ticks: { color: '#8da0ad', maxTicksLimit: 7, callback: v => new Date(v).toLocaleString('sv-SE', range.hours <= 72 ? { weekday: 'short', hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short' }) } },
+                            y: { beginAtZero: metric.min0, grid: { color: 'rgba(255,255,255,0.07)' }, ticks: { color: '#8da0ad', maxTicksLimit: 6, callback: v => `${v}` } },
+                        },
+                        plugins: {
+                            legend: { display: !!second, labels: { color: '#c5d1d9', boxWidth: 12, filter: i => !['High', 'Low'].includes(i.text) } },
+                            tooltip: { filter: i => !['High', 'Low'].includes(i.dataset.label), callbacks: {
+                                title: i => new Date(i[0].parsed.x).toLocaleString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+                                label: i => `${i.dataset.label}: ${fmt(i.parsed.y, metric.digits)} ${metric.unit}`,
+                            } },
+                        },
+                    },
+                });
+                document.getElementById('chartTitle').textContent = `${metric.name} · ${metric.label.toLowerCase()}`;
+                document.getElementById('chartSub').textContent = range.source === 'raw' ? 'readings' : 'mean per ' + (range.source === 'hour' ? 'hour' : 'day') + ', band = lowest to highest';
+                stats(metric, range, pts, main);
+            } catch (error) { showError(error); }
+        }
+
+        function stats(metric, range, pts, main) {
+            const vs = pts.map(p => p.v);
+            const kpis = document.getElementById('kpis');
+            const k = (label, value, sub) => `<div class="kpi"><div class="tile-label">${label}</div><div class="big">${value}</div><div class="sub">${sub || ''}</div></div>`;
+            const unit = ` <small>${metric.unit}</small>`;
+            if (!vs.length) {
+                kpis.innerHTML = k('Average', '–') + k('Highest', '–') + k('Lowest', '–') + k('Latest', '–');
+                document.getElementById('levelPanel').hidden = true;
+                document.getElementById('note').textContent = 'No data for this window yet.';
+                return;
+            }
+            const avg = vs.reduce((s, v) => s + v, 0) / vs.length;
+            const hiP = pts.reduce((a, p) => (p.hi ?? p.v) > (a.hi ?? a.v) ? p : a), loP = pts.reduce((a, p) => (p.lo ?? p.v) < (a.lo ?? a.v) ? p : a);
+            const when = t => new Date(t).toLocaleString('sv-SE', range.hours <= 72 ? { weekday: 'short', hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short' });
+            kpis.innerHTML = k('Average', fmt(avg, metric.digits) + unit, `over ${range.label}`)
+                + k('Highest', fmt(hiP.hi ?? hiP.v, metric.digits) + unit, when(hiP.t))
+                + k('Lowest', fmt(loP.lo ?? loP.v, metric.digits) + unit, when(loP.t))
+                + k('Latest', fmt(pts[pts.length - 1].v, metric.digits) + unit, when(pts[pts.length - 1].t));
+
+            // Share of the window in each level (every bucket counts equally).
+            const panel = document.getElementById('levelPanel');
+            panel.hidden = !metric.level;
+            if (metric.level) {
+                const share = { good: 0, fair: 0, poor: 0 };
+                for (const v of vs) share[metric.level(v)]++;
+                document.getElementById('levels').innerHTML = ['good', 'fair', 'poor'].map(l => `<i style="width:${share[l] / vs.length * 100}%;background:${COLORS[l]}"></i>`).join('');
+                document.getElementById('legend').innerHTML = ['good', 'fair', 'poor'].map(l => `<span><i style="background:${COLORS[l]}"></i>${LABEL[l]}<b>${fmt(share[l] / vs.length * 100)} %</b></span>`).join('');
+                document.getElementById('levelSub').textContent = `${vs.length} readings over ${range.label}`;
+            }
+            const first = pts[0].t, expectedStart = main.start.getTime();
+            document.getElementById('note').textContent = first - expectedStart > range.bucket * 3
+                ? `The history only goes back to ${new Date(first).toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })}, so this window shows less than ${range.label}.`
+                : (metricKey.startsWith('radon') ? 'Radon limits are Airthings’ regional values for Sweden: fair from 100, poor from 200 Bq/m³. A single day says little; look at the long-term average and at the weeks.' : '');
+        }
+
+        // ---- header and controls ----------------------------------------------------------------------------------
+        async function header() {
+            const metric = METRICS[metricKey];
+            const ids = [metric.entity, ...Object.values(METRICS).map(m => m.entity), P + 'radon_longterm_average', P + 'batteri'];
+            const states = await statesOf([...new Set(ids)]);
+            const value = parseFloat(states[metric.entity]);
+            document.getElementById('heroLabel').textContent = metric.label;
+            document.getElementById('heroValue').textContent = fmt(value, metric.digits);
+            document.getElementById('heroUnit').textContent = metric.unit;
+            const level = metric.level && !Number.isNaN(value) ? metric.level(value) : null;
+            document.getElementById('hero').style.setProperty('--level', level ? COLORS[level] : '#f2f5f7');
+            const pill = document.getElementById('heroPill');
+            pill.textContent = level ? LABEL[level] : '';
+            pill.className = `pill ${level ?? ''}`;
+            const long = parseFloat(states[P + 'radon_longterm_average']);
+            document.getElementById('heroSub').textContent = metricKey === 'radon' && !Number.isNaN(long) ? `Long-term average ${fmt(long)} Bq/m³ (see Long-term)` : '';
+            const battery = parseFloat(states[P + 'batteri']);
+            document.getElementById('heroNote').textContent = Number.isNaN(battery) ? '' : `Battery ${fmt(battery)} %`;
+            // Metric chips carry the current value.
+            document.getElementById('metrics').innerHTML = '';
+            for (const [key, m] of Object.entries(METRICS)) {
+                const v = parseFloat(states[m.entity]);
+                const chip = document.createElement('button');
+                chip.className = `chip ${key === metricKey ? 'on' : ''}`;
+                chip.innerHTML = `${m.name}<b style="${m.level && !Number.isNaN(v) && key !== metricKey ? `color:${COLORS[m.level(v)]}` : ''}">${fmt(v, m.digits)} <span style="font-size:11px;font-weight:400">${m.unit}</span></b>`;
+                chip.addEventListener('click', () => { metricKey = key; header(); draw(); });
+                document.getElementById('metrics').append(chip);
+            }
+            showProblems(isMissing(states[metric.entity]) ? ['No data from the Airthings'] : []);
+        }
+        function ranges() {
+            document.getElementById('ranges').replaceChildren(...RANGES.map(r => {
+                const chip = document.createElement('button');
+                chip.className = `chip ${r.key === rangeKey ? 'on' : ''}`;
+                chip.textContent = r.label;
+                chip.addEventListener('click', () => { rangeKey = r.key; ranges(); draw(); });
+                return chip;
+            }));
+        }
+
+        ranges();
+        header().catch(showError);
+        draw();
+        setInterval(() => header().catch(() => {}), 60e3);
+        setInterval(() => draw(), 10 * 60e3);
+    </script>
+</body>
+</html>
