@@ -18,3 +18,6 @@ tools/*.png
 
 # Kia render cropped from the Kia app (not ours to publish)
 www/kia-car.png
+
+# Personal documents (energy declaration, bills, consumption data): never commit, the repository is public
+private/

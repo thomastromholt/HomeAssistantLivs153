@@ -46,6 +46,28 @@
         .hour .rank { color: #6d808c; font-weight: 600; }
         .hour .when { color: #c5d1d9; }
         .hour .kw { font-weight: 600; color: #ffb340; }
+        .sig-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .seg { display: flex; gap: 4px; }
+        .seg button, .seg-clear { padding: 5px 12px; border: 0; border-radius: 9px; background: rgba(255,255,255,0.06); color: #8da0ad; font: inherit; font-size: 12px; cursor: pointer; }
+        .seg button.on { background: rgba(100,210,255,0.2); color: #64d2ff; }
+        .sig-what { font-size: 12px; color: #8da0ad; }
+        .split { font-size: 12px; color: #8da0ad; display: flex; align-items: center; gap: 6px; margin-left: auto; }
+        .split input { padding: 4px 6px; border: 0; border-radius: 8px; background: rgba(255,255,255,0.08); color: #f2f5f7; font: inherit; font-size: 12px; color-scheme: dark; }
+        .chart.tall { height: clamp(240px, 38vh, 440px); }
+        .sig-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-top: 8px; }
+        .sig-card { padding: 9px 12px; border-radius: 12px; background: rgba(255,255,255,0.05); font-size: 12px; color: #8da0ad; line-height: 1.55; }
+        .sig-card b { color: #f2f5f7; font-weight: 600; }
+        .sig-card .dotname { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+        .fc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 8px; }
+        .fc-kpi { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.05); }
+        .fc-kpi .big { margin-top: 3px; font-size: 22px; font-weight: 300; }
+        .fc-kpi .big small { font-size: 12px; color: #8da0ad; margin-left: 2px; }
+        .fc-kpi .sub { font-size: 11px; color: #8da0ad; margin-top: 2px; line-height: 1.4; }
+        .good-text { color: #5fe085; } .warn-text { color: #ff6b61; } .mid-text { color: #ffb340; }
+        .fc-table { margin-top: 8px; display: grid; grid-template-columns: 70px repeat(5, 1fr); font-size: 12px; color: #a9b8c2; }
+        .fc-table div { padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .fc-table .head { color: #6d808c; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; }
+        .fc-table b { color: #f2f5f7; font-weight: 600; }
         .empty { padding: 10px 2px; font-size: 12px; color: #8da0ad; line-height: 1.5; }
         @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, 1fr); } .two { grid-template-columns: 1fr; } .hero { flex-direction: column; align-items: stretch; } .phases { max-width: none; } }
     </style>
@@ -84,15 +106,24 @@
             <div class="chart"><canvas id="dayChart"></canvas></div>
         </div>
 
-        <div class="two">
-            <div class="panel">
-                <div class="panel-head"><span class="panel-title">A typical day</span><span class="panel-sub">average kW per hour this month</span></div>
-                <div class="chart short"><canvas id="hourChart"></canvas></div>
+        <div class="panel">
+            <div class="panel-head"><span class="panel-title">Forecast · this month, next 6 and the year</span><span class="panel-sub" id="fcSub">whole house, expected kWh</span></div>
+            <div class="fc-kpis" id="fcKpis"></div>
+            <div class="chart tall"><canvas id="fcChart"></canvas></div>
+            <div class="fc-table" id="fcTable"></div>
+            <div class="empty" id="fcNote"></div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><span class="panel-title">Energy signature</span><span class="panel-sub" id="sigSub">one dot per day</span></div>
+            <div class="sig-controls">
+                <span class="sig-what">Heat pump only</span>
+                <label class="split">Compare from <input type="date" id="sigSplit"></label>
+                <button class="seg-clear" id="sigClear">Clear</button>
             </div>
-            <div class="panel">
-                <div class="panel-head"><span class="panel-title">Highest hours</span><span class="panel-sub">kWh and cost in one hour</span></div>
-                <div class="hours" id="topHours"></div>
-            </div>
+            <div class="chart tall"><canvas id="sigChart"></canvas></div>
+            <div class="sig-stats" id="sigStats"></div>
+            <div class="empty" id="sigNote"></div>
         </div>
         <div class="empty" id="note"></div>
     </div>
@@ -119,7 +150,7 @@
         const kwh = (v, d = 1) => v === null || Number.isNaN(v) ? '–' : `${v.toLocaleString('sv-SE', { minimumFractionDigits: d, maximumFractionDigits: d })}<small> kWh</small>`;
         let month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
         const thisMonth = new Date(month);
-        let dayChart = null, hourChart = null;
+        let dayChart = null;
 
         // Long-term statistics of the energy counter: per day and per hour, as "change" (kWh used in the period).
         async function stats(period, start, end) {
@@ -204,33 +235,246 @@
                 },
             });
 
-            // Average kW for each hour of the day over the month.
-            const byHour = Array.from({ length: 24 }, () => []);
-            for (const h of hours) if (h.change != null) byHour[h.start.getHours()].push(h.change);
-            const avg = byHour.map(a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
-            if (hourChart) hourChart.destroy();
-            hourChart = new Chart(document.getElementById('hourChart'), {
-                type: 'line',
-                data: { labels: avg.map((_, i) => String(i).padStart(2, '0')), datasets: [{ data: avg, borderColor: '#5fe085', backgroundColor: 'rgba(95,224,133,0.16)', fill: true, pointRadius: 0, borderWidth: 2, tension: 0.35, spanGaps: true }] },
-                options: {
-                    responsive: true, maintainAspectRatio: false, animation: false,
-                    scales: { x: { ticks: { color: '#8da0ad', maxTicksLimit: 8 }, grid: { display: false } }, y: { beginAtZero: true, ticks: { color: '#8da0ad', maxTicksLimit: 4 }, grid: { color: 'rgba(255,255,255,0.07)' } } },
-                    plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => `${i[0].label}:00`, label: i => `${formatNumber(i.parsed.y, 2)} kW` } } },
-                },
-            });
-
-            const top = hours.slice().sort((a, b) => b.change - a.change).slice(0, 5);
-            const list = document.getElementById('topHours');
-            list.replaceChildren(...top.map((h, i) => {
-                const row = document.createElement('div');
-                row.className = 'hour';
-                const to = new Date(h.start.getTime() + 3600e3);
-                row.innerHTML = `<span class="rank">${i + 1}</span><span class="when">${h.start.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })} · ${String(h.start.getHours()).padStart(2, '0')}–${String(to.getHours()).padStart(2, '0')}</span><span class="kw">${formatNumber(h.change, 2)} kWh${h.cost === null ? '' : ` · ${formatNumber(h.cost, 1)} kr`}</span>`;
-                return row;
-            }));
-            if (!top.length) list.innerHTML = '<div class="empty">No complete hours yet.</div>';
             document.getElementById('note').textContent = known.length < 3 && +month === +thisMonth
                 ? 'The meter was connected on 20 October 2026, so the history starts there and fills up day by day. Earlier consumption cannot be fetched from the grid company.' : '';
+        }
+
+
+        // ---- Energy signature: one dot per day, mean outdoor temperature against the day's kWh --------------------------
+        // Whole house = the P1 meter's daily kWh (includes the base load and the dehumidifier); Heat pump = the estimate
+        // (run time x 3 kW). Outdoor temperature: the daily mean from Open-Meteo for the home position (rounded to 0.1 degree).
+        // The meter and the heat pump sensor started on 2026-10-20, so the first full day is 2026-10-21.
+        const PARAMS = new URLSearchParams(location.search);
+        const DEMO = PARAMS.has('demo');   // ?demo shows made-up days so the shape can be judged before there is data
+        const FIRST_FULL_DAY = '2026-10-21';
+        const HP_ENERGY = 'sensor.heatpump_energy_today';
+        const store = {
+            get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } },
+            set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* no storage: fine */ } },
+        };
+        let sigChart = null, sigSource = 'hp', sigSplit = store.get('sigSplit', '');   // the heat pump only: the rest of the house does not follow the temperature
+
+        async function dailyKwhHouse(start, end) {
+            const result = await stats('day', start, end);
+            const out = new Map();
+            for (const r of result) if (r.change != null) out.set(localDateString(r.start), r.change);
+            return out;
+        }
+        async function dailyKwhHeatPump(start, end) {
+            const url = `history/period/${start.toISOString()}?filter_entity_id=${HP_ENERGY}&end_time=${encodeURIComponent(end.toISOString())}&significant_changes_only=0&minimal_response&no_attributes`;
+            const rows = ((await callApi('GET', url))[0] || []).filter(r => !Number.isNaN(parseFloat(r.state)));
+            const out = new Map();   // the sensor counts from midnight, so a day's value is its highest reading
+            for (const r of rows) { const d = localDateString(new Date(r.last_updated || r.last_changed)); out.set(d, Math.max(out.get(d) ?? 0, parseFloat(r.state))); }
+            return out;
+        }
+        async function outdoorMeans(firstDate) {
+            const config = await callApi('GET', 'config');
+            const lat = Math.round(config.latitude * 10) / 10, lon = Math.round(config.longitude * 10) / 10;
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const ageDays = Math.ceil((today - new Date(firstDate + 'T00:00:00')) / 864e5);
+            const out = new Map();
+            const fill = json => (json.daily?.time || []).forEach((d, i) => { if (json.daily.temperature_2m_mean[i] != null) out.set(d, json.daily.temperature_2m_mean[i]); });
+            // The forecast service covers the last 92 days; older days come from the archive.
+            fill(await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_mean&past_days=${Math.min(92, ageDays + 1)}&forecast_days=1&timezone=auto`)).json());
+            if (ageDays > 92) {
+                const archiveEnd = new Date(today - 93 * 864e5);
+                fill(await (await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${firstDate}&end_date=${localDateString(archiveEnd)}&daily=temperature_2m_mean&timezone=auto`)).json());
+            }
+            return out;
+        }
+        function fit(points) {
+            const n = points.length;
+            if (n < 3) return null;
+            const mx = points.reduce((s, p) => s + p.x, 0) / n, my = points.reduce((s, p) => s + p.y, 0) / n;
+            const sxx = points.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxy = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+            if (sxx < 1e-9) return null;
+            const slope = sxy / sxx, intercept = my - slope * mx;
+            const ssTot = points.reduce((s, p) => s + (p.y - my) ** 2, 0), ssRes = points.reduce((s, p) => s + (p.y - (intercept + slope * p.x)) ** 2, 0);
+            return { slope, intercept, r2: ssTot > 0 ? 1 - ssRes / ssTot : 0, at: x => intercept + slope * x };
+        }
+
+        async function signature() {
+            const end = new Date(), start = new Date(end - 365 * 864e5);
+            try {
+                let points;
+                const note = document.getElementById('sigNote'), statsEl = document.getElementById('sigStats');
+                if (DEMO) {
+                    // Made-up days: heat use falls about 3.2 kWh per degree warmer on top of a base load, with some spread.
+                    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+                    points = Array.from({ length: 70 }, (_, i) => {
+                        const d = new Date(Date.UTC(2026, 9, 21) + i * 864e5), x = 12 - i * 0.2 + (rnd() - 0.5) * 8;
+                        return { date: d.toISOString().slice(0, 10), x, y: Math.max(8, 18 + Math.max(0, 15 - x) * 3.2 * (i > 35 ? 0.82 : 1) + (rnd() - 0.5) * 9) };
+                    });
+                } else {
+                    const kwhByDay = sigSource === 'hp' ? await dailyKwhHeatPump(start, end) : await dailyKwhHouse(start, end);
+                    const todayKey = localDateString(end);
+                    const days = [...kwhByDay.keys()].filter(d => d >= FIRST_FULL_DAY && d < todayKey).sort();
+                    if (!days.length) {
+                        if (sigChart) { sigChart.destroy(); sigChart = null; }
+                        statsEl.innerHTML = '';
+                        note.textContent = 'No full day of data yet. The signature starts when the first full day (21 October 2026) is complete, and gets useful after a few weeks.';
+                        return;
+                    }
+                    const temps = await outdoorMeans(days[0]);
+                    points = days.filter(d => temps.has(d)).map(d => ({ date: d, x: temps.get(d), y: kwhByDay.get(d) }));
+                }
+                const split = DEMO && !sigSplit ? '2026-11-25' : sigSplit && /^\d{4}-\d{2}-\d{2}$/.test(sigSplit) ? sigSplit : '';
+                const groups = split
+                    ? [{ name: `before ${split}`, color: '#8da0ad', pts: points.filter(p => p.date < split) }, { name: `from ${split}`, color: '#5fe085', pts: points.filter(p => p.date >= split) }]
+                    : [{ name: 'each day', color: '#64d2ff', pts: points }];
+                const xs = points.map(p => p.x), lo = Math.min(...xs) - 1, hi = Math.max(...xs) + 1;
+                const datasets = [];
+                for (const g of groups) {
+                    g.fit = fit(g.pts);
+                    datasets.push({ type: 'scatter', label: g.name, data: g.pts.map(p => ({ x: p.x, y: p.y, date: p.date })), backgroundColor: g.color + 'cc', borderColor: g.color, pointRadius: 5, pointHoverRadius: 7 });
+                    if (g.fit) datasets.push({ type: 'line', label: `${g.name} (line)`, data: [{ x: lo, y: g.fit.at(lo) }, { x: hi, y: g.fit.at(hi) }], borderColor: g.color, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, fill: false });
+                }
+                if (sigChart) sigChart.destroy();
+                sigChart = new Chart(document.getElementById('sigChart'), {
+                    data: { datasets },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, animation: false,
+                        scales: {
+                            x: { type: 'linear', min: Math.floor(lo), max: Math.ceil(hi), title: { display: true, text: 'mean outdoor temperature (°C)', color: '#8da0ad' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8da0ad' } },
+                            y: { beginAtZero: true, title: { display: true, text: 'kWh per day', color: '#8da0ad' }, grid: { color: 'rgba(255,255,255,0.07)' }, ticks: { color: '#8da0ad' } },
+                        },
+                        plugins: { legend: { labels: { color: '#c5d1d9', boxWidth: 12, filter: i => !i.text.endsWith('(line)') } },
+                                   tooltip: { filter: i => i.dataset.type === 'scatter', callbacks: {
+                                       title: i => i[0].raw.date ? new Date(i[0].raw.date + 'T12:00:00').toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' }) : '',
+                                       label: i => `${formatNumber(i.parsed.y, 1)} kWh at ${formatNumber(i.parsed.x, 1)} °C` } } },
+                    },
+                });
+                document.getElementById('sigSub').textContent = DEMO ? 'DEMO: made-up days' : `${points.length} full day${points.length === 1 ? '' : 's'} · heat pump (estimate)`;
+                statsEl.innerHTML = groups.map(g => {
+                    const f = g.fit;
+                    if (!f) return `<div class="sig-card"><span class="dotname" style="background:${g.color}"></span><b>${g.name}</b><br>${g.pts.length} day${g.pts.length === 1 ? '' : 's'}: too few for a line (needs 3).</div>`;
+                    return `<div class="sig-card"><span class="dotname" style="background:${g.color}"></span><b>${g.name}</b> · ${g.pts.length} days<br>`
+                        + `<b>${formatNumber(Math.abs(f.slope), 1)} kWh</b> ${f.slope < 0 ? 'more' : 'less'} per degree colder<br>`
+                        + `At 0 °C: <b>${formatNumber(f.at(0), 0)} kWh</b> · at 10 °C: <b>${formatNumber(f.at(10), 0)} kWh</b><br>`
+                        + `Fit (R²): ${formatNumber(f.r2, 2)}</div>`;
+                }).join('') + (groups.length === 2 && groups[0].fit && groups[1].fit
+                    ? `<div class="sig-card"><b>Difference after the change</b><br>`
+                        + [0, 5, 10].map(t => { const d = groups[1].fit.at(t) - groups[0].fit.at(t); return `At ${t} °C: <b style="color:${d <= 0 ? '#5fe085' : '#ff6b61'}">${d > 0 ? '+' : ''}${formatNumber(d, 1)} kWh</b> a day`; }).join('<br>') + '</div>' : '');
+                note.textContent = (points.length < 14 ? 'Few days so far: the line is only a rough guide until there are a few weeks of data, and a colder spell. ' : '')
+                    + (false ? '' : 'The heat pump figure is the run time times 3 kW (the compressor draws about 3 kW) and ignores the elpatron, which will add to it in the cold. ')
+                    + 'Temperature: daily mean from Open-Meteo for the home position.';
+            } catch (error) { showError(error); }
+        }
+        document.getElementById('sigSplit').value = sigSplit;
+        document.getElementById('sigSplit').addEventListener('change', event => { sigSplit = event.target.value; store.set('sigSplit', sigSplit); signature(); });
+        document.getElementById('sigClear').addEventListener('click', () => { sigSplit = ''; store.set('sigSplit', ''); document.getElementById('sigSplit').value = ''; signature(); });
+
+
+        // ---- Forecast: the next 6 months and how the real consumption tracks against it -----------------------------------
+        // Model (whole house, as on the invoice): kWh a day = a + b x degree-days a day (degrees under 17 C).
+        // The starting values come from the months May-October 2026 read off the Ellevio chart (a = 14.5 kWh a day,
+        // b = 1.56 kWh per degree-day). The cold months get a COLD_UPLIFT on b (poorer efficiency, defrost, the elpatron), which is a guess.
+        // As days with the P1 meter arrive, a and b are refitted and blended in (weight = days / (days + 30)).
+        const NORMAL_HDD = [569, 509, 481, 352, 198, 59, 19, 29, 115, 278, 393, 507];   // degree-days per month, mean of 15 years (Open-Meteo, Stockholm)
+        const PRIOR = { a: 14.5, b: 1.56 };
+        const COLD_MONTHS = [10, 11, 0, 1, 2], COLD_UPLIFT = 1.25, KR_PER_KWH = 2.2;
+        const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        // Consumption read off the Ellevio chart for the period before the P1 meter started: month -> kWh up to and including 'through'.
+        const MANUAL_ACTUALS = { '2026-10': { kwh: 640, through: '2026-10-21' } };
+        let fcChart = null;
+        const monthKwh = (m, days, hdd, par, uplift) => par.a * days + par.b * hdd * (COLD_MONTHS.includes(m) ? uplift : 1);
+
+        async function forecast() {
+            try {
+                const now = new Date(), todayKey = localDateString(now);
+                // Measured days (full days since the meter started) against the weather of those days.
+                const kwhByDay = await dailyKwhHouse(new Date(now - 120 * 864e5), now);
+                const days = [...kwhByDay.keys()].filter(d => d >= FIRST_FULL_DAY && d < todayKey).sort();
+                let points = [];
+                if (days.length) {
+                    const temps = await outdoorMeans(days[0]);
+                    points = days.filter(d => temps.has(d)).map(d => ({ date: d, hdd: Math.max(0, 17 - temps.get(d)), y: kwhByDay.get(d) }));
+                }
+                // Tracking against the frozen forecast, corrected for the weather that actually happened.
+                const actual = points.reduce((s, p) => s + p.y, 0);
+                const expected = points.reduce((s, p) => s + PRIOR.a + PRIOR.b * p.hdd * (COLD_MONTHS.includes(+p.date.slice(5, 7) - 1) ? COLD_UPLIFT : 1), 0);
+                // Refit the model from the measured days and blend it in.
+                let par = { ...PRIOR }, weight = 0, fitText = '';
+                const n = points.length, xs = points.map(p => p.hdd), spread = n ? Math.max(...xs) - Math.min(...xs) : 0;
+                if (n >= 7 && spread > 3) {
+                    const mx = xs.reduce((s, v) => s + v, 0) / n, my = points.reduce((s, p) => s + p.y, 0) / n;
+                    const sxx = points.reduce((s, p) => s + (p.hdd - mx) ** 2, 0), sxy = points.reduce((s, p) => s + (p.hdd - mx) * (p.y - my), 0);
+                    const b = sxy / sxx, a = my - b * mx;
+                    if (b > 0.3 && b < 6 && a > 3 && a < 60) { weight = n / (n + 30); par = { a: weight * a + (1 - weight) * PRIOR.a, b: weight * b + (1 - weight) * PRIOR.b }; fitText = `fitted from ${n} days: ${a.toFixed(1)} + ${b.toFixed(2)}`; }
+                }
+                // The next 6 months (from next month), with a range: mild winter ... cold winter.
+                const rows = [], year = { exp: 0, low: 0, high: 0 };
+                for (let i = 1; i <= 12; i++) {
+                    const d = new Date(now.getFullYear(), now.getMonth() + i, 1), m = d.getMonth(), dim = new Date(d.getFullYear(), m + 1, 0).getDate(), hdd = NORMAL_HDD[m];
+                    const row = { date: d, m, label: `${MONTH_NAMES[m]} ${String(d.getFullYear()).slice(2)}`,
+                        exp: monthKwh(m, dim, hdd, par, COLD_UPLIFT), low: monthKwh(m, dim, hdd * 0.85, par, 1.0), high: monthKwh(m, dim, hdd * 1.15, par, 2.0), dim };
+                    year.exp += row.exp; year.low += row.low; year.high += row.high;
+                    if (i <= 6) rows.push(row);   // the chart and the table show the next 6 months, the year is summed from all 12
+                }
+                // Real consumption of the months that have started (this month so far, and later the finished ones).
+                const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                const actualByMonth = new Map();
+                for (const [key, value] of await dailyKwhHouse(monthStart, new Date(now.getFullYear(), now.getMonth() + 7, 1))) {
+                    const k = key.slice(0, 7); actualByMonth.set(k, (actualByMonth.get(k) || 0) + value);
+                }
+                for (const r of rows) r.actual = actualByMonth.get(`${r.date.getFullYear()}-${String(r.m + 1).padStart(2, '0')}`) ?? null;
+
+                // The current month: what has been used until yesterday (the Ellevio figure, then the P1 meter) plus what is expected for the rest.
+                const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, curM = now.getMonth();
+                const dimNow = new Date(now.getFullYear(), curM + 1, 0).getDate(), monthStartKey = `${curKey}-01`;
+                const yesterdayKey = localDateString(new Date(now - 864e5)), manual = MANUAL_ACTUALS[curKey];
+                let actualToDate = manual ? manual.kwh : 0, coveredDays = 0;
+                for (const [d, v] of kwhByDay) if (d >= monthStartKey && d <= yesterdayKey && (!manual || d > manual.through)) actualToDate += v;
+                // What the frozen forecast says for the days gone, with the weather that actually was.
+                let expectedToDate = 0;
+                try {
+                    const temps = await outdoorMeans(monthStartKey);
+                    for (const [d, t] of temps) if (d >= monthStartKey && d <= yesterdayKey) { coveredDays++; expectedToDate += PRIOR.a + PRIOR.b * Math.max(0, 17 - t) * (COLD_MONTHS.includes(curM) ? COLD_UPLIFT : 1); }
+                } catch (e) { coveredDays = 0; }
+                const remaining = Math.max(0, dimNow - (coveredDays || (+yesterdayKey.slice(8, 10))));
+                const hddLeft = NORMAL_HDD[curM] / dimNow * remaining;
+                const current = { date: new Date(now.getFullYear(), curM, 1), m: curM, label: `${MONTH_NAMES[curM]} ${String(now.getFullYear()).slice(2)}`, partial: true, actual: actualToDate, expectedToDate,
+                    exp: actualToDate + monthKwh(curM, remaining, hddLeft, par, COLD_UPLIFT) - par.a * 0 , low: actualToDate + monthKwh(curM, remaining, hddLeft * 0.85, par, 1.0), high: actualToDate + monthKwh(curM, remaining, hddLeft * 1.15, par, 2.0) };
+                current.exp = actualToDate + monthKwh(curM, remaining, hddLeft, par, COLD_UPLIFT);
+                const chartRows = [current, ...rows];
+                const sum = k => rows.reduce((s, r) => s + r[k], 0);
+                const kr = v => `${Math.round(v * KR_PER_KWH / 1000).toLocaleString('sv-SE')} k kr`;
+                const diff = n >= 3 && expected > 0 ? (actual / expected - 1) * 100 : null;
+                const kpi = (label, big, sub) => `<div class="fc-kpi"><div class="tile-label">${label}</div><div class="big">${big}</div><div class="sub">${sub || ''}</div></div>`;
+                document.getElementById('fcKpis').innerHTML =
+                    kpi('Expected for a year (next 12 months)', `${Math.round(year.exp).toLocaleString('sv-SE')}<small> kWh</small>`, `about ${kr(year.exp)} at ${KR_PER_KWH} kr/kWh · range ${Math.round(year.low).toLocaleString('sv-SE')}–${Math.round(year.high).toLocaleString('sv-SE')} kWh (mild to cold winter). The previous owner used 23,074 kWh in 2025 (energy declaration).`)
+                    + kpi('Next 6 months', `${Math.round(sum('exp')).toLocaleString('sv-SE')}<small> kWh</small>`, `about ${kr(sum('exp'))} · range ${Math.round(sum('low')).toLocaleString('sv-SE')}–${Math.round(sum('high')).toLocaleString('sv-SE')} kWh`)
+                    + kpi(`${MONTH_NAMES[curM]} so far`, `${Math.round(actualToDate).toLocaleString('sv-SE')}<small> kWh</small>`,
+                          `Until ${yesterdayKey.slice(8, 10)}/${yesterdayKey.slice(5, 7)}. The month is expected to end at ${Math.round(current.exp).toLocaleString('sv-SE')} kWh (${Math.round(current.low).toLocaleString('sv-SE')}–${Math.round(current.high).toLocaleString('sv-SE')}). The forecast said ${Math.round(expectedToDate).toLocaleString('sv-SE')} kWh for the days gone with the weather that was: ${expectedToDate > 0 ? `<span class="${actualToDate / expectedToDate - 1 > 0.1 ? 'warn-text' : 'good-text'}">${(actualToDate / expectedToDate - 1) * 100 > 0 ? '+' : ''}${((actualToDate / expectedToDate - 1) * 100).toFixed(0)} %</span>` : '–'}.`)
+                    + kpi('Tracking since 21 Oct', diff === null ? '–' : `<span class="${Math.abs(diff) <= 10 ? 'good-text' : diff > 0 ? 'warn-text' : 'good-text'}">${diff > 0 ? '+' : ''}${diff.toFixed(0)} %</span>`,
+                          diff === null ? 'Needs a few full days of data.' : `Actual ${actual.toFixed(0)} kWh over ${n} day${n === 1 ? '' : 's'} against ${expected.toFixed(0)} kWh forecast for the weather that was (${diff > 10 ? 'above' : diff < -10 ? 'below' : 'on track with'} the forecast).`)
+                    + kpi('Model', `${par.a.toFixed(1)} + ${par.b.toFixed(2)}<small> kWh/day per degree-day</small>`, weight ? `Updated from your measurements (${Math.round(weight * 100)} % weight): ${fitText}.` : 'Starting values from May–October 2026. It learns as measured days arrive.');
+
+                if (fcChart) fcChart.destroy();
+                fcChart = new Chart(document.getElementById('fcChart'), {
+                    data: {
+                        labels: chartRows.map(r => r.label + (r.partial ? ' (so far)' : '')),
+                        datasets: [
+                            { type: 'bar', label: 'Expected', data: chartRows.map(r => Math.round(r.exp)), backgroundColor: 'rgba(100,210,255,0.55)', borderRadius: 4, maxBarThickness: 46, order: 2 },
+                            { type: 'bar', label: 'Actual', data: chartRows.map(r => r.actual === null ? null : Math.round(r.actual)), backgroundColor: 'rgba(95,224,133,0.85)', borderRadius: 4, maxBarThickness: 46, order: 2 },
+                            { type: 'line', label: 'Mild winter', data: chartRows.map(r => Math.round(r.low)), borderColor: '#8da0ad', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 3, order: 1 },
+                            { type: 'line', label: 'Cold winter', data: chartRows.map(r => Math.round(r.high)), borderColor: '#ffb340', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 3, order: 1 },
+                        ],
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, animation: false,
+                        scales: { x: { ticks: { color: '#8da0ad' }, grid: { display: false } }, y: { beginAtZero: true, title: { display: true, text: 'kWh per month', color: '#8da0ad' }, ticks: { color: '#8da0ad' }, grid: { color: 'rgba(255,255,255,0.07)' } } },
+                        plugins: { legend: { labels: { color: '#c5d1d9', boxWidth: 12 } }, tooltip: { callbacks: { label: i => `${i.dataset.label}: ${formatNumber(i.parsed.y, 0)} kWh` } } },
+                    },
+                });
+                const cell = (t, cls = '') => `<div class="${cls}">${t}</div>`;
+                document.getElementById('fcTable').innerHTML = ['Month', 'Expected', 'Cost', 'Range', 'Actual', 'Vs forecast'].map(t => cell(t, 'head')).join('')
+                    + chartRows.map(r => cell(`<b>${r.label}${r.partial ? ' <small>so far</small>' : ''}</b>`) + cell(`${Math.round(r.exp).toLocaleString('sv-SE')} kWh`) + cell(`${Math.round(r.exp * KR_PER_KWH).toLocaleString('sv-SE')} kr`)
+                        + cell(`${Math.round(r.low).toLocaleString('sv-SE')}–${Math.round(r.high).toLocaleString('sv-SE')}`)
+                        + cell(r.actual === null ? '–' : `${Math.round(r.actual).toLocaleString('sv-SE')} kWh`)
+                        + cell(r.actual === null ? '–' : r.partial ? (r.expectedToDate > 0 ? `${(r.actual / r.expectedToDate - 1) * 100 > 0 ? '+' : ''}${((r.actual / r.expectedToDate - 1) * 100).toFixed(0)} % to date` : '–') : `${(r.actual / r.exp - 1) * 100 > 0 ? '+' : ''}${((r.actual / r.exp - 1) * 100).toFixed(0)} %`)).join('');
+                document.getElementById('fcNote').textContent = 'Weather: the normal for each month over 15 years. The cold months are given a 25 % worse efficiency than the mild ones, which is a guess until the first cold weeks show what the heat pump really uses (the elpatron can make it much higher). The winter range is -15 % to +15 % in degree-days, and 2 times the heating cost in the cold months at the top. 2025 under the previous owner (23,074 kWh, heat pump 15,109) lies above this range and is not used; see the energy declaration summary.';
+            } catch (error) { showError(error); }
         }
 
         document.getElementById('prev').addEventListener('click', () => { month.setMonth(month.getMonth() - 1); history().catch(showError); });
@@ -238,8 +482,12 @@
 
         live().catch(showError);
         history().catch(showError);
+        signature();
+        forecast();
         setInterval(() => live().catch(() => {}), 5e3);
         setInterval(() => history().catch(() => {}), 5 * 60e3);
+        setInterval(() => signature(), 30 * 60e3);
+        setInterval(() => forecast(), 30 * 60e3);
     </script>
 </body>
 </html>

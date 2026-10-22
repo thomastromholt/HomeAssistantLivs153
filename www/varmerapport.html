@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Varmerapport</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .container { overflow-y: auto; gap: 8px; }
+        .summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 2px 0 4px; font-size: 13px; color: #8da0ad; }
+        .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.08); color: #c5d1d9; }
+        .badge.suggest { background: rgba(255,179,64,0.2); color: #ffb340; }
+        .badge.warn { background: rgba(255,69,58,0.2); color: #ff6b61; }
+        .badge.ok { background: rgba(52,199,89,0.18); color: #5fe085; }
+        .section-title { margin: 8px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #8da0ad; }
+        .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
+        .item { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border-left: 3px solid #5fe085; }
+        .item.suggest { border-left-color: #ffb340; }
+        .item.warn { border-left-color: #ff6b61; }
+        .item.nodata { border-left-color: #6d808c; opacity: 0.8; }
+        .item-title { font-size: 14px; font-weight: 600; }
+        .item-detail { margin-top: 3px; font-size: 12px; color: #a9b8c2; line-height: 1.5; }
+        .item-room { color: #64d2ff; font-weight: 600; }
+        .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+        .actions button { padding: 5px 12px; border: 0; border-radius: 9px; background: rgba(255,255,255,0.1); color: #f2f5f7; font: inherit; font-size: 12px; cursor: pointer; }
+        .actions button.primary { background: rgba(255,179,64,0.25); color: #ffb340; }
+        .actions button.yes { background: rgba(52,199,89,0.25); color: #5fe085; }
+        .actions .ask { flex: 1 1 100%; font-size: 12px; color: #ffb340; }
+        .done { font-size: 12px; color: #5fe085; }
+        .foot { margin-top: 6px; font-size: 11px; color: #6d808c; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head"><span class="name">Varmerapport</span><span class="pill" id="status"></span></div>
+        <div id="error" class="error" hidden></div>
+        <div class="summary" id="summary"></div>
+        <div id="sections"></div>
+        <div class="foot" id="foot"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        // A rules-only check of comfort and heating efficiency over the last 7 days. It only suggests: nothing changes
+        // until a button is pressed and confirmed. Dismissed suggestions are muted for a week (kept in this browser).
+        const WINDOW_DAYS = 7, DATA_START = new Date('2026-10-20T17:30:00');
+        const AIRTHINGS = 'sensor.airthings_wave_270668_';
+        const ROOMS = [
+            { key: 'stue', name: 'Stue', climate: 'climate.liljebagge_radiator_thermostat', battery: 'sensor.liljebagge_radiator_thermostat_batteri', update: 'update.liljebagge_radiator_thermostat_firmware',
+              thermometer: 'sensor.timmerflotte_temp_hmd_sensor_temperatur', humidity: 'sensor.timmerflotte_temp_hmd_sensor_luftfugtighed' },
+            { key: 'kokken', name: 'Køkken', climate: 'climate.liljebagge_radiator_thermostat_2', battery: 'sensor.liljebagge_radiator_thermostat_batteri_2', update: 'update.liljebagge_radiator_thermostat_firmware_2' },
+            { key: 'sovevaerelse', name: 'Soveværelse', climate: 'climate.liljebagge_radiator_thermostat_3', battery: 'sensor.liljebagge_radiator_thermostat_batteri_3', update: 'update.liljebagge_radiator_thermostat_firmware_3' },
+            { key: 'astrid', name: 'Astrid', climate: 'climate.liljebagge_radiator_thermostat_4', battery: 'sensor.liljebagge_radiator_thermostat_batteri_4', update: 'update.liljebagge_radiator_thermostat_firmware_4',
+              thermometer: AIRTHINGS + 'temperatur', humidity: AIRTHINGS + 'luftfugtighed', co2: AIRTHINGS + 'carbon_dioxide' },
+        ];
+        const COMPRESSOR = 'binary_sensor.heatpump_compressor';
+        const store = {
+            get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+            set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* no storage */ } },
+        };
+        const muted = id => Number(store.get('muted:' + id) || 0) > Date.now();
+        const mute = id => store.set('muted:' + id, String(Date.now() + 7 * 864e5));
+
+        // ---------- data ----------
+        const iso = d => d.toISOString();
+        async function history(entity, start, end, withAttributes) {
+            const url = `history/period/${iso(start)}?filter_entity_id=${entity}&end_time=${encodeURIComponent(iso(end))}&significant_changes_only=0${withAttributes ? '' : '&minimal_response&no_attributes'}`;
+            const result = await callApi('GET', url);
+            return (result[0] || []).map(r => ({ t: +new Date(r.last_updated || r.last_changed), state: r.state, a: r.attributes || {} })).sort((x, y) => x.t - y.t);
+        }
+        const num = s => { const v = parseFloat(s); return Number.isNaN(v) ? null : v; };
+        // Time-weighted walk over a series: calls fn(sample, durationMs) for each sample held until the next one (at most 2 h).
+        function walk(series, end, fn) {
+            for (let i = 0; i < series.length; i++) {
+                const next = i + 1 < series.length ? series[i + 1].t : +end;
+                const dur = Math.min(next - series[i].t, 2 * 3600e3);
+                if (dur > 0) fn(series[i], dur);
+            }
+        }
+        // The plan texts: "0:low,6.5:warm,8:low,15:warm,23:low" = low from 00:00, warm from 06:30, ...
+        const parsePlan = text => (text || '').split(',').map(p => p.split(':')).filter(p => p.length === 2 && !Number.isNaN(parseFloat(p[0])))
+            .map(p => ({ from: parseFloat(p[0]), level: p[1].trim() })).sort((a, b) => a.from - b.from);
+        const planText = (entries) => entries.map(e => `${Number.isInteger(e.from) ? e.from : e.from}:${e.level}`).join(',');
+        function levelAt(plans, t) {
+            const d = new Date(t), weekend = [0, 6].includes(d.getDay()), entries = parsePlan(weekend ? plans.weekend : plans.weekday);
+            const hour = d.getHours() + d.getMinutes() / 60;
+            let level = entries.length ? entries[0].level : null;
+            for (const e of entries) if (e.from <= hour) level = e.level;
+            return level;
+        }
+        const clock = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+        const fmt = (v, d = 1) => v === null || Number.isNaN(v) ? '–' : v.toLocaleString('sv-SE', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+        // ---------- the checks ----------
+        // Each check returns { id, level: 'suggest'|'warn'|'ok'|'nodata', room?, title, detail, action? }.
+        // An action is { label, question, run: async () => ... }.
+        async function checkRoom(room, end, start) {
+            const out = [];
+            const [climate, thermometer, humidity, co2, states] = await Promise.all([
+                history(room.climate, start, end, true),
+                room.thermometer ? history(room.thermometer, start, end) : [],
+                room.humidity ? history(room.humidity, start, end) : [],
+                room.co2 ? history(room.co2, start, end) : [],
+                statesOf([`input_text.plan_${room.key}_weekday`, `input_text.plan_${room.key}_weekend`, `input_number.warm_${room.key}`, `input_number.low_${room.key}`, room.battery, room.update]),
+            ]);
+            const plans = { weekday: states[`input_text.plan_${room.key}_weekday`], weekend: states[`input_text.plan_${room.key}_weekend`] };
+            const warmTemp = num(states[`input_number.warm_${room.key}`]);
+
+            // Reading: the room thermometer where there is one, else the thermostat's own reading (skewed by the radiator).
+            const reading = room.thermometer ? thermometer.map(s => ({ t: s.t, v: num(s.state) })).filter(s => s.v !== null)
+                                             : climate.map(s => ({ t: s.t, v: num(s.a.current_temperature) })).filter(s => s.v !== null);
+            const targetAt = t => { let v = warmTemp; for (const s of climate) { if (s.t <= t) v = num(s.a.temperature) ?? v; else break; } return v; };
+            const source = room.thermometer ? 'room thermometer' : 'thermostat reading (measured at the valve)';
+
+            // Comfort during the warm periods of the plan, split into the first two hours after a warm period starts
+            // (the room is still catching up) and the rest (it should have arrived by then).
+            const hoursIntoWarm = t => {   // how long the current warm period has lasted at time t
+                let age = 0;
+                for (let x = t - 15 * 60e3; age < 24 && levelAt(plans, x) === 'warm'; x -= 15 * 60e3) age += 0.25;
+                return age;
+            };
+            const part = { early: { all: 0, under: 0 }, late: { all: 0, under: 0, sum: 0, over: 0 } };
+            walk(reading, end, (s, dur) => {
+                if (s.t < +DATA_START || levelAt(plans, s.t) !== 'warm') return;
+                const target = targetAt(s.t);
+                if (target === null) return;
+                const p = hoursIntoWarm(s.t) < 2 ? part.early : part.late;
+                p.all += dur;
+                if (s.v < target - 0.5) { p.under += dur; if (p.sum !== undefined) p.sum += (target - s.v) * dur; }
+                if (p.over !== undefined && s.v > target + 1.0) p.over += dur;
+            });
+            const lateH = part.late.all / 3600e3, earlyH = part.early.all / 3600e3, warmH = lateH + earlyH;
+            const lateUnder = part.late.all ? part.late.under / part.late.all : 0, earlyUnder = part.early.all ? part.early.under / part.early.all : 0;
+            const lateOver = part.late.all ? part.late.over / part.late.all : 0;
+            const avgShort = part.late.under ? part.late.sum / part.late.under : 0;
+            const entries = parsePlan(plans.weekday);
+            const startIdx = entries.findIndex((e, i) => e.level === 'warm' && i > 0 && entries[i - 1].level === 'low' && e.from - 1 > entries[i - 1].from);
+            if (warmH < 4) {
+                out.push({ id: `comfort:${room.key}`, level: 'nodata', room: room.name, title: 'Comfort', detail: 'Too little data in the warm periods yet.' });
+            } else if (lateH >= 3 && lateUnder > 0.3) {
+                // Under the target even two hours or more into the warm period: the start time is not the problem.
+                out.push({ id: `short:${room.key}`, level: 'suggest', room: room.name, title: `Does not reach the target (${fmt(lateUnder * 100, 0)} % of the time, 2 h or more into the warm period)`,
+                    detail: `On average ${fmt(avgShort)} °C under the target (${fmt(lateH, 0)} h measured, ${source}). An earlier start will not help: the radiator cannot lift this room to ${fmt(warmTemp)} °C at the current supply temperature, it may hold air, or the room loses heat quickly. Check the radiator and the supply temperature, or accept a lower warm temperature.`,
+                    action: warmTemp !== null ? { label: `Lower warm to ${fmt(warmTemp - 1)} °C`, question: `Set ${room.name}'s warm temperature to ${fmt(warmTemp - 1)} °C (now ${fmt(warmTemp)})? The room did not reach ${fmt(warmTemp)} °C anyway.`,
+                        run: async () => callApi('POST', 'services/input_number/set_value', { entity_id: `input_number.warm_${room.key}`, value: warmTemp - 1 }) } : null });
+            } else if (part.early.all / 3600e3 >= 2 && earlyUnder > 0.5 && startIdx > 0) {
+                out.push({ id: `late:${room.key}`, level: 'suggest', room: room.name, title: `Slow to warm up (below target ${fmt(earlyUnder * 100, 0)} % of the first two hours)`,
+                    detail: `The room gets there, but only after the warm period has started (${source}). Starting earlier means it is warm when the warm period begins.`,
+                    action: { label: `Start the warm period 1 hour earlier`, question: `Change ${room.name}'s weekday plan so it goes warm at ${clock(entries[startIdx].from - 1)} instead of ${clock(entries[startIdx].from)}? You can change it back under Helpers.`,
+                        run: async () => { const e2 = entries.map(e => ({ ...e })); e2[startIdx].from -= 1; await callApi('POST', 'services/input_text/set_value', { entity_id: `input_text.plan_${room.key}_weekday`, value: planText(e2) }); } } });
+            } else if (lateOver > 0.25 && room.thermometer) {
+                out.push({ id: `over:${room.key}`, level: 'suggest', room: room.name, title: `Above target (by 1 °C or more) ${fmt(lateOver * 100, 0)} % of the warm time`,
+                    detail: `The room is warmer than asked for, probably sun or heat from elsewhere. A lower warm temperature saves about 5 % of this room's heat per degree.`,
+                    action: warmTemp !== null ? { label: `Lower warm to ${fmt(warmTemp - 0.5)} °C`, question: `Set ${room.name}'s warm temperature to ${fmt(warmTemp - 0.5)} °C (now ${fmt(warmTemp)})?`,
+                        run: async () => callApi('POST', 'services/input_number/set_value', { entity_id: `input_number.warm_${room.key}`, value: warmTemp - 0.5 }) } : null });
+            } else {
+                out.push({ id: `comfort:${room.key}`, level: 'ok', room: room.name, title: 'Comfort', detail: `Reaches the target within about 0,5 °C (${fmt(warmH, 0)} warm hours measured, ${source}).` });
+            }
+
+            // Humidity, night air (CO2) and the batteries.
+            if (humidity.length) {
+                let total = 0, high = 0;
+                walk(humidity, end, (s, dur) => { const v = num(s.state); if (v === null || s.t < +DATA_START) return; total += dur; if (v > 60) high += dur; });
+                if (total > 6 * 3600e3 && high / total > 0.2) out.push({ id: `humid:${room.key}`, level: 'warn', room: room.name, title: `Humidity above 60 % for ${fmt(high / total * 100, 0)} % of the time`, detail: 'Risk of damp. Ventilate or run the dehumidifier more, and watch walls and furniture.' });
+            }
+            if (co2.length) {
+                let total = 0, high = 0;
+                walk(co2, end, (s, dur) => { const v = num(s.state), h = new Date(s.t).getHours(); if (v === null || s.t < +DATA_START || !(h >= 23 || h < 7)) return; total += dur; if (v > 1000) high += dur; });
+                if (total > 4 * 3600e3 && high / total > 0.2) out.push({ id: `co2:${room.key}`, level: 'warn', room: room.name, title: `CO₂ above 1000 ppm for ${fmt(high / total * 100, 0)} % of the nights`, detail: 'Stale air at night. A window ajar or a vent in the evening helps sleep and concentration.' });
+            }
+            const battery = num(states[room.battery]);
+            if (battery !== null && battery < 25) out.push({ id: `battery:${room.key}`, level: 'warn', room: room.name, title: `Thermostat battery at ${fmt(battery, 0)} %`, detail: 'Change the two AA batteries soon.' });
+            if (isMissing(climate.length ? climate[climate.length - 1].state : null)) out.push({ id: `offline:${room.key}`, level: 'warn', room: room.name, title: 'Thermostat offline', detail: 'Home Assistant cannot reach it. Check the batteries and the Thread network.' });
+            if (states[room.update] === 'on') {
+                out.push({ id: `fw:${room.key}`, level: 'suggest', room: room.name, title: 'New thermostat firmware is available', detail: 'The weekday 10:00 automation installs it; you can start it now (takes about 6 minutes, the thermostat does not react meanwhile).',
+                    action: { label: 'Update now', question: `Install the new firmware on ${room.name}'s thermostat now? The valve does not react for a few minutes.`, run: async () => callApi('POST', 'services/update/install', { entity_id: room.update }) } });
+            }
+            return out;
+        }
+
+        async function checkHeatPump(end, start) {
+            const out = [];
+            const rows = await history(COMPRESSOR, start, end);
+            if (!rows.length) return [{ id: 'hp:nodata', level: 'nodata', title: 'Heat pump', detail: 'No compressor data yet.' }];
+            // Starts and run time per full day (local), skipping the first (partial) day.
+            const days = new Map(), todayKey = localDateString(end);
+            let prevOn = false;
+            for (const r of rows) {
+                const key = localDateString(new Date(r.t)), on = r.state === 'on';
+                const d = days.get(key) || { starts: 0, ms: 0 };
+                if (on && !prevOn) d.starts++;
+                prevOn = on; days.set(key, d);
+            }
+            walk(rows, end, (s, dur) => { if (s.state !== 'on') return; const key = localDateString(new Date(s.t)); const d = days.get(key); if (d) d.ms += dur; });
+            const full = [...days].filter(([k]) => k > '2026-10-20' && k < todayKey);
+            if (full.length < 2) return [{ id: 'hp:nodata', level: 'nodata', title: 'Heat pump', detail: `Only ${full.length} full day of compressor data so far.` }];
+            const avgStarts = full.reduce((s, [, d]) => s + d.starts, 0) / full.length, avgDuty = full.reduce((s, [, d]) => s + d.ms / 864e5, 0) / full.length;
+            if (avgStarts > 24) out.push({ id: 'hp:cycling', level: 'warn', title: `${fmt(avgStarts, 0)} compressor starts a day`, detail: 'Many short runs wear the compressor and cost efficiency. With the supply and return probes we can see whether too much water passes the radiators; a plumber can check the flow and the valves.' });
+            else out.push({ id: 'hp:cycling', level: 'ok', title: 'Heat pump cycling', detail: `${fmt(avgStarts, 0)} starts a day and ${fmt(avgDuty * 100, 0)} % duty on average (${full.length} full days).` });
+            return out;
+        }
+
+        async function checkRadon(end, start) {
+            const rows = (await history(AIRTHINGS + 'radon_1_day_average', start, end)).map(r => num(r.state)).filter(v => v !== null);
+            if (rows.length < 12) return [];
+            const avg = rows.reduce((s, v) => s + v, 0) / rows.length;
+            return avg >= 200 ? [{ id: 'radon', level: 'warn', title: `Radon averaged ${fmt(avg, 0)} Bq/m³ over the week`, detail: "Above Airthings' limit for Sweden (200). Ask a radon adviser to measure and judge it, and ventilate meanwhile." }] : [{ id: 'radon', level: 'ok', title: 'Radon', detail: `${fmt(avg, 0)} Bq/m³ on average over the week.` }];
+        }
+
+        // ---------- drawing ----------
+        const LABELS = { suggest: 'Suggestions', warn: 'Warnings', ok: 'All good', nodata: 'Not enough data yet' };
+        function render(findings) {
+            const sections = document.getElementById('sections');
+            const visible = findings.filter(f => !(f.level === 'suggest' && muted(f.id)));
+            const count = l => visible.filter(f => f.level === l).length;
+            document.getElementById('summary').innerHTML = [['suggest', 'suggestion'], ['warn', 'warning'], ['ok', 'ok']]
+                .map(([l, w]) => `<span class="badge ${l}">${count(l)} ${w}${count(l) === 1 ? '' : 's'}</span>`).join('');
+            const status = document.getElementById('status');
+            status.textContent = count('warn') ? 'Needs attention' : count('suggest') ? 'Suggestions' : 'All good';
+            status.className = `pill ${count('warn') ? 'poor' : count('suggest') ? 'fair' : 'good'}`;
+            sections.replaceChildren(...['suggest', 'warn', 'ok', 'nodata'].filter(l => count(l)).flatMap(l => {
+                const title = document.createElement('div');
+                title.className = 'section-title';
+                title.textContent = LABELS[l];
+                const grid = document.createElement('div');
+                grid.className = 'items';
+                for (const f of visible.filter(x => x.level === l)) grid.append(card(f));
+                return [title, grid];
+            }));
+        }
+        function card(f) {
+            const el = document.createElement('div');
+            el.className = `item ${f.level}`;
+            el.innerHTML = `<div class="item-title">${f.room ? `<span class="item-room">${f.room}</span> · ` : ''}${f.title}</div><div class="item-detail">${f.detail}</div>`;
+            if (f.level !== 'suggest') return el;
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const idle = () => {
+                actions.replaceChildren();
+                if (f.action) { const b = document.createElement('button'); b.className = 'primary'; b.textContent = f.action.label; b.onclick = ask; actions.append(b); }
+                const later = document.createElement('button'); later.textContent = 'Not now'; later.onclick = () => { mute(f.id); run(); }; actions.append(later);
+            };
+            const ask = () => {
+                actions.replaceChildren();
+                const q = document.createElement('div'); q.className = 'ask'; q.textContent = f.action.question; actions.append(q);
+                const yes = document.createElement('button'); yes.className = 'yes'; yes.textContent = 'Yes, do it';
+                yes.onclick = async () => { try { await f.action.run(); mute(f.id); actions.innerHTML = '<span class="done">Done. The suggestion is muted for a week while the effect shows.</span>'; } catch (e) { showError(e); } };
+                const no = document.createElement('button'); no.textContent = 'Cancel'; no.onclick = idle;
+                actions.append(yes, no);
+            };
+            idle();
+            el.append(actions);
+            return el;
+        }
+
+        async function run() {
+            try {
+                const end = new Date(), start = new Date(Math.max(+end - WINDOW_DAYS * 864e5, +DATA_START - 3600e3));
+                const results = await Promise.all([...ROOMS.map(r => checkRoom(r, end, start)), checkHeatPump(end, start), checkRadon(end, start)]);
+                render(results.flat());
+                const days = Math.max(0, (+end - Math.max(+start, +DATA_START)) / 864e5);
+                document.getElementById('foot').textContent = `Checked ${end.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })} · based on the last ${fmt(days, 1)} days (limit 7) · rules only, nothing changes until you confirm`;
+                showError(null);
+            } catch (error) { showError(error); }
+        }
+        run();
+        setInterval(run, 10 * 60e3);
+    </script>
+</body>
+</html>

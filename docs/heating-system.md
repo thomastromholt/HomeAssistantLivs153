@@ -38,6 +38,15 @@ That would make the radiators weak around noon, exactly when the Køkken loses h
 
 Not confirmed. It conflicts with the earlier description of a constant 45–50 °C tank (a fixed supply temperature would not care about the sensor). To check, note the heat pump's outdoor reading and supply temperature at 08, 10, 12 and 14 and compare with the weather integration (`weather.forecast_home`). If the sensor is the cause: shade it, shift the curve up for the morning, or lengthen the averaging time if the unit has that setting.
 
+## The tank and what happens when the thermostats close
+
+The heat pump heats a **large water tank with a "kamrør"** (a ribbed/finned tube heat exchanger, as the owner calls it). The radiators draw from that tank, so the heat pump circuit and the radiator circuit are separate (owner's description, not checked against the manual).
+
+- If **all thermostats are closed**, nothing is drawn from the tank: the heat pump heats it to about 50 °C and then simply stops there. The owner says this is fine, and it is the normal behaviour of a tank with a buffer.
+- This corrects an earlier worry in the notes (about the heat pump losing flow or tripping when every valve closes). With a separate tank circuit that worry does not apply to the heat pump. What is left to check with the plumber is the radiator circuit's own circulation pump, which will run against closed valves (most modern pumps handle it, an older one may not) and whether a bypass or one open radiator is needed for that pump.
+- It also means that peak shifting with the thermostats works as intended: with the radiators closed in the dear hours the tank stays at 50 °C, the compressor has nothing to do and stops, and it runs later when the radiators draw again. The size of the saving is still the estimate in `businesscase-radiatorer.md` (roughly 100–400 kr a year for the controlled rooms, more if the whole house is controlled).
+- The elpatron still matters: if the tank is drawn down so far that the heat pump cannot keep up, the elpatron switches on (about 3 kW, one kWh of heat per kWh of electricity). Anything that blocks the compressor for long (a relay, a long thermostat setback of many rooms) must stay short enough for the tank not to fall below its limits.
+
 ## Seeing when the heat pump runs (P1 meter)
 
 A HomeWizard P1 meter (HWE-P1, `192.168.1.59`, Local API on) reads the whole house. The outdoor unit is fixed speed and adds about 1 kW on **each of the three phases** at once, or nothing, so it shows up clearly: the house base load is 90–250 W per phase, and a running compressor puts every phase above 1.0–1.2 kW (measured 1161/1092/1085 W when it started on 2026-10-20).
@@ -89,6 +98,37 @@ Both bedrooms follow the same plan. **Weekdays:** **20 °C from 16:00 to 07:00**
 ## Firmware updates of the thermostats
 
 All four LILJEBAGGE thermostats are on firmware 1.1.6 (2026-10-21). `config/automations/firmware_updates.yaml` installs pending updates on weekdays at 10:00, one thermostat at a time and only if its battery is above 30 %. An update that has been "skipped" in Home Assistant is not installed (the update entity reads "off"; run `update.clear_skipped` to offer it again). HA's `automations.yaml` on the box is `room_plans.yaml` followed by `firmware_updates.yaml` (not `peak_shaving.yaml`).
+
+## Varmerapport (the report at the bottom of the dashboard)
+
+`www/varmerapport.html` is a rules-only check (no AI) of comfort and heating efficiency over the last 7 days. It only **suggests**: a suggestion has a button that asks "Yes, do it / Cancel" before anything changes, and "Not now" mutes it for a week (kept in the browser). After a change the same suggestion is muted for a week while the effect shows.
+
+| Check | When it speaks up | What it offers |
+|-------|-------------------|----------------|
+| Does not reach the target | below target by 0.5 °C or more more than 30 % of the time, 2 h or more into a warm period | lower the room's warm temperature by 1 °C |
+| Slow to warm up | below target more than half of the first 2 h of a warm period (but fine later) | start the weekday warm period 1 hour earlier |
+| Above target | 1 °C or more over target in more than 25 % of the warm time (rooms with a thermometer) | lower warm by 0.5 °C |
+| Humidity | above 60 % for more than 20 % of the time | text only |
+| CO2 at night | above 1000 ppm for more than 20 % of 23:00–07:00 (Astrid, Airthings) | text only |
+| Radon | week average of 200 Bq/m³ or more | text only (get it measured) |
+| Heat pump cycling | more than 24 compressor starts a day on average | text only (check flow and valves) |
+| Thermostat | battery under 25 %, offline, new firmware | firmware: update now (asks first) |
+
+The room reading is the room thermometer where there is one (Stue: Timmerflotte, Astrid: Airthings); Køkken and Soveværelse use the thermostat's own reading, which sits at the valve and runs high when the radiator is warm. The thresholds are my first guesses and are easy to change in the file. It needs a few days of data before the heat pump and comfort checks mean much (data starts 2026-10-20).
+
+### The elpatron setting (from the NIBE documentation, pasted by the owner)
+
+| Selected elpatron power | Max load on the most loaded phase |
+|---|---|
+| 7.5 kW (mode 1) | 11.8 A |
+| 10.5 kW (mode 2) | 16.1 A |
+| 13.5 kW (mode 3) | 20.6 A |
+
+The owner thinks it is set to **mode 1** (not read from the unit). Consequences:
+- The subscription is a fixed **3 × 20 A**. Mode 3 (20.6 A on one phase, before the house's own load) is above the fuse and must not be used; mode 2 leaves little room (about 4 A, 0.9 kW) for the rest of the house; mode 1 leaves about 8 A (1.9 kW) per phase.
+- It makes the 2025 explanation much more plausible: the gap between 25,000 kWh in 2025 and the roughly 10,800 kWh expected now is about 14,200 kWh, which is only about **1,900 hours of the elpatron at 7.5 kW** (79 days nonstop, or about a third of the heating season at 4.5 kW). Earlier I had counted with 3 kW, which needed 4,800 hours.
+- Whether the seller's elpatron ran all the time is still a guess. What to check on the unit: the operating mode (auto or additional heat only) and the setting for when the additional heat may start (degree minutes) and its maximum step.
+- In the P1 data an elpatron step shows as extra current on all three phases on top of the compressor's 1 kW each. Measured so far (47 h from 2026-10-20): it did not run (0.1 % of the time had all phases above 1.8 kW, a single moment of about 3 minutes at 06:29 on 2026-10-21). With the elpatron alone and the compressor off, it looks like the compressor, so the heat pump sensor cannot tell them apart in that case.
 
 ## Settings used now: one plan per room
 

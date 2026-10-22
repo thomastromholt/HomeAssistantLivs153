@@ -3,9 +3,20 @@
 Dato: 2026-10-20 (rettet samme dag efter nyt forbrugstal). Skrevet til ejeren af Livlandsgatan 153.
 Alle tal er **skøn** ud fra tommelfingerregler og få dages målinger. Intet er målt over en hel sæson. Opdatér tallene, når målingerne kommer (afsnit 10).
 
+## Opdatering 2026-10-22: energideklarationen og dine måneder ændrer grundlaget
+
+Efter at jeg har læst energideklarationen (se `energideklaration.md`) og set dit eget forbrug siden maj, er der fire ting, der flytter regnestykkerne. **Tabellerne nedenfor er stadig regnet med de gamle antagelser, så læs dem sådan:**
+
+1. **Sælgerens forbrug i 2025 var ikke 25.000 kWh, men 23.074 kWh.** Varmepumpen brugte 13.599 kWh til varme og 1.510 kWh til varmt vand (15.109 i alt). Resten (cirka 8.000 kWh) er husholdning og alt andet på måleren.
+2. **Din forventning er lavere.** Ud fra dine egne måneder (maj til oktober) og temperaturen er forbruget cirka 11.000 til 15.000 kWh om året, og varmen til rum cirka 5.500 til 9.300 kWh, **ikke 15.000**. Varmetabet pr. grad er 2 til 3 gange lavere end i 2025, og forklaringen er sandsynligvis elpatronen. Når besparelserne skaleres med varmen, bliver **alle besparelser cirka halvt så store** som i tabellerne (Case C mid cirka 300 kr om året, Case B cirka 135 kr, Case A over de to nødvendige reparationer cirka 230 kr).
+3. **En grad lavere temperatur er 566 kWh om året** ifølge ekspertens beregning i deklarationen, cirka **1.250 kr om året** (ikke 750 kWh). Det er stadig gratis og stadig større end hele nat- og hverdagsskemaet.
+4. **Kælderen er en stor del af huset.** Atemp er 151 m², heraf 68 m² "andet opvarmet areal" (blandt andet kælderen). Min antagelse om, at kælderens radiatorer dækker 15 til 35 % af varmen, er sandsynligvis for lav. Det styrker termostaterne i kælderen og affugteren, og gør, at Case A (nye ventilhuse) kan være bedre, end tabellen viser, men det skal måles først (afsnit 10).
+
+I deklarationen foreslår eksperten også snålspolende brusehoveder (110 kWh om året, 1,19 kr pr. sparet kWh): en billig ting, der tjener sig ind hurtigt, og som ikke er med nedenfor.
+
 ## 1. Konklusion
 
-Basis: huset brugte **25.000 kWh i kalenderåret 2025, uden elbilen**.
+Basis (gammel antagelse, se opdateringen ovenfor): huset brugte 25.000 kWh i 2025. Det rigtige tal er 23.074 kWh.
 
 | Case | Pris | Mid: netto pr. år | Tilbagebetaling (mid) | NPV (mid) | Kort dom |
 |---|---|---|---|---|---|
@@ -13,7 +24,7 @@ Basis: huset brugte **25.000 kWh i kalenderåret 2025, uden elbilen**.
 | B. Reflektorfolie, 5 radiatorer | 1.000 kr | cirka 225 kr | cirka 4,5 år | +1.100 kr (12 år) | **Rimelig** på radiatorer ved ydervæg. Støbejern giver mere end panelradiatorer. |
 | C. 5 LILJEBAGGE på rum med termostatklare ventiler | 1.000 kr | cirka 700 kr (320 kr uden peak shift) | cirka 1,4 år (3,1 år) | +3.700 kr (8 år) | **Den bedste af de tre.** Billig, og besparelsen er størst, hvis peak shift virker. |
 
-Det største enkelte fund er ikke en af de tre: **en grad lavere temperatur i hele huset sparer cirka 750 kWh, altså cirka 1.650 kr om året** (mid). Det er mere end hele nat- og hverdagsskemaet tilsammen (cirka 370 kr). Se afsnit 7.
+Det største enkelte fund er ikke en af de tre: **en grad lavere temperatur i hele huset sparer cirka 566 kWh, altså cirka 1.250 kr om året** (ekspertens tal i energideklarationen; mit første gæt var 750 kWh). Det er mere end hele nat- og hverdagsskemaet tilsammen (cirka 370 kr). Se afsnit 7.
 
 ## 2. Forudsætninger
 
@@ -147,7 +158,7 @@ Her er ventilerne i orden, og LILJEBAGGE giver skema (nat, hverdage væk), overb
 
 | Tiltag (mid) | Spar pr. år |
 |---|---|
-| **1 °C lavere i hele huset, hele året** | **cirka 1.650 kr (750 kWh)** |
+| **1 °C lavere i hele huset, hele året** | **cirka 1.250 kr (566 kWh, energideklarationen)** |
 | 1 °C lavere i de 40 % af varmen, der er termostatstyret | cirka 660 kr |
 | Nat −2 °C (kun styrede rum) | cirka 205 kr |
 | Hverdage væk −3 °C (kun styrede rum) | cirka 165 kr |
@@ -161,7 +172,7 @@ Det vil sige: **sæt stuens og køkkenets dagmål 1 °C ned (21 → 20 °C)**, o
 |---|---|---|
 | 1 °C lavere dagmål (stue og køkken, 40 % af varmen) | cirka 660 kr | 0 kr |
 | Affugteren i kælderen på 60 % i stedet for 50 % (270 W døgnet rundt, cirka 2.400 kWh, cirka 5.200 kr, 9,5 % af husets forbrug) | cirka 1.000–2.000 kr brutto, mindre netto | 0 kr (smart stikkontakt til måling 150–300 kr) |
-| Smart ladning af bilen (bilen er **oveni** de 25.000 kWh; cirka 1.300 kWh, 0,5–1 kr/kWh billigere) | cirka 650–1.300 kr | 0 kr |
+| Smart ladning af bilen (bilen er **oveni** husets forbrug; cirka 1.300 kWh, 0,5–1 kr/kWh billigere) | cirka 650–1.300 kr | 0 kr |
 | Undgå elpatronen (3 kW, hver time koster cirka 6,6 kr) | 500 timer sparer cirka 3.300 kr | 0 kr |
 | Luk 2 af 4 kælderradiatorer på de gamle ventiler | cirka 70 % af Case A | 0 kr |
 
