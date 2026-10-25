@@ -42,6 +42,14 @@
 
         <div class="rooms">
             <div id="zones" style="display: contents"></div>
+            <div class="zone">
+                <div class="zone-name">Gildestuen</div>
+                <button class="cell" id="basementTemp">
+                    <div class="tile-label">Thermometer</div>
+                    <div class="cell-value temp" id="basementValue"></div>
+                    <div class="cell-sub humidity" id="basementHumidity"></div>
+                </button>
+            </div>
             <div class="outside">
                 <span class="tile-label">Ude</span>
                 <button class="value out-temp" id="outTemp"></button>
@@ -57,9 +65,8 @@
         // One LILJEBAGGE thermostat per room. A room with a `thermometer` shows that sensor (and humidity) instead of the
         // thermostat's own reading. `night: false` = no night-mode helpers (night mode is part of the room plans now).
         const ZONES = [
-            { key: 'stue', name: 'Stue', suffix: '', deviceId: '88a5efd90680fa98c6117641c9084aec', night: false,
-              thermometer: { label: 'Thermometer', name: 'Timmerflotte', temperature: 'sensor.timmerflotte_temp_hmd_sensor_temperatur',
-                             humidity: 'sensor.timmerflotte_temp_hmd_sensor_luftfugtighed', battery: 'sensor.timmerflotte_temp_hmd_sensor_batteri' } },
+            // Timmerflotte moved to the basement (Gildestuen) on 2026-10-25, so Stue shows the thermostat's own reading until a new meter is in.
+            { key: 'stue', name: 'Stue', suffix: '', deviceId: '88a5efd90680fa98c6117641c9084aec', night: false },
             { key: 'kokken', name: 'Køkken', suffix: '_2', deviceId: '693637959f507ce567f16408ba4b712d', night: false },
             { key: 'sovevaerelse', name: 'Soveværelse', suffix: '_3', deviceId: '6cc6d13bf6e043fa587d7ca0f61089d0', night: false },
             { key: 'astrid', name: 'Astrid', suffix: '_4', deviceId: 'd5c9bb2a681637513a7bde75b298a786', night: false,
@@ -106,6 +113,9 @@
             z.el('temp').addEventListener('click', z.thermometer ? () => openHistory(z.thermometer.temperature) : popup);
             document.getElementById('zones').append(zone);
         }
+        // The basement meter (Timmerflotte, moved from Stue on 2026-10-25). Its history is one entity: before and after the move.
+        const BASEMENT = { temperature: 'sensor.timmerflotte_temp_hmd_sensor_temperatur', humidity: 'sensor.timmerflotte_temp_hmd_sensor_luftfugtighed' };
+        document.getElementById('basementTemp').addEventListener('click', () => openHistory(BASEMENT.temperature));
         document.getElementById('outTemp').addEventListener('click', () => openHistory(OUTDOOR));
         document.getElementById('outHumidity').addEventListener('click', () => openHistory(OUTDOOR));
 
@@ -159,6 +169,16 @@
                 const setback = null;   // night mode is part of the room plans now (input_text.plan_<room>_...)
                 for (const z of ZONES) await renderZone(z, setback, problems);
 
+                // Gildestuen: the Timmerflotte in the basement (its own room, no thermostat).
+                const basementTemp = await stateOf(BASEMENT.temperature).catch(() => null);
+                const basementHum = await stateOf(BASEMENT.humidity).catch(() => null);
+                document.getElementById('basementValue').innerHTML = degrees(basementTemp);
+                const basementHumEl = document.getElementById('basementHumidity');
+                basementHumEl.textContent = percent(basementHum);
+                basementHumEl.classList.remove('good', 'fair', 'poor');
+                if (!isMissing(basementHum)) basementHumEl.classList.add(humidityLevel(parseFloat(basementHum)));
+                if (isMissing(basementTemp)) problems.push('Gildestuen: Timmerflotte is offline');
+
                 const weather = await callApi('GET', `states/${OUTDOOR}`).catch(() => null);
                 const out = weather && weather.attributes;
                 document.getElementById('outTemp').innerHTML = degrees(out && out.temperature);
@@ -172,7 +192,7 @@
             }
         }
 
-        watchEntities(ZONES.flatMap(z => [z.climate, z.update, z.nightActive, z.thermometer && z.thermometer.temperature].filter(Boolean)), () => render());
+        watchEntities([...ZONES.flatMap(z => [z.climate, z.update, z.nightActive, z.thermometer && z.thermometer.temperature].filter(Boolean)), BASEMENT.temperature], () => render());
         render();
         setInterval(render, 30e3);
     </script>

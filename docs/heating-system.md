@@ -114,7 +114,9 @@ All four LILJEBAGGE thermostats are on firmware 1.1.6 (2026-10-21). `config/auto
 | Heat pump cycling | more than 24 compressor starts a day on average | text only (check flow and valves) |
 | Thermostat | battery under 25 %, offline, new firmware | firmware: update now (asks first) |
 
-The room reading is the room thermometer where there is one (Stue: Timmerflotte, Astrid: Airthings); Køkken and Soveværelse use the thermostat's own reading, which sits at the valve and runs high when the radiator is warm. The thresholds are my first guesses and are easy to change in the file. It needs a few days of data before the heat pump and comfort checks mean much (data starts 2026-10-20).
+The room reading is the room thermometer where there is one (Astrid: Airthings); Køkken, Soveværelse and, since 2026-10-25, Stue use the thermostat's own reading, which sits at the valve and runs high when the radiator is warm.
+
+**Timmerflotte moved to the basement (Gildestuen) on 2026-10-25 at about 21:38 CET (20:38 UTC).** Its entities keep their IDs (`sensor.timmerflotte_temp_hmd_sensor_temperatur` and `_luftfugtighed`) so the history is not lost, but the display name is now "Gildestuen". Everything before 21:38 CET on 2026-10-25 is Stue, everything after is Gildestuen. It went offline at 22:06 CET the same evening (weak Thread signal in the basement, to be checked). The break is in the data, not in the file. Stue needs its own meter again if it should have a room thermometer. The thresholds are my first guesses and are easy to change in the file. It needs a few days of data before the heat pump and comfort checks mean much (data starts 2026-10-20).
 
 ### The elpatron setting (from the NIBE documentation, pasted by the owner)
 
