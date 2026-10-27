@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ceed</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        .container { overflow-y: auto; }
+        .close { border: 0; background: rgba(255, 255, 255, 0.08); color: #c5d1d9; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; }
+        .big { display: flex; gap: 6px; margin: 6px 0; }
+        .big .tile { flex: 1; text-align: center; cursor: default; }
+        .big .tile-value { font-size: 26px; font-weight: 300; }
+        .big .tile-value small { font-size: 13px; color: #8da0ad; }
+        .big .tile-value.live { color: #5fe085; }
+        .big .tile-value.warn { color: #ffb340; }
+        .status { display: flex; align-items: center; line-height: 1.35; gap: 8px; margin: 4px 0 2px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); font-size: 14px; }
+        .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5fe085; }
+        .dot.bad { background: #ff6b61; }
+        .dot.idle { background: #8da0ad; }
+        .lad { display: flex; gap: 6px; margin: 10px 0 2px; }
+        .lad button { flex: 1; padding: 10px 0; border: 0; border-radius: 12px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .lad .go { background: rgba(95, 224, 133, 0.22); color: #5fe085; }
+        .lad .stop { background: rgba(255, 255, 255, 0.08); color: #c5d1d9; }
+        .lad-msg { min-height: 16px; font-size: 12px; color: #8da0ad; text-align: center; }
+        .ranges { display: flex; gap: 6px; margin: 8px 0 4px; }
+        .ranges button { flex: 1; padding: 5px 0; border: 0; border-radius: 8px; background: rgba(255, 255, 255, 0.06); color: #8da0ad; font-family: inherit; cursor: pointer; }
+        .ranges button.on { background: rgba(100, 210, 255, 0.2); color: #64d2ff; }
+        .chart { position: relative; height: clamp(230px, 46vh, 520px); flex: none; }
+        .rows { margin-top: 10px; }
+        .rows div { display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); font-size: 14px; }
+        .rows span:first-child { color: #8da0ad; }
+        .note { margin-top: 10px; font-size: 12px; color: #8da0ad; line-height: 1.4; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head">
+            <span class="name">Ceed <span class="muted">PHEV · Zaptec Go2</span></span>
+            <button class="close" id="close" aria-label="Close">✕</button>
+        </div>
+        <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
+
+        <div class="status"><span class="dot" id="dot"></span><span id="statusText">–</span></div>
+
+        <div class="big">
+            <div class="tile"><div class="tile-label">Battery</div><div class="tile-value" id="soc">–</div></div>
+            <div class="tile"><div class="tile-label">Power</div><div class="tile-value" id="power">–</div></div>
+            <div class="tile"><div class="tile-label">Current</div><div class="tile-value" id="current">–</div></div>
+        </div>
+
+        <div class="lad">
+            <button id="ladNu" class="go">Lad nu</button>
+            <button id="ladStop" class="stop">Følg plan</button>
+        </div>
+        <div class="lad-msg" id="ladMsg"></div>
+
+        <div class="ranges" id="ranges">
+            <button data-h="6">6 h</button><button data-h="24">24 h</button><button data-h="72">3 d</button><button data-h="168">7 d</button><button data-h="720">30 d</button>
+        </div>
+        <div class="chart"><canvas id="chart"></canvas></div>
+
+        <div class="rows" id="rows"></div>
+        <div class="note">Battery % is the car's own reading and comes from the Kia cloud, so it can lag behind the car by up to an hour. Power and current come from the Zaptec charger, which balances between the minimum and the fixed 16 A limit.</div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        const E = {
+            soc: 'sensor.ceed_ev_battery_level',
+            evRange: 'sensor.ceed_ev_range',
+            totalRange: 'sensor.ceed_total_driving_range',
+            odometer: 'sensor.ceed_odometer',
+            carUpdated: 'sensor.ceed_last_updated_at',
+            plug: 'binary_sensor.ceed_ev_battery_plug',
+            carCharging: 'binary_sensor.ceed_ev_battery_charge',
+            minutes: 'sensor.ceed_estimated_charge_duration',
+            mode: 'sensor.go2_charger_mode',
+            power: 'sensor.go2_charge_power',
+            current: 'sensor.go2_allocated_charge_current',
+            session: 'sensor.go2_session_total_charge',
+            lastSession: 'sensor.go2_completed_session_energy',
+            lifetime: 'sensor.go2_energy_meter',
+            maxCurrent: 'number.go2_charger_max_current',
+            online: 'binary_sensor.go2_online',
+        };
+        const MODES = {
+            disconnected: 'Car disconnected',
+            connected_requesting: 'Waiting to start',
+            connected_charging: 'Charging',
+            connected_finished: 'Paused',
+        };
+        const MAX_AMPS = 16;   // the fixed installation limit
+        // Forecast: the car's battery is about 9 kWh gross (Kia Ceed SW PHEV, to be checked), and the charger loses about 10 % on the way in.
+        const BATTERY_KWH = 9, CHARGE_EFFICIENCY = 0.9;
+
+        let hours = 24, chart = null, carState = null;
+        // When the battery is full at the power the charger is giving right now, or null if it is not charging.
+        const fullAt = () => {
+            if (!carState || !carState.charging || carState.kw <= 0 || Number.isNaN(carState.soc) || carState.soc >= 100) return null;
+            const hoursLeft = (100 - carState.soc) / 100 * BATTERY_KWH / (carState.kw * CHARGE_EFFICIENCY);
+            return new Date(Date.now() + hoursLeft * 3600e3);
+        };
+        const at = row => new Date(row.last_updated || row.last_changed).getTime();
+        const hoursText = minutes => `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+        const batteryColor = level => level > 50 ? '#34c759' : level > 20 ? '#ffd60a' : '#ffb340';
+
+        document.getElementById('close').addEventListener('click', () => closePopup());
+
+        // Lad nu / Stop. Starting is only allowed when the house is quiet on phase 1 and the P1 reading is fresh;
+        // load_balance.yaml stops the charger by itself above 14 A.
+        const LAD_MAX_HOUSE_A = 10;
+        const ladMsg = text => { document.getElementById('ladMsg').textContent = text; };
+        async function houseAmps() {
+            const p1 = await callApi('GET', 'states/sensor.p1_meter_power_phase_1');
+            const car = await callApi('GET', 'states/sensor.go2_current_phase_1');
+            const fresh = (Date.now() - new Date(p1.last_updated).getTime()) / 1000 < 30;
+            if (!fresh) return null;
+            return Math.max(0, parseFloat(p1.state) / 230 - parseFloat(car.state));
+        }
+        document.getElementById('ladNu').addEventListener('click', async () => {
+            try {
+                const house = await houseAmps();
+                if (house === null) return ladMsg('Ingen frisk P1-måling. Starter ikke.');
+                if (house > LAD_MAX_HOUSE_A) return ladMsg(`Huset trækker ${house.toFixed(0)} A på fase 1. Starter ikke, over ${LAD_MAX_HOUSE_A} A.`);
+                // The start itself is done by the automation "Ladeplan, start og stop laderen" (Zaptec's resume button).
+                await callApi('POST', 'services/input_boolean/turn_on', { entity_id: 'input_boolean.lad_nu' });
+                ladMsg('Lad nu er slået til. Laderen starter inden for et minut.');
+            } catch (error) { ladMsg('Kunne ikke starte: ' + error.message); }
+        });
+        document.getElementById('ladStop').addEventListener('click', async () => {
+            try {
+                await callApi('POST', 'services/input_boolean/turn_off', { entity_id: 'input_boolean.lad_nu' });
+                ladMsg('Følger ladeplanen igen. Uden for vinduet stopper laderen inden for et minut.');
+            } catch (error) { ladMsg('Kunne ikke stoppe: ' + error.message); }
+        });
+
+        async function history(ids, start, end) {
+            const url = `history/period/${start.toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${encodeURIComponent(end.toISOString())}&significant_changes_only=0`;
+            const result = await callApi('GET', url);
+            return Object.fromEntries(result.map(rows => [rows[0].entity_id, rows]));
+        }
+
+        async function drawChart() {
+            const end = new Date();
+            const start = new Date(end - hours * 3600e3);
+            const data = await history([E.power, E.soc], start, end);
+            const series = id => (data[id] || []).filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ x: at(r), y: parseFloat(r.state) }));
+            const last = rows => rows.length ? [...rows, { x: end.getTime(), y: rows[rows.length - 1].y }] : rows;
+            const power = series(E.power).map(p => ({ x: p.x, y: p.y / 1000 }));
+            const finish = fullAt();
+
+            const datasets = [
+                { label: 'Charging kW', data: last(power), borderColor: '#5fe085', backgroundColor: 'rgba(95, 224, 133, 0.18)', fill: true, yAxisID: 'y', pointRadius: 0, borderWidth: 2, stepped: 'before' },
+                { label: 'Battery %', data: last(series(E.soc)), borderColor: '#ffb340', yAxisID: 'y2', pointRadius: 2, borderWidth: 2, stepped: 'before' },
+            ];
+            // Forecast: a dashed line from the battery now to full, at the power the charger gives right now.
+            if (finish) datasets.push({ label: 'Forecast %', data: [{ x: end.getTime(), y: carState.soc }, { x: finish.getTime(), y: 100 }], borderColor: '#ffb340', borderDash: [6, 4], yAxisID: 'y2', pointRadius: 0, borderWidth: 2 });
+            const axisEnd = finish && finish > end ? finish : end;
+            if (chart) chart.destroy();
+            chart = new Chart(document.getElementById('chart'), {
+                type: 'line',
+                data: { datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    scales: {
+                        x: { type: 'linear', min: start.getTime(), max: axisEnd.getTime(), ticks: { color: '#8da0ad', maxTicksLimit: 6, callback: v => new Date(v).toLocaleString('sv-SE', hours > 24 ? { weekday: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' }) }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: { beginAtZero: true, position: 'left', title: { display: true, text: 'kW', color: '#8da0ad' }, ticks: { color: '#8da0ad' }, grid: { color: 'rgba(255,255,255,0.07)' } },
+                        y2: { min: 0, max: 100, position: 'right', title: { display: true, text: '%', color: '#8da0ad' }, ticks: { color: '#8da0ad' }, grid: { display: false } },
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#c5d1d9', boxWidth: 12 } },
+                        // The default title is the raw time in milliseconds, so format it as a time.
+                        tooltip: { callbacks: { title: items => new Date(items[0].parsed.x).toLocaleString('sv-SE', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) } },
+                    },
+                },
+            });
+        }
+
+        document.getElementById('ranges').addEventListener('click', event => {
+            const button = event.target.closest('button[data-h]');
+            if (!button) return;
+            hours = Number(button.dataset.h);
+            document.querySelectorAll('#ranges button').forEach(b => b.classList.toggle('on', b === button));
+            drawChart().catch(showError);
+        });
+        document.querySelector('#ranges button[data-h="24"]').classList.add('on');
+
+        async function render() {
+            try {
+                const states = await statesOf(Object.values(E));
+                const s = key => states[E[key]];
+
+                const soc = parseFloat(s('soc'));
+                const socEl = document.getElementById('soc');
+                socEl.innerHTML = `${formatNumber(s('soc'), 0) ?? '–'} <small>%</small>`;
+                socEl.style.color = Number.isNaN(soc) ? '' : batteryColor(soc);
+
+                const kw = (parseFloat(s('power')) || 0) / 1000;
+                const amps = parseFloat(s('current')) || 0;
+                const charging = s('mode') === 'connected_charging';
+                const isOnline = s('online') === 'on';
+                const power = document.getElementById('power');
+                power.innerHTML = `${kw.toFixed(1)} <small>kW</small>`;
+                power.classList.toggle('live', charging);
+                document.getElementById('current').innerHTML = `${formatNumber(amps, 0) ?? '–'} <small>of ${MAX_AMPS} A</small>`;
+
+                const dot = document.getElementById('dot');
+                dot.className = `dot ${!isOnline ? 'bad' : charging ? '' : 'idle'}`;
+                const label = MODES[s('mode')] ?? (s('plug') === 'on' ? 'Plugged in' : 'Not plugged');
+                carState = { soc, kw, charging };
+                const finish = fullAt();
+                const minutes = parseFloat(s('minutes'));
+                let statusMsg;
+                if (!isOnline) {
+                    statusMsg = 'Charger offline: the values may be old';
+                } else if (finish) {
+                    statusMsg = `${label} · full at about ${finish.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })} (${formatNumber(kw, 1)} kW)`;
+                } else if (charging && !Number.isNaN(minutes)) {
+                    statusMsg = `${label} · ${hoursText(minutes)} to full (car estimate)`;
+                } else if (s('mode') === 'connected_finished') {
+                    if (soc >= 99) {
+                        statusMsg = `${label} · fully charged at ${formatNumber(soc, 0)}%`;
+                    } else {
+                        statusMsg = `${label} at ${formatNumber(soc, 0)}% · outside charging window`;
+                    }
+                } else {
+                    statusMsg = label;
+                }
+                document.getElementById('statusText').textContent = statusMsg;
+
+                const updated = new Date(s('carUpdated'));
+                const rows = [
+                    ['EV range', `${formatNumber(s('evRange')) ?? '–'} km`],
+                    ['Total range', `${formatNumber(s('totalRange')) ?? '–'} km`],
+                    ['Odometer', `${formatNumber(s('odometer'), 0) ?? '–'} km`],
+                    ['This session', `${formatNumber(charging ? s('session') : s('lastSession'), 1) ?? '–'} kWh`],
+                    ['Total on the charger', `${formatNumber(s('lifetime'), 0) ?? '–'} kWh`],
+                    ['Max current (fixed)', `${formatNumber(s('maxCurrent'), 0) ?? '–'} A`],
+                    ['Car data from', Number.isNaN(updated.getTime()) ? '–' : updated.toLocaleString('sv-SE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })],
+                ];
+                document.getElementById('rows').innerHTML = rows.map(([k, v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('');
+
+                const problems = [];
+                const ageHours = (Date.now() - updated.getTime()) / 3600e3;
+                if (isMissing(s('soc'))) problems.push('No data from the car (Kia cloud)');
+                else if (ageHours > 24) problems.push(`Car data is ${Math.round(ageHours)} h old`);
+                if (isMissing(s('mode'))) problems.push('No data from the charger (Zaptec cloud)');
+                showProblems(problems);
+                showError(null);
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        render();
+        drawChart().catch(showError);
+        setInterval(render, 15e3);
+        setInterval(() => drawChart().catch(() => {}), 60e3);
+    </script>
+</body>
+</html>

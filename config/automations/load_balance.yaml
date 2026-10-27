@@ -1,0 +1,99 @@
+# Load balancing through the charger's own maximum current (number.go2_charger_max_current), not the installation's
+# available current: on 2026-10-27 the charger took 16 A while the installation was set to 8 A, but the charger's own
+# maximum took effect within about 20 seconds. See docs/ladeplan.md.
+#
+# The car charges on phase 1 (L1). Total L1 = the P1 reading; the house = total minus the car's own current.
+# Every 10 seconds:
+# - Over 20 A on L1 for 10 seconds: down to 6 A at once, and stay down for 30 minutes (input_datetime.lad_overload).
+# - P1 missing or older than 30 seconds: 6 A.
+# - Otherwise the limit is 20 A minus the house minus a 2 A margin, within 6-15 A.
+#   Lowered at once if L1 is over 19 A, otherwise when the last change is at least 2 minutes old (the car's own current
+#   reading lags behind the P1 meter, so the house looks too high right after a raise).
+#   Raised only when the last change is at least 15 minutes old (Zaptec asks for that; frequent changes can make the car
+#   stop the session) and the last overload is at least 30 minutes old.
+# It never starts or stops the charger.
+- id: load_balance_car_current
+  alias: Lastbalancering, bil under 20 A
+  description: Laderens maks-strøm 6-15 A, så L1 holdes under 20 A med 2 A margin. Over 20 A går den til 6 A i 30 minutter. Sænker med det samme, hæver højst hvert 15. minut.
+  mode: queued
+  max: 3
+  triggers:
+    - trigger: template
+      id: over
+      value_template: "{{ states('sensor.p1_meter_power_phase_1') | float(0) / 230 > 20 }}"
+      for: "00:00:10"
+    - trigger: time_pattern
+      id: check
+      seconds: "/10"
+  conditions:
+    - condition: template
+      value_template: "{{ states('number.go2_charger_max_current') not in ['unknown', 'unavailable'] }}"
+  actions:
+    - variables:
+        p1_ok: >-
+          {{ states('sensor.p1_meter_power_phase_1') not in ['unknown', 'unavailable']
+             and states('sensor.go2_current_phase_1') not in ['unknown', 'unavailable']
+             and (now() - states.sensor.p1_meter_power_phase_1.last_updated).total_seconds() < 30 }}
+        total_a: "{{ states('sensor.p1_meter_power_phase_1') | float(0) / 230 }}"
+        house_a: "{{ [ total_a - states('sensor.go2_current_phase_1') | float(0), 0 ] | max }}"
+        limit: "{{ states('number.go2_charger_max_current') | float(0) }}"
+        minutes_since_change: "{{ ((now() - states.number.go2_charger_max_current.last_changed).total_seconds() / 60) | round(1) }}"
+        minutes_since_overload: >-
+          {{ ((as_timestamp(now()) - as_timestamp(states('input_datetime.lad_overload'), 0)) / 60) | round(1) }}
+        target: "{{ [ [ (20 - house_a - 2) | round(0, 'floor'), 6 ] | max, 15 ] | min | int }}"
+    - choose:
+        # Over 20 A on L1: down to 6 A and remember when.
+        - conditions:
+            - condition: template
+              value_template: "{{ p1_ok and (trigger.id == 'over' or total_a > 20.5) }}"
+          sequence:
+            - action: input_datetime.set_datetime
+              target:
+                entity_id: input_datetime.lad_overload
+              data:
+                timestamp: "{{ as_timestamp(now()) }}"
+            - if:
+                - condition: template
+                  value_template: "{{ limit > 6.5 }}"
+              then:
+                - action: number.set_value
+                  target:
+                    entity_id: number.go2_charger_max_current
+                  data:
+                    value: 6
+                - action: persistent_notification.create
+                  data:
+                    notification_id: load_balance_over_20a
+                    title: Over 20 A på L1
+                    message: "L1 nåede {{ total_a | round(1) }} A. Laderen er sat til 6 A i 30 minutter."
+        # P1 missing: 6 A.
+        - conditions:
+            - condition: template
+              value_template: "{{ not p1_ok and limit > 6.5 }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: number.go2_charger_max_current
+              data:
+                value: 6
+        # Lower: at once near the limit, otherwise when the last change is at least 2 minutes old.
+        - conditions:
+            - condition: template
+              value_template: "{{ p1_ok and target < limit - 0.5 and (total_a > 19 or minutes_since_change | float >= 2) }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: number.go2_charger_max_current
+              data:
+                value: "{{ target }}"
+        # Raise: at most every 15 minutes, and not within 30 minutes of an overload.
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ p1_ok and target > limit + 0.5 and minutes_since_change | float >= 15 and minutes_since_overload | float >= 30 }}
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: number.go2_charger_max_current
+              data:
+                value: "{{ target }}"

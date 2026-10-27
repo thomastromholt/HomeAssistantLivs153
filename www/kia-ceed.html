@@ -15,9 +15,10 @@
         .ranges .sep { margin: 0 4px; color: #6d808c; }
 
         .car { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+        .car { cursor: pointer; }
         .car img {
-            max-width: 82%;
-            max-height: 82%;
+            max-width: 52%;
+            max-height: 70%;
             object-fit: contain;
             -webkit-mask-image: radial-gradient(ellipse 52% 52% at 50% 50%, #000 62%, transparent 100%);
             mask-image: radial-gradient(ellipse 52% 52% at 50% 50%, #000 62%, transparent 100%);
@@ -34,20 +35,29 @@
         .glow.on { opacity: 1; animation: breathe 2s ease-in-out infinite; }
         @keyframes breathe { 50% { opacity: 0.35; } }
 
-        .status { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-        .status .tile { padding: 8px 2px 6px; background: none; }
-        .status .tile:hover { background: rgba(255, 255, 255, 0.08); }
-        .status svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-        .status .tile-value { margin-top: 4px; font-size: 12px; font-weight: 500; }
-        .status .warn svg, .status .warn .tile-value { color: #ffb340; }
-        .status .live svg, .status .live .tile-value { color: #5fe085; }
-        .status .live svg { animation: breathe 1.4s ease-in-out infinite; }
+        /* Charger tiles, the same look as the other cards. */
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+        .grid .tile-value.status { font-size: 16px; font-weight: 500; }
+        .grid .tile-value.warn { color: #ffb340; }
+        .grid .tile-value.bad { color: #ff6b61; }
+        .grid .tile { display: flex; flex-direction: column; justify-content: center; }
+        .grid .tile-label { font-size: 12px; }
+        .grid .tile-value { margin-top: 6px; font-size: 24px; font-weight: 400; }
+        .grid .tile-value small { font-size: 13px; }
+        .grid .tile-value.live { color: #5fe085; }
+        .grid .buttons { display: flex; flex-direction: column; gap: 4px; }
+        .grid .btn-small { padding: 6px 10px; border: 0; border-radius: 8px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .grid .btn-go { background: rgba(95, 224, 133, 0.22); color: #5fe085; }
+        .grid .btn-go:hover { background: rgba(95, 224, 133, 0.35); }
+        .grid .btn-stop { background: rgba(255, 255, 255, 0.08); color: #c5d1d9; }
+        .grid .btn-stop:hover { background: rgba(255, 255, 255, 0.12); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="head">
             <span class="name">Ceed <span class="muted">PHEV</span></span>
+            <span class="pill" id="online"></span>
         </div>
         <div id="error" class="error" hidden></div>
         <div id="problems" class="problems" hidden></div>
@@ -63,7 +73,7 @@
             <div class="glow" id="glow"></div>
         </div>
 
-        <div class="status" id="status"></div>
+        <div class="grid" id="tiles"></div>
         <div class="footer" id="updated"></div>
     </div>
 
@@ -71,41 +81,42 @@
     <script>
         const E = {
             battery: 'sensor.ceed_ev_battery_level',
-            evRange: 'sensor.ceed_ev_range',
             totalRange: 'sensor.ceed_total_driving_range',
             odometer: 'sensor.ceed_odometer',
             charging: 'binary_sensor.ceed_ev_battery_charge',
             plug: 'binary_sensor.ceed_ev_battery_plug',
             chargeMinutes: 'sensor.ceed_estimated_charge_duration',
-            lock: 'lock.ceed_door_lock',
             updatedAt: 'sensor.ceed_last_updated_at',
-        };
-        const OPENINGS = [
-            ['binary_sensor.ceed_front_left_door'], ['binary_sensor.ceed_front_right_door'],
-            ['binary_sensor.ceed_back_left_door'], ['binary_sensor.ceed_back_right_door'],
-            ['binary_sensor.ceed_trunk'], ['binary_sensor.ceed_hood'],
-        ].map(([id]) => id);
-
-        const ICONS = {
-            lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
-            bolt: '<path d="M13 3 5 14h6l-1 7 8-11h-6z"/>',
-            door: '<path d="M5 20V9.5L9 4h10v16z"/><path d="M9 4v5.5H5"/><path d="M14 13h3"/>',
-            range: '<path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 17 4-5"/>',
+            // Zaptec Go2 (the home charger).
+            mode: 'sensor.go2_charger_mode',
+            power: 'sensor.go2_charge_power',
+            online: 'binary_sensor.go2_online',
         };
 
-        function statusTile(icon, entityId) {
-            const button = document.createElement('button');
-            button.className = 'tile';
-            button.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[icon]}</svg><div class="tile-value"></div>`;
-            button.addEventListener('click', () => openHistory(entityId));
-            document.getElementById('status').append(button);
-            return { button, value: button.querySelector('.tile-value') };
-        }
+        // The car and the charging power both open the car pop-up (battery, charging and history); the charge time opens the car's charging sensor.
+        const openCar = () => openPopup('/local/car.html?v=' + Date.now());
+        document.querySelector('.car').addEventListener('click', openCar);
+        // The charger's own state (Zaptec), first in the row.
+        const statusTile = createTile(document.getElementById('tiles'), 'Charger', E.mode);
+        statusTile.classList.add('status');
+        const powerButton = document.createElement('button');
+        powerButton.className = 'tile';
+        powerButton.innerHTML = '<div class="tile-label">Charging power</div><div class="tile-value"></div>';
+        powerButton.addEventListener('click', openCar);
+        document.getElementById('tiles').append(powerButton);
+
+        // Charge time tile (createTile returns the .tile-value element)
+        const timeValueEl = createTile(document.getElementById('tiles'), 'Charge time', E.charging);
+        // Add buttons to the charge-time tile's parent
+        const timeTile = timeValueEl.parentElement;
+        const buttonsDiv = document.createElement('div');
+        buttonsDiv.className = 'buttons';
+        buttonsDiv.innerHTML = '<button class="btn-small btn-go" id="ladNuBtn">Lad nu</button><button class="btn-small btn-stop" id="folgPlanBtn">Følg plan</button>';
+        timeTile.append(buttonsDiv);
+
         const tiles = {
-            lock: statusTile('lock', E.lock),
-            charge: statusTile('bolt', E.charging),
-            doors: statusTile('door', E.lock),
-            range: statusTile('range', E.evRange),
+            power: powerButton.querySelector('.tile-value'),
+            time: timeValueEl,
         };
 
         const hours = minutes => `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
@@ -113,7 +124,7 @@
 
         async function render() {
             try {
-                const states = await statesOf([...Object.values(E), ...OPENINGS]);
+                const states = await statesOf(Object.values(E));
                 const s = key => states[E[key]];
 
                 const level = parseFloat(s('battery'));
@@ -127,23 +138,36 @@
                 document.getElementById('totalRange').textContent = formatNumber(s('totalRange')) ?? '–';
                 document.getElementById('odometer').textContent = formatNumber(s('odometer')) ?? '–';
 
-                const locked = s('lock') === 'locked';
-                tiles.lock.value.textContent = locked ? 'Locked' : 'Unlocked';
-                tiles.lock.button.classList.toggle('warn', !locked);
-
-                const charging = s('charging') === 'on';
-                const minutes = parseFloat(s('chargeMinutes'));
-                tiles.charge.value.textContent = charging
-                    ? (Number.isNaN(minutes) ? 'Charging' : hours(minutes))
-                    : s('plug') === 'on' ? 'Plugged in' : 'Not plugged';
-                tiles.charge.button.classList.toggle('live', charging);
+                const kw = (parseFloat(s('power')) || 0) / 1000;
+                const charging = s('mode') === 'connected_charging';
+                tiles.power.innerHTML = `${kw.toFixed(1)} <small>kW</small>`;
+                tiles.power.classList.toggle('live', charging);
                 document.getElementById('glow').classList.toggle('on', charging);
 
-                const open = OPENINGS.filter(id => states[id] === 'on').length;
-                tiles.doors.value.textContent = open ? `${open} open` : 'Closed';
-                tiles.doors.button.classList.toggle('warn', open > 0);
+                // Plugged in = the Zaptec charger sees the car (its long-lived API), not the Kia cloud.
+                const plugged = String(s('mode')).startsWith('connected');
+                const minutes = parseFloat(s('chargeMinutes'));
+                tiles.time.textContent = charging
+                    ? (Number.isNaN(minutes) ? 'Charging' : hours(minutes))
+                    : '–';   // plugged in or not is shown in the charger tile
+                tiles.time.classList.toggle('live', charging);
 
-                tiles.range.value.textContent = `${formatNumber(s('evRange')) ?? '–'} km EV`;
+                const online = document.getElementById('online');
+                const isOnline = s('online') === 'on';
+                online.textContent = isOnline ? 'Charger online' : 'Charger offline';
+                online.className = `pill ${isOnline ? 'good' : 'fair'}`;
+
+                // Zaptec's mode in words. "connected_finished" is also what a pause looks like, so it only counts as
+                // fully charged when the car itself reports a full battery.
+                const mode = s('mode');
+                const [statusText, statusClass] = !isOnline || isMissing(mode) ? ['Error', 'bad']
+                    : mode === 'connected_charging' ? ['Charging', 'live']
+                    : mode === 'connected_finished' ? (level >= 99 ? ['Fully charged', ''] : ['Paused', 'warn'])
+                    : mode === 'connected_requesting' ? ['Waiting to start', 'warn']
+                    : mode === 'disconnected' ? ['Not plugged in', '']
+                    : [mode, 'warn'];
+                statusTile.textContent = statusText;
+                statusTile.className = `tile-value status ${statusClass}`;
 
                 const updated = new Date(s('updatedAt'));
                 document.getElementById('updated').textContent = Number.isNaN(updated.getTime())
@@ -152,8 +176,10 @@
 
                 const problems = [];
                 const ageHours = (Date.now() - updated.getTime()) / 3600e3;
-                if (isMissing(s('battery')) && isMissing(s('lock'))) problems.push('No data from the car (Kia cloud)');
+                if (isMissing(s('battery'))) problems.push('No data from the car (Kia cloud)');
                 else if (ageHours > 24) problems.push(`Car data is ${Math.round(ageHours)} h old`);
+                if (isMissing(s('mode'))) problems.push('No data from the charger (Zaptec cloud)');
+                else if (!isOnline) problems.push('Charger is offline: the values may be old');
                 showProblems(problems);
                 showError(null);
             } catch (error) {
@@ -161,8 +187,50 @@
             }
         }
 
+        // Lad nu / Følg plan buttons
+        const LAD_MAX_HOUSE_A = 10;
+        async function houseAmps() {
+            const p1 = await callApi('GET', 'states/sensor.p1_meter_power_phase_1');
+            const car = await callApi('GET', 'states/sensor.go2_current_phase_1');
+            const fresh = (Date.now() - new Date(p1.last_updated).getTime()) / 1000 < 30;
+            if (!fresh) return null;
+            return Math.max(0, parseFloat(p1.state) / 230 - parseFloat(car.state));
+        }
+        function setupButtonListeners() {
+            const ladNuBtn = document.getElementById('ladNuBtn');
+            const folgPlanBtn = document.getElementById('folgPlanBtn');
+            if (!ladNuBtn || !folgPlanBtn) return; // buttons not yet in DOM
+
+            ladNuBtn.onclick = async () => {
+                try {
+                    const house = await houseAmps();
+                    if (house === null) {
+                        alert('Ingen frisk P1-måling. Starter ikke.');
+                        return;
+                    }
+                    if (house > LAD_MAX_HOUSE_A) {
+                        alert(`Huset trækker ${house.toFixed(0)} A (max ${LAD_MAX_HOUSE_A} A). Starter ikke.`);
+                        return;
+                    }
+                    await callApi('POST', 'services/input_boolean/turn_on', { entity_id: 'input_boolean.lad_nu' });
+                    alert('Lad nu aktiveret. Laderen starter inden for et minut.');
+                } catch (error) {
+                    alert('Fejl: ' + error.message);
+                }
+            };
+            folgPlanBtn.onclick = async () => {
+                try {
+                    await callApi('POST', 'services/input_boolean/turn_off', { entity_id: 'input_boolean.lad_nu' });
+                    alert('Følger planen igen.');
+                } catch (error) {
+                    alert('Fejl: ' + error.message);
+                }
+            };
+        }
+        setupButtonListeners();
+
         render();
-        setInterval(render, 60e3);
+        setInterval(render, 15e3);
     </script>
 </body>
 </html>

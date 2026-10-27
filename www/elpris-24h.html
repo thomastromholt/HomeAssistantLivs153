@@ -45,6 +45,7 @@
         .legend-box:first-child { margin-left: 0; }
         .legend-box.shave { background: #34c759; }
         .legend-box.normal { background: #ff9500; }
+        .legend-box.charge { background: #64d2ff; }
 
         .chart-wrapper { position: relative; flex: 1; min-height: 0; }
 
@@ -65,7 +66,8 @@
 
         <div id="legend" class="legend" hidden>
             <span class="legend-box shave"></span><span><strong>Peak shaving</strong></span>
-            <span class="legend-box normal"></span><span><strong>Normal</strong></span>
+            <span class="legend-box charge"></span><span><strong>Ladeplan</strong></span>
+            <span id="chargeInfo" class="muted"></span>
         </div>
 
         <div class="chart-wrapper"><canvas id="chart"></canvas></div>
@@ -209,6 +211,72 @@
             return peaks.has(Math.floor((now + offsetHours * HOUR) / HOUR) * HOUR);
         }
 
+        // Charging plan, shown only (the charger is not touched): the cheapest hours from now until 07:00 that give the
+        // energy the car needs to reach the target. Same rules as docs/ladeplan.md and tools/charge_plan.py.
+        const CHARGE_TARGET = 100, CHARGE_DEADLINE_HOUR = 7, CHARGE_WINDOW_HOURS = 3;
+        const BATTERY_KWH = 8.9, CHARGE_EFFICIENCY = 0.9, CHARGER_KW = 3.7;
+        const SOC_FRESH_MIN = 90;   // the car's own reading is trusted for this long
+        let chargeHours = new Set();
+
+        // History rows of one entity as { t, v } (time in ms, numeric value).
+        async function rowsOf(entityId, start, end) {
+            const url = `history/period/${start.toISOString()}?filter_entity_id=${entityId}&end_time=${encodeURIComponent(end.toISOString())}&significant_changes_only=0&minimal_response&no_attributes`;
+            return ((await callApi('GET', url))[0] || [])
+                .map(r => ({ t: new Date(r.last_changed || r.last_updated).getTime(), v: parseFloat(r.state) }))
+                .filter(r => !Number.isNaN(r.v));
+        }
+
+        // The battery level now: the car's reading when it is fresh. When the Kia cloud is quiet, the last reading is
+        // taken and the energy the charger has delivered since then is added (the Zaptec side has long-lived tokens).
+        async function carBattery(now) {
+            // The charger finishes the session when the car stops taking power: the car is full, whatever Kia says.
+            if (await stateOf('sensor.go2_charger_mode').catch(() => null) === 'connected_finished') return { soc: 100, note: 'fuld' };
+            const raw = parseFloat(await stateOf('sensor.ceed_ev_battery_level').catch(() => null));
+            const updated = new Date(await stateOf('sensor.ceed_last_updated_at').catch(() => null)).getTime();
+            const age = (now - updated) / 60e3;
+            if (!Number.isNaN(raw) && age <= SOC_FRESH_MIN) return { soc: raw, note: '' };
+
+            const socRows = (await rowsOf('sensor.ceed_ev_battery_level', new Date(now - 7 * 864e5), new Date(now)))
+                .filter(r => r.v >= 0 && r.v <= 100);
+            if (!socRows.length) return null;
+            const last = socRows[socRows.length - 1];
+            const meter = await rowsOf('sensor.go2_energy_meter', new Date(last.t - 3600e3), new Date(now));
+            const before = meter.filter(r => r.t <= last.t);
+            const meterThen = before.length ? before[before.length - 1].v : meter[0]?.v;
+            const meterNow = parseFloat(await stateOf('sensor.go2_energy_meter').catch(() => null));
+            if (meterThen === undefined || Number.isNaN(meterNow)) return { soc: last.v, note: 'sidste kendte' };
+            const delivered = Math.max(0, meterNow - meterThen);
+            const soc = Math.min(100, last.v + delivered * CHARGE_EFFICIENCY / BATTERY_KWH * 100);
+            return { soc, note: `estimat: ${last.v.toFixed(0)} % + ${delivered.toFixed(1)} kWh` };
+        }
+
+        async function chargeHoursFor(slots, now) {
+            const info = document.getElementById('chargeInfo');
+            const deadline = new Date(now);
+            deadline.setHours(CHARGE_DEADLINE_HOUR, 0, 0, 0);
+            if (deadline.getTime() <= now) deadline.setDate(deadline.getDate() + 1);
+            // A static window: the cheapest run of CHARGE_WINDOW_HOURS in a row before the deadline. The fixed length
+            // leaves time to turn the charger down (load balancing) before the house gets near 20 A.
+            const firstHour = Math.floor(now / HOUR) * HOUR;
+            const byStart = new Map(slots.map(s => [s.start, s.ore]));
+            let best = null;
+            for (let start = firstHour; start + CHARGE_WINDOW_HOURS * HOUR <= deadline.getTime(); start += HOUR) {
+                const ores = Array.from({ length: CHARGE_WINDOW_HOURS }, (_, k) => byStart.get(start + k * HOUR));
+                if (ores.some(v => v === undefined)) continue;
+                const avg = ores.reduce((a, b) => a + b, 0) / CHARGE_WINDOW_HOURS;
+                if (!best || avg < best.avg) best = { start, avg };
+            }
+            const picked = new Set();
+            if (!best) { info.textContent = 'intet 3-timers vindue endnu'; return picked; }
+            for (let k = 0; k < CHARGE_WINDOW_HOURS; k++) picked.add(best.start + k * HOUR);
+            const clock = t => new Date(t).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+            info.textContent = `${clock(best.start)}–${clock(best.start + CHARGE_WINDOW_HOURS * HOUR)} · ${best.avg.toFixed(0)} öre`;
+            return picked;
+        }
+        function isCharging(now, offsetHours) {
+            return chargeHours.has(Math.floor((now + offsetHours * HOUR) / HOUR) * HOUR);
+        }
+
         function clockTime(now, offsetHours) {
             const t = new Date(now + offsetHours * HOUR);
             const day = t.toLocaleDateString('sv-SE', { weekday: 'short' });
@@ -229,8 +297,13 @@
             const shaving = isFlat
                 ? isPeakShaving(now, ctx.p0.parsed.x + NUDGE)
                 : isPeakShaving(now, ctx.p0.parsed.x - NUDGE) || isPeakShaving(now, ctx.p1.parsed.x + NUDGE);
-            return shaving ? SHAVING_COLOR : NORMAL_COLOR;
+            if (shaving) return SHAVING_COLOR;
+            const charging = isFlat
+                ? isCharging(now, ctx.p0.parsed.x + NUDGE)
+                : isCharging(now, ctx.p0.parsed.x - NUDGE) || isCharging(now, ctx.p1.parsed.x + NUDGE);
+            return charging ? CHARGE_COLOR : NORMAL_COLOR;
         }
+        const CHARGE_COLOR = '#64d2ff';
         const NORMAL_COLOR = '#ff9500';
 
         const nowLine = {
@@ -351,6 +424,7 @@
                 const days = [todayPrices, tomorrowPrices].map(hourlyAverage);
                 // Only plan days with complete prices (tomorrow's are published around 13:00).
                 peaks = new Set(days.filter(day => day.length >= 23).flatMap(day => [...peakHours(day, days.flat())]));
+                chargeHours = await chargeHoursFor(days.flat(), now);
 
                 const slots = days
                     .flat()

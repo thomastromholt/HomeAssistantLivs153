@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lad nu</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #8da0ad; }
+        .status-dot.active { background: #5fe085; }
+        .status-dot.paused { background: #ffb340; }
+        .status-text { font-size: 12px; color: #8da0ad; text-align: center; }
+        button { padding: 14px 28px; border: 0; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; background: rgba(95, 224, 133, 0.22); color: #5fe085; transition: all 0.3s; }
+        button:hover { background: rgba(95, 224, 133, 0.35); }
+        button:active { transform: scale(0.95); }
+        button.off { background: rgba(255, 255, 255, 0.08); color: #c5d1d9; }
+        button.off:hover { background: rgba(255, 255, 255, 0.12); }
+        .info { font-size: 13px; color: #8da0ad; text-align: center; line-height: 1.3; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div>
+            <div class="status-dot" id="dot"></div>
+            <div class="status-text" id="status">–</div>
+        </div>
+        <button id="btn">Lad nu</button>
+        <div class="info" id="info"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        const E = {
+            ladNu: 'input_boolean.lad_nu',
+            mode: 'sensor.go2_charger_mode',
+            soc: 'sensor.ceed_ev_battery_level',
+            p1: 'sensor.p1_meter_power_phase_1',
+            carCurrent: 'sensor.go2_current_phase_1',
+        };
+        const LAD_MAX_HOUSE_A = 10;
+
+        async function houseAmps() {
+            try {
+                const p1 = await callApi('GET', 'states/' + E.p1);
+                const car = await callApi('GET', 'states/' + E.carCurrent);
+                const fresh = (Date.now() - new Date(p1.last_updated).getTime()) / 1000 < 30;
+                if (!fresh) return null;
+                return Math.max(0, parseFloat(p1.state) / 230 - parseFloat(car.state));
+            } catch { return null; }
+        }
+
+        async function tryStart() {
+            try {
+                const house = await houseAmps();
+                if (house === null) {
+                    document.getElementById('info').textContent = 'Ingen frisk P1-måling';
+                    return;
+                }
+                if (house > LAD_MAX_HOUSE_A) {
+                    document.getElementById('info').textContent = `Huset: ${house.toFixed(0)} A (max ${LAD_MAX_HOUSE_A} A)`;
+                    return;
+                }
+                await callApi('POST', 'services/input_boolean/turn_on', { entity_id: E.ladNu });
+                document.getElementById('info').textContent = 'Laderen starter...';
+            } catch (e) {
+                document.getElementById('info').textContent = 'Fejl: ' + e.message;
+            }
+        }
+
+        async function render() {
+            try {
+                const states = await statesOf(Object.values(E));
+                const s = key => states[E[key]];
+                const on = s('ladNu') === 'on';
+                const mode = s('mode');
+                const plugged = String(mode).startsWith('connected');
+                const soc = parseFloat(s('soc'));
+
+                const btn = document.getElementById('btn');
+                btn.textContent = on ? 'Stop' : 'Lad nu';
+                btn.classList.toggle('off', on);
+
+                const dot = document.getElementById('dot');
+                if (!plugged) {
+                    dot.className = 'status-dot';
+                    document.getElementById('status').textContent = 'Ikke tilsluttet';
+                } else if (mode === 'connected_charging') {
+                    dot.className = 'status-dot active';
+                    document.getElementById('status').textContent = 'Lader';
+                } else if (on) {
+                    dot.className = 'status-dot active';
+                    document.getElementById('status').textContent = 'Lad nu: ON';
+                } else {
+                    dot.className = 'status-dot paused';
+                    document.getElementById('status').textContent = 'Paused';
+                }
+
+                if (soc >= 99) {
+                    document.getElementById('info').textContent = `Fuldt: ${formatNumber(soc, 0)}%`;
+                } else if (plugged && !on && mode !== 'connected_charging') {
+                    document.getElementById('info').textContent = `${formatNumber(soc, 0)}% · venter på plan`;
+                } else {
+                    document.getElementById('info').textContent = '';
+                }
+            } catch (e) {
+                document.getElementById('info').textContent = 'Fejl';
+            }
+        }
+
+        document.getElementById('btn').addEventListener('click', async () => {
+            try {
+                const state = await callApi('GET', 'states/' + E.ladNu);
+                if (state.state === 'on') {
+                    await callApi('POST', 'services/input_boolean/turn_off', { entity_id: E.ladNu });
+                    document.getElementById('info').textContent = 'Følger plan igen';
+                } else {
+                    await tryStart();
+                }
+                setTimeout(render, 500);
+            } catch (e) {
+                document.getElementById('info').textContent = 'Fejl: ' + e.message;
+            }
+        });
+
+        render();
+        setInterval(render, 10e3);
+    </script>
+</body>
+</html>

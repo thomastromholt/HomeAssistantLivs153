@@ -109,7 +109,8 @@
                 tiles.session.innerHTML = unit(charging ? s('session') : s('lastSession'), 1, 'kWh');
                 tiles.lifetime.innerHTML = unit(s('lifetime'), 0, 'kWh');
                 const limit = formatNumber(s('current'), 0);
-                const available = formatNumber(s('available'), 0);
+                // The Go2's installation limit is a fixed 16 A; the installation's available current moves with the Greenely balancing.
+                const available = CHARGER === 'go2' ? '16' : formatNumber(s('available'), 0);
                 tiles.current.innerHTML = limit === null ? '–'
                     : `${limit} <small>A</small><div class="sub">${available === null ? '' : `of ${available} A`}</div>`;
 

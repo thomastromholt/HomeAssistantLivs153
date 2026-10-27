@@ -154,6 +154,18 @@
         const thisMonth = new Date(month);
         let dayChart = null;
 
+        // Daily kWh of a counter that only goes up (like the Zaptec lifetime meter): the difference between the last reading of each day and the day before.
+        async function dailyCounterDelta(entityId, start, end) {
+            const url = `history/period/${start.toISOString()}?filter_entity_id=${entityId}&end_time=${encodeURIComponent(end.toISOString())}&significant_changes_only=0&minimal_response&no_attributes`;
+            const rows = ((await callApi('GET', url))[0] || []).filter(r => !Number.isNaN(parseFloat(r.state)));
+            const lastOfDay = new Map();
+            for (const r of rows) lastOfDay.set(localDateString(new Date(r.last_updated || r.last_changed)), parseFloat(r.state));
+            const days = [...lastOfDay.keys()].sort();
+            const out = new Map();
+            for (let i = 1; i < days.length; i++) out.set(days[i], lastOfDay.get(days[i]) - lastOfDay.get(days[i - 1]));
+            return out;
+        }
+
         // Long-term statistics of the energy counter: per day and per hour, as "change" (kWh used in the period).
         async function stats(period, start, end) {
             const result = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: [E.importKwh], period, types: ['change'] });
@@ -221,19 +233,48 @@
             document.getElementById('kToday').innerHTML = todayIdx >= 0 && dayKwh[todayIdx] !== null ? kwh(dayKwh[todayIdx], 1) : '–';
             document.getElementById('kTodaySub').textContent = todayIdx >= 0 && dayKwh[todayIdx] !== null ? `${kr(dayCost[todayIdx]).replace(/<[^>]+>/g, '')} so far` : '';
 
+            // Each day split into heat pump, car charging and everything else. The heat pump is its own sensor (run time x 3 kW),
+            // the car is the Zaptec Go2 meter (its daily difference), and the rest is the P1 total minus those two.
+            const dayKey = i => localDateString(new Date(month.getFullYear(), month.getMonth(), i + 1));
+            const hpByDay = await dailyKwhHeatPump(new Date(month.getFullYear(), month.getMonth(), 1), until).catch(() => new Map());
+            const carByDay = await dailyCounterDelta('sensor.go2_energy_meter', new Date(month.getFullYear(), month.getMonth(), 0), until).catch(() => new Map());
+            const heatPart = [], carPart = [], restPart = [];
+            for (let i = 0; i < daysInMonth; i++) {
+                const total = dayKwh[i];
+                const hp = total === null ? null : Math.max(0, hpByDay.get(dayKey(i)) ?? 0);
+                const car = total === null ? null : Math.max(0, carByDay.get(dayKey(i)) ?? 0);
+                heatPart.push(hp); carPart.push(car); restPart.push(total === null ? null : Math.max(0, total - hp - car));
+            }
+
             const labels = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-            const colour = i => {
+            // Weekends are dimmed, as before.
+            const shade = (rgb, i) => {
                 const date = new Date(month.getFullYear(), month.getMonth(), i + 1), weekend = [0, 6].includes(date.getDay());
-                return i === todayIdx ? '#ffb340' : weekend ? 'rgba(100,210,255,0.35)' : 'rgba(100,210,255,0.85)';
+                return `rgba(${rgb}, ${weekend ? 0.45 : 1})`;
             };
+            const segment = (label, data, rgb) => ({ label, data, backgroundColor: labels.map((_, i) => shade(rgb, i)), stack: 'day', borderRadius: 3, maxBarThickness: 26 });
             if (dayChart) dayChart.destroy();
             dayChart = new Chart(document.getElementById('dayChart'), {
                 type: 'bar',
-                data: { labels, datasets: [{ data: dayKwh, backgroundColor: labels.map((_, i) => colour(i)), borderRadius: 4, borderSkipped: false, maxBarThickness: 26 }] },
+                data: { labels, datasets: [
+                    segment('Heat pump', heatPart, '255,179,64'),
+                    segment('Car charging', carPart, '95,224,133'),
+                    segment('Everything else', restPart, '100,210,255'),
+                ] },
                 options: {
                     responsive: true, maintainAspectRatio: false, animation: false,
-                    scales: { x: { ticks: { color: '#8da0ad', maxTicksLimit: 16 }, grid: { display: false } }, y: { beginAtZero: true, ticks: { color: '#8da0ad', maxTicksLimit: 5 }, grid: { color: 'rgba(255,255,255,0.07)' } } },
-                    plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => `${i[0].label} ${month.toLocaleDateString('sv-SE', { month: 'long' })}`, label: i => `${formatNumber(i.parsed.y, 1)} kWh · ${formatNumber(dayCost[i.dataIndex], dayCost[i.dataIndex] < 100 ? 1 : 0)} kr` } } },
+                    scales: {
+                        x: { stacked: true, ticks: { color: '#8da0ad', maxTicksLimit: 16 }, grid: { display: false } },
+                        y: { stacked: true, beginAtZero: true, ticks: { color: '#8da0ad', maxTicksLimit: 5 }, grid: { color: 'rgba(255,255,255,0.07)' } },
+                    },
+                    plugins: {
+                        legend: { display: true, labels: { color: '#c5d1d9', boxWidth: 12 } },
+                        tooltip: { callbacks: {
+                            title: i => `${i[0].label} ${month.toLocaleDateString('sv-SE', { month: 'long' })}`,
+                            label: i => `${i.dataset.label}: ${formatNumber(i.parsed.y, 1)} kWh`,
+                            footer: i => `Total ${formatNumber(dayKwh[i[0].dataIndex], 1)} kWh · ${formatNumber(dayCost[i[0].dataIndex], dayCost[i[0].dataIndex] < 100 ? 1 : 0)} kr`,
+                        } },
+                    },
                 },
             });
 
