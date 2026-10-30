@@ -6,6 +6,7 @@
 # Night mode is part of this: for Stue and Køkken the low level covers the night (23:00-06:30) and the away hours (08:00-15:00).
 # Every 5 minutes (and when Home Assistant starts) each room's level now is compared with the level last applied
 # (input_select.last_level_<room>); only a change sends a command, so a temperature set by hand stays until the next change.
+# The same check also re-sends the plan's temperature to a thermostat that missed it while offline (see "Out of sync").
 # The thermostats of the bedrooms are told at 15:00, an hour before the warm period; edit the plan text to change that.
 # If someone turns a thermostat up or down by hand, the value is remembered as that room's standard for the level that was
 # active, and used the next time (see the learning automation at the bottom).
@@ -49,6 +50,26 @@
                   climate: "{{ repeat.item.climate }}"
                   room: "{{ repeat.item.room }}"
                   level: "{{ level }}"
+            # Out of sync: the thermostat was offline when the command went out (Thread lost), so it still has the old
+            # target. A change by hand is not undone, because the learning automation below makes it the room's
+            # standard at once; the lowest setting (off) and values outside 15-26 °C, which it does not learn, are left
+            # alone. Waits 2 minutes after the thermostat's last change so the learning has run.
+            else:
+              - variables:
+                  trv: "{{ state_attr(repeat.item.climate, 'temperature') | float(-1) }}"
+                  want: "{{ states('input_number.' ~ level ~ '_' ~ repeat.item.room) | float(-1) }}"
+              - if:
+                  - condition: template
+                    value_template: >-
+                      {{ level in ['warm', 'low'] and states(repeat.item.climate) not in ['unavailable', 'unknown', 'off']
+                         and 15 <= trv <= 26 and want > 0 and (trv - want) | abs >= 0.25
+                         and as_timestamp(now()) - as_timestamp(states[repeat.item.climate].last_updated) > 120 }}
+                then:
+                  - action: script.apply_room_level
+                    data:
+                      climate: "{{ repeat.item.climate }}"
+                      room: "{{ repeat.item.room }}"
+                      level: "{{ level }}"
 
 - id: room_learn_manual
   alias: Husk manuelle ændringer af rumtemperatur

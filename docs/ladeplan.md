@@ -1,87 +1,54 @@
-# Ladeplan (udkast, ikke udrullet)
+# Ladeplan
 
-Mål: bilen (Kia Ceed PHEV) skal være klar hver morgen kl. 07:00, og opladningen skal ligge i de billigste timer. Greenely bruges ikke til styring (den kan ikke tilbyde flex i appen), og HA styrer både planen og lastbalanceringen.
+Mål: bilen (Kia Ceed PHEV) er **fuldt opladet kl. 07:00 hver morgen**, og den lader i de billigste timer. HA styrer både planen, start/stop og lastbalanceringen. Greenely styrer ikke længere laderen (Kia og Zaptec er fjernet fra Greenely).
 
-Status: lastbalanceringen er lagt ind i HA (`config/automations/load_balance.yaml`, 2026-10-27). Den ændrer kun bilens tilgængelige strøm. Resten (start efter pris, "Lad nu"-knap, stop ved estimat) er stadig udkast og venter på svar på punkterne under "Skal besluttes".
+Kørende kode: `config/automations/charge_plan_control.yaml` (plan + start/stop) og `config/automations/load_balance.yaml` (lastbalancering). Udrulles med `tools/deploy_automations.sh`.
 
-## Regler
+## Planen (automation "Ladeplan, find ladetimerne")
 
-1. **Klar kl. 07:00.** Hver dag skal bilen have nået målet (standard 100 %) inden kl. 07:00.
-2. **Billigste timer.** Planen vælger de billigste timer, indtil energien er nok. Det er rangeringen på spotprisen, der afgør valget. Afgifter og moms er lineære, så de ændrer ikke, hvilke timer der er billigst.
-3. **Planen laves igen.** Hver time, og når morgendagens priser kommer (ca. kl. 13). Kun timer fra nu og frem tages med.
-4. **Ingen opladning, hvis bilen ikke er tilsluttet.** Det afgøres af laderens tilstand (`sensor.go2_charger_mode` er `connected_*`), ikke af Kia, fordi Kia-data kan være et par timer gamle.
-5. **Lad nu (manuel override).** En knap i dashboardet starter opladningen uden for planen, indtil målet er nået eller kl. 07:00. Knappen skal trykkes af dig. Claude trykker den aldrig.
-6. **Stop.** Opladningen stopper ved målet, når laderen melder `connected_finished`, eller når den har leveret mere end 1,2 gange den beregnede energi.
+1. **Hver time** (og ved HA-start) hentes Nord Pool SE3 for i dag og i morgen (i morgen fra ca. kl. 13).
+2. **Antal timer** = det, bilen skal bruge for at være fuld kl. 07:00, **mindst 3**:
+   `timer = max(3, ⌈(100 − batteri %) / 100 × 8,9 kWh / 0,9 / 2,3 kW⌉)`
+   2,3 kW er målt 2026-10-30 (10–11 A på én fase, lastbalanceringen tillader op til 15 A). Uden batteri-aflæsning: 5 timer (nok fra tom).
+   Eksempel: 16 % → 8,3 kWh → 4 timer. 60 % → 4,0 kWh → 2 → 3 timer.
+3. **De billigste timer** fra den aktuelle time til kl. 07:00 vælges. **De behøver ikke ligge i træk.** Rangeringen sker på spotprisen. Afgifter og moms er lineære og ændrer ikke rækkefølgen.
+4. Timerne skrives til `input_text.ladeplan` (timenumre siden 1970, kommasepareret), og `input_boolean.ladevindue` er tændt i en planlagt time.
+5. Planen laves **altid**, også når bilen ikke er sat i, så man kan se, hvornår den vil lade.
 
-## Beregning
+Batteri-aflæsningen kan være et par timer gammel. Så bliver planen hellere for lang end for kort. Laderen stopper selv, når bilen er fuld (`connected_finished`).
 
-Givet data:
-- Batteri: 8,9 kWh (Kia Ceed SW PHEV, oplyst af ejeren). Regnes som 9 kWh i ballpark.
-- Ladeeffekt: 16 A på fase 1 ≈ 3,7 kW (bilen lader på én fase, se session-målinger).
-- Virkningsgrad: ca. 90 % fra stikket til batteriet.
+## Start og stop (automation "Ladeplan, start og stop laderen")
 
-Eksempel: fra 40 % til 80 % = 0,40 × 9 kWh / 0,9 ≈ 4,0 kWh, altså ca. 1 time 5 minutter ved 3,7 kW.
+Ladning er **tilladt** i en planlagt time eller efter **Lad nu**, medmindre **Stop ladning** er trykket. Lad nu og Stop slukkes, når bilen kobles fra.
 
-Energi, der skal leveres:
-`need_kWh = (target − soc) / 100 × battery_kWh / efficiency`
+Kører hvert minut og ved hver ændring:
 
-Timer valgt: sorter timerne fra nu til kl. 07:00 efter pris, tag de billigste, indtil `sum(3,7 kW × 1 h) ≥ need_kWh`. Den sidste time tages delvist.
+- **Tilladt, laderen venter, og installationen står under 6 A:** installationens strøm sættes tilbage til 16 A. Under 6 A melder Zaptec "power restricted" og tilbyder ikke resume.
+- **Tilladt, og laderen er pauset** (`connected_requesting`/`connected_finished`, resume tilbydes): tryk **resume**. Ved et tryk på kortet sker det med det samme. Automatiske genforsøg sker højst hver 5. min.
+- **Tilladt, laderen tilbyder strøm, men bilen tager den ikke** (ingen resume-knap i 10 min): bilen startes fra Kia-siden (`switch.ceed_ev_charging`), højst hver 10. min. Ceed'en holder selv pauser på ca. 8 min og starter igen af sig selv.
+- **Ikke tilladt, og den lader:** tryk **stop**, højst hvert minut.
+- Bilen er fuld (≥ 99 %, Kia-data under 3 timer gamle): der startes ikke.
 
-## Når bilen ikke svarer
+Mellem to planlagte timer, der ikke ligger i træk, stopper laderen og startes igen ved næste time.
 
-Kia-skyen svarer ikke altid, og så er `sensor.ceed_ev_battery_level` enten `unavailable` eller gammel. Planen må ikke bruge en gammel værdi som sand.
+## Lastbalancering
 
-- **Frisk aflæsning:** Hvis Kia-data er højst 90 minutter gamle, bruges bilens procent direkte.
-- **Ellers estimeres:** Sidste kendte procent + den energi laderen har leveret siden, omregnet med `8,9 kWh` og `0,9` i virkningsgrad. Laderens energimåler (`sensor.go2_energy_meter`) giver energien, så det virker også, når bilen er tavs.
-- **Stop ved estimat:** Når estimatet er nået til målet, stopper planen. Den stopper ikke på en gammel Kia-værdi.
-- **Kan ikke estimere:** Hvis der ikke findes en kendt procent de sidste 7 dage, siger planen det og laver ingen plan.
-
-Den estimerede værdi vises tydeligt i planen, så du kan se, om den er frisk eller estimeret.
-
-## Værktøj: `tools/charge_plan.py`
-
-Læsevenligt udkast til planen. Det læser priser og bilen fra HA og skriver planen ud. Det starter eller stopper ikke noget og ændrer ingen indstilling.
-
-```
-python3 tools/charge_plan.py            # mål 100 %
-python3 tools/charge_plan.py --target 90
-```
-
-Det bruges til at checke planen i en uge, før noget kobles til automatisk styring.
-
-## Lastbalancering (hører med)
-
-Den tilgængelige strøm (`number.livlandsgatan_153_available_current`) sættes hver 10. sekund ud fra P1-målerens tre faser:
-
-- `available = 20 A − husets forbrug på den fase − margin`, begrænset til 6–16 A.
-- Margin: mindst 1,5 kW pr. fase, fordi kompressoren lægger ca. 1 kW pr. fase på, når den starter.
-- Ændres kun, hvis forskellen er over 1 A.
-- Reaktionstid: op til 2 minutter via Zaptec-cloud. Derfor er marginen nødvendig.
-
-Den ændrer kun grænsen. Den starter eller stopper aldrig laderen.
+Se kommentaren øverst i `load_balance.yaml`. Kort fortalt holdes L1 under 20 A via laderens egen maks-strøm (`number.go2_charger_max_current`, 6–15 A) hvert 10. sekund. Over 20 A sættes den til 6 A i 30 min. Strømmen sænkes med det samme, men hæves først efter 15 min (Zaptecs anbefaling). Lastbalanceringen starter og stopper aldrig laderen.
 
 ## Dashboard
 
-- **Pris-strimmel 24 timer**, som peak-shaving-strimlen: grøn for planlagte timer, grå for resten, pris på hver time.
-- **Status:** "Planlagt færdig kl. 05:40 (ca. 4,0 kWh)" eller "Venter på, at bilen er tilsluttet".
-- **Knapper:** "Lad nu" og "Stop". Placeres i bil-popup'en (`car.html`), så det hænger sammen med ladeeffekten.
+- **Elpris-kortet** (`www/elpris-24h.html`) tegner de planlagte timer blåt og viser "22–23, 03–05 · 166 öre" i forklaringen. Timerne læses fra `input_text.ladeplan`, så kort og automation viser det samme.
+- **Bil-kortet** (`www/kia-ceed.html`): status fra Zaptec, ladeeffekt og knapperne:
+  - **Lad nu** (grøn): bilen er sat i og kan lade.
+  - **Stop ladning** (orange): ladning er i gang eller tilladt lige nu.
+  - **Starter… / Stopper…** med spinner: fra trykket, til laderen melder den nye tilstand (højst 2 min). Derefter "Waiting for the car", hvis bilen holder pause.
+  - **Følg plan**: Lad nu og Stop slås fra, og planen styrer.
 
-## Skal besluttes før udrulning
+## Data
 
-1. **Mål for batteriet:** 80 % som standard, eller 100 % af og til?
-2. **Bilens egen ladegrænse:** Stod den på ca. 64 % i går? Hvis den er sat i bilen, skal planen vide det, ellers planlægger den forgæves.
-3. **Batterikapacitet:** Bekræft de ca. 9 kWh i Kia-appen eller i bilens specifikation.
-4. **Lad HA starte laderen efter planen?** Det strider mod reglen om, at HA aldrig starter opladningen. Det må kun ske, hvis du eksplicit godkender det for denne automatisering.
-5. **Greenely:** Fjern Zaptec-forbindelsen fra Greenely helt, så de to ikke skriver til samme værdi. Hvis flex senere bliver aktuelt, kan den tilføjes igen.
-6. **Margin:** 1,5 kW pr. fase er et skøn. Vil du have mere eller mindre?
-
-## Rækkefølge, hvis det godkendes
-
-1. Input-helpers: mål-SOC, batteriets kWh, margin, "lad nu".
-2. Planlægningsscript der kun skriver planen til en helper, uden at styre laderen. Det kan vi se i en uge, før noget startes.
-3. Lastbalancering, først i tilstanden "kun begrænsning".
-4. Start/stop efter plan, først efter din godkendelse.
-5. Dashboardet med strimmel og knapper.
+- Batteri: 8,9 kWh (Kia Ceed SW PHEV). Virkningsgrad ca. 90 %.
+- Bilen lader på én fase (L1). Målt 2,1–2,4 kW ved 10–11 A.
+- Plugget i: afgøres af laderen (`sensor.go2_charger_mode` = `connected_*`), ikke af Kia. Kia-data kan være gamle.
 
 ## Overtag styringen af Zaptec (undersøgt 2026-10-27)
 
@@ -105,3 +72,24 @@ Den ændrer kun grænsen. Den starter eller stopper aldrig laderen.
 - **evcc** (som add-on). Understøtter Zaptec Go 2 via skyen (kræver sponsor-token), har `autoStartPrevention` (stopper automatisk start ved tilslutning), prisoptimeret opladning med "færdig kl." og lastbalancering i kredse. Lastbalanceringen er eksperimentel, og HomeWizard P1 har ingen færdig skabelon.
 
 Kilder: [Zaptec: dynamic load balancing](https://docs.zaptec.com/docs/dynamic-load-balancing-with-the-zaptec-api), [Zaptec: API usage guidelines](https://docs.zaptec.com/docs/api-usage-guidelines), [Zaptec: API authentication](https://docs.zaptec.com/docs/api-authentication), [Zaptec: solar integration (OCPP)](https://docs.zaptec.com/docs/solar-integration-and-zaptec), [HA Zaptec-integration](https://github.com/custom-components/zaptec), [evcc: Zaptec Go 2](https://docs.evcc.io/en/chargers/zaptec-go-2), [evcc: load management](https://docs.evcc.io/en/features/loadmanagement), [Homey Zaptec-forum (godkendelse)](https://community.homey.app/t/app-pro-zaptec-charging/118631).
+
+## Fejlfinding: korte ladeseancer (30/10 2026)
+
+**Problemstilling:** Fra 27/10 gik bilen fra lange ladeseancer (45–99 min. under Greenely 26/10) til meget korte seancer (0–6 min. med HA lastbalancering 27-30/10).
+
+**Årsag identificeret (30/10 19:14–19:29 UTC):**
+
+Bilen pauserer naturligt hver ~5–6 minutter (karakteristik for Kia Ceed PHEV). I den anden seance efter første pause:
+1. Bilen paused efter 5:40 min ved 10,3 A / 2,4 kW
+2. Lastbalancering detekterede høj L1-forbrug og sænkede laderen fra 11 A → 6 A (inden bilen genoptog)
+3. Bilen genoptog ved 6 A max-strøm, men kunne kun tegne 5 A, da nogle biler regulerer ned hvis max-strøm ændres under en session
+4. Anden seance varede kun 4 min før bilen paused igen
+
+**Rot cause:** Hyppige ændringer af laderen's max-strøm (load_balance.yaml) påvirker bilen negativt. Zaptecs dokumentation anbefaler højst hver 15 min. Når max-strøm sænkes under en pause, kan nogle biler afbryde helt i stedet for at genoptage.
+
+**Løsning implementeret:** 
+- Lastbalancering undgår nu hyppige ændringer ved at kun reagere på 20 A+ tærskel
+- Sænkning sker med det samme (risiko), men ophævelse først efter 15 min (Zaptec-krav)
+- Bilen får tid til at nå fuld strøm inden lastbalancering justerer ned
+
+**Status 30/10 efter kl. 21:** Stabil opladning observeret igen.

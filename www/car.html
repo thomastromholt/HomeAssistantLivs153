@@ -123,18 +123,14 @@
         document.getElementById('ladNu').addEventListener('click', async () => {
             try {
                 const house = await houseAmps();
-                if (house === null) return ladMsg('Ingen frisk P1-måling. Starter ikke.');
-                if (house > LAD_MAX_HOUSE_A) return ladMsg(`Huset trækker ${house.toFixed(0)} A på fase 1. Starter ikke, over ${LAD_MAX_HOUSE_A} A.`);
-                // The start itself is done by the automation "Ladeplan, start og stop laderen" (Zaptec's resume button).
+                if (house === null || house > LAD_MAX_HOUSE_A) return; // Silent fail
                 await callApi('POST', 'services/input_boolean/turn_on', { entity_id: 'input_boolean.lad_nu' });
-                ladMsg('Lad nu er slået til. Laderen starter inden for et minut.');
-            } catch (error) { ladMsg('Kunne ikke starte: ' + error.message); }
+            } catch (error) { console.error('Lad nu:', error); }
         });
         document.getElementById('ladStop').addEventListener('click', async () => {
             try {
                 await callApi('POST', 'services/input_boolean/turn_off', { entity_id: 'input_boolean.lad_nu' });
-                ladMsg('Følger ladeplanen igen. Uden for vinduet stopper laderen inden for et minut.');
-            } catch (error) { ladMsg('Kunne ikke stoppe: ' + error.message); }
+            } catch (error) { console.error('Lad stop:', error); }
         });
 
         async function history(ids, start, end) {

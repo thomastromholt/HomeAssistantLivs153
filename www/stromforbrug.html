@@ -112,7 +112,6 @@
             <div class="panel-head"><span class="panel-title">Forecast · this month, next 6 and the year</span><span class="panel-sub" id="fcSub">whole house, expected kWh</span></div>
             <div class="fc-kpis" id="fcKpis"></div>
             <div class="chart tall"><canvas id="fcChart"></canvas></div>
-            <div class="fc-table" id="fcTable"></div>
             <div class="empty" id="fcNote"></div>
         </div>
 
@@ -509,8 +508,6 @@
                         datasets: [
                             { type: 'bar', label: 'Expected', data: chartRows.map(r => Math.round(r.exp)), backgroundColor: 'rgba(100,210,255,0.55)', borderRadius: 4, maxBarThickness: 46, order: 2 },
                             { type: 'bar', label: 'Actual', data: chartRows.map(r => r.actual === null ? null : Math.round(r.actual)), backgroundColor: 'rgba(95,224,133,0.85)', borderRadius: 4, maxBarThickness: 46, order: 2 },
-                            { type: 'line', label: 'Mild winter', data: chartRows.map(r => Math.round(r.low)), borderColor: '#8da0ad', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 3, order: 1 },
-                            { type: 'line', label: 'Cold winter', data: chartRows.map(r => Math.round(r.high)), borderColor: '#ffb340', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 3, order: 1 },
                         ],
                     },
                     options: {
@@ -519,12 +516,6 @@
                         plugins: { legend: { labels: { color: '#c5d1d9', boxWidth: 12 } }, tooltip: { callbacks: { label: i => `${i.dataset.label}: ${formatNumber(i.parsed.y, 0)} kWh` } } },
                     },
                 });
-                const cell = (t, cls = '') => `<div class="${cls}">${t}</div>`;
-                document.getElementById('fcTable').innerHTML = ['Month', 'Expected', 'Cost', 'Range', 'Actual', 'Vs forecast'].map(t => cell(t, 'head')).join('')
-                    + chartRows.map(r => cell(`<b>${r.label}${r.partial ? ' <small>so far</small>' : ''}</b>`) + cell(`${Math.round(r.exp).toLocaleString('sv-SE')} kWh`) + cell(`${Math.round(r.exp * KR_PER_KWH).toLocaleString('sv-SE')} kr`)
-                        + cell(`${Math.round(r.low).toLocaleString('sv-SE')}–${Math.round(r.high).toLocaleString('sv-SE')}`)
-                        + cell(r.actual === null ? '–' : `${Math.round(r.actual).toLocaleString('sv-SE')} kWh`)
-                        + cell(r.actual === null ? '–' : r.partial ? (r.expectedToDate > 0 ? `${(r.actual / r.expectedToDate - 1) * 100 > 0 ? '+' : ''}${((r.actual / r.expectedToDate - 1) * 100).toFixed(0)} % to date` : '–') : `${(r.actual / r.exp - 1) * 100 > 0 ? '+' : ''}${((r.actual / r.exp - 1) * 100).toFixed(0)} %`)).join('');
                 document.getElementById('fcNote').textContent = 'Weather: the normal for each month over 15 years. The cold months are given a 25 % worse efficiency than the mild ones, which is a guess until the first cold weeks show what the heat pump really uses (the elpatron can make it much higher). The winter range is -15 % to +15 % in degree-days, and 2 times the heating cost in the cold months at the top. 2025 under the previous owner (23,074 kWh, heat pump 15,109) lies above this range and is not used; see the energy declaration summary.';
             } catch (error) { showError(error); }
         }

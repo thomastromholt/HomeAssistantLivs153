@@ -68,7 +68,10 @@
             importKwh: 'sensor.p1_meter_energy_import',     // kWh, total counter
             heatpumpKwh: 'sensor.heatpump_energy_today',    // estimate: run time x 3 kW, see config/templates.yaml
             evKwh: 'sensor.go2_energy_meter',                // Zaptec Go2 (home charger), lifetime kWh
+            heatpumpW: 'sensor.heatpump_power',              // estimate: 3 kW while the compressor runs
+            evW: 'sensor.go2_charge_power',                  // measured by the charger
         };
+        const COLORS = { other: '#64d2ff', hp: '#ffb340', ev: '#5fe085' };
 
         const tile = (parent, label, entityId, cls = '') => {   // (kept for later tiles)
             const button = document.createElement('button');
@@ -96,6 +99,16 @@
         }
         // The counter's value at time t (last report at or before t).
         const counterAt = (rows, t) => { let best = null; for (const r of rows) { if (r.t <= t) best = r.v; else break; } return best ?? rows[0]?.v ?? null; };
+        // Time-weighted average of a step sensor (it only reports changes) over [from, to).
+        function stepAverage(rows, from, to) {
+            let value = counterAt(rows, from) ?? 0, t = from, sum = 0;
+            for (const r of rows) {
+                if (r.t <= from) continue;
+                if (r.t >= to) break;
+                sum += value * (r.t - t); value = r.v; t = r.t;
+            }
+            return (sum + value * (to - t)) / (to - from);
+        }
 
         let chart = null;
         let hours = 1;   // chart window: the last hour by default
@@ -115,7 +128,12 @@
                 const midnight = new Date(end); midnight.setHours(0, 0, 0, 0);
                 const dayAgo = new Date(end - 24 * 3600e3);
                 const from = new Date(end - hours * 3600e3);
-                const [counter, power] = await Promise.all([history(E.importKwh, new Date(Math.min(midnight, dayAgo) - 3600e3), end), history(E.power, from, end)]);
+                const [counter, power, hpPower, evPower] = await Promise.all([
+                    history(E.importKwh, new Date(Math.min(midnight, dayAgo) - 3600e3), end),
+                    history(E.power, from, end),
+                    history(E.heatpumpW, from, end).catch(() => []),
+                    history(E.evW, from, end).catch(() => []),
+                ]);
                 const evHistory = await history(E.evKwh, new Date(midnight - 3600e3), end).catch(() => []);
 
                 const startOfDay = counterAt(counter, midnight.getTime());
@@ -148,22 +166,47 @@
                 document.getElementById('lgEv').textContent = fmt(totalToday === null ? null : ev);
                 document.getElementById('lgOther').textContent = fmt(other);
 
-                // 24 h power curve, averaged per 15 minutes.
+                // Power curve, split like the bar below: everything else at the bottom (blue), the heat pump (yellow,
+                // estimate) and car charging (green, measured) stacked on top. The P1 total is averaged per bucket, the
+                // two step sensors are time-weighted. The parts never add up to more than the P1 total: the car first,
+                // then the heat pump, and the rest is everything else.
                 const bucket = hours <= 1 ? 30e3 : hours <= 6 ? 5 * 60e3 : 15 * 60e3, sums = new Map();   // 30 s points for an hour, 5 min for 6 h, 15 min for a day
                 for (const r of power) { const k = Math.floor(r.t / bucket) * bucket; const s = sums.get(k) || [0, 0]; s[0] += r.v; s[1]++; sums.set(k, s); }
-                const points = [...sums].sort((a, b) => a[0] - b[0]).map(([t, [s, n]]) => ({ x: t, y: s / n / 1000 }));
+                const rows = [...sums].sort((a, b) => a[0] - b[0]).map(([t, [s, n]]) => {
+                    const to = Math.min(t + bucket, end.getTime());
+                    const total = Math.max(0, s / n / 1000);
+                    const evKw = Math.min(total, stepAverage(evPower, t, to) / 1000);
+                    const hpKw = Math.min(total - evKw, stepAverage(hpPower, t, to) / 1000);
+                    return { t, total, ev: evKw, hp: hpKw, other: total - evKw - hpKw };
+                });
+                const layer = (key, label, fill) => ({
+                    label, data: rows.map(r => ({ x: r.t, y: r[key] })), fill, stack: 'house',
+                    borderColor: COLORS[key], backgroundColor: COLORS[key] + (key === 'other' ? '29' : '55'),
+                    borderWidth: key === 'other' ? 1.6 : 1, pointRadius: 0, pointHoverRadius: 0, tension: 0.2,
+                });
                 if (chart) chart.destroy();
                 chart = new Chart(document.getElementById('chart'), {
                     type: 'line',
-                    data: { datasets: [{ data: points, borderColor: '#64d2ff', backgroundColor: 'rgba(100,210,255,0.16)', fill: true, pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: '#64d2ff', borderWidth: 1.6, tension: 0.2 }] },
+                    data: { datasets: [layer('other', 'Everything else', 'origin'), layer('hp', 'Heat pump', '-1'), layer('ev', 'Car charging', '-1')] },
                     options: {
                         responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
                         interaction: { mode: 'index', intersect: false, axis: 'x' },
                         scales: {
                             x: { type: 'linear', min: from.getTime(), max: end.getTime(), ticks: { color: '#8da0ad', maxTicksLimit: 5, callback: v => new Date(v).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                            y: { beginAtZero: true, ticks: { color: '#8da0ad', maxTicksLimit: 4, callback: v => `${v} kW` }, grid: { color: 'rgba(255,255,255,0.07)' } },
+                            y: { stacked: true, beginAtZero: true, ticks: { color: '#8da0ad', maxTicksLimit: 4, callback: v => `${v} kW` }, grid: { color: 'rgba(255,255,255,0.07)' } },
                         },
-                        plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => new Date(i[0].parsed.x).toLocaleString('sv-SE'), label: i => `${formatNumber(i.parsed.y, 2)} kW` } } },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
+                                filter: i => i.parsed.y >= 0.005,
+                                callbacks: {
+                                    title: i => new Date(i[0].parsed.x).toLocaleString('sv-SE'),
+                                    label: i => `${i.dataset.label}: ${formatNumber(i.parsed.y, 2)} kW`,
+                                    footer: i => i.length ? `Total: ${formatNumber(rows[i[0].dataIndex].total, 2)} kW` : '',
+                                },
+                            },
+                        },
                     },
                 });
 

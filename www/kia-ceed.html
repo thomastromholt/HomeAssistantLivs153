@@ -45,12 +45,17 @@
         .grid .tile-value { margin-top: 6px; font-size: 24px; font-weight: 400; }
         .grid .tile-value small { font-size: 13px; }
         .grid .tile-value.live { color: #5fe085; }
-        .grid .buttons { display: flex; flex-direction: column; gap: 4px; }
-        .grid .btn-small { padding: 6px 10px; border: 0; border-radius: 8px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-        .grid .btn-go { background: rgba(95, 224, 133, 0.22); color: #5fe085; }
-        .grid .btn-go:hover { background: rgba(95, 224, 133, 0.35); }
-        .grid .btn-stop { background: rgba(255, 255, 255, 0.08); color: #c5d1d9; }
-        .grid .btn-stop:hover { background: rgba(255, 255, 255, 0.12); }
+        /* Lad nu / Følg plan: the active choice is lit. */
+        .grid .buttons { display: flex; gap: 4px; margin-top: 6px; }
+        .grid .btn-small { flex: 1; padding: 5px 0; border: 0; border-radius: 8px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: rgba(255, 255, 255, 0.08); color: #8da0ad; transition: opacity 0.2s, background 0.2s, color 0.2s; }
+        .grid .btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
+        .grid .btn-small.busy { opacity: 1; background: rgba(255, 255, 255, 0.12); color: #e5ecf0; cursor: progress; }
+        .spinner { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .grid .tile-hint { margin-top: 3px; font-size: 11px; color: #8da0ad; line-height: 1.25; }
+        .grid .btn-go.on { background: rgba(95, 224, 133, 0.28); color: #5fe085; }
+        .grid .btn-go.stop { background: rgba(255, 165, 0, 0.22); color: #ffa500; }
+        .grid .btn-stop.on { background: rgba(100, 210, 255, 0.2); color: #64d2ff; }
     </style>
 </head>
 <body>
@@ -91,6 +96,9 @@
             mode: 'sensor.go2_charger_mode',
             power: 'sensor.go2_charge_power',
             online: 'binary_sensor.go2_online',
+            ladNu: 'input_boolean.lad_nu',
+            ladStop: 'input_boolean.lad_stop',
+            window: 'input_boolean.ladevindue',
         };
 
         // The car and the charging power both open the car pop-up (battery, charging and history); the charge time opens the car's charging sensor.
@@ -99,24 +107,27 @@
         // The charger's own state (Zaptec), first in the row.
         const statusTile = createTile(document.getElementById('tiles'), 'Charger', E.mode);
         statusTile.classList.add('status');
+        const statusHint = document.createElement('div');
+        statusHint.className = 'tile-hint';
+        statusTile.after(statusHint);
         const powerButton = document.createElement('button');
         powerButton.className = 'tile';
         powerButton.innerHTML = '<div class="tile-label">Charging power</div><div class="tile-value"></div>';
         powerButton.addEventListener('click', openCar);
         document.getElementById('tiles').append(powerButton);
 
-        // Charge time tile (createTile returns the .tile-value element)
-        const timeValueEl = createTile(document.getElementById('tiles'), 'Charge time', E.charging);
-        // Add buttons to the charge-time tile's parent
-        const timeTile = timeValueEl.parentElement;
-        const buttonsDiv = document.createElement('div');
-        buttonsDiv.className = 'buttons';
-        buttonsDiv.innerHTML = '<button class="btn-small btn-go" id="ladNuBtn">Lad nu</button><button class="btn-small btn-stop" id="folgPlanBtn">Følg plan</button>';
-        timeTile.append(buttonsDiv);
+        // Charge time with the Lad nu / Følg plan buttons. A plain div, not a tile button, so a click on a button
+        // does not also open a pop-up.
+        const timeTile = document.createElement('div');
+        timeTile.className = 'tile';
+        timeTile.innerHTML = '<div class="tile-label">Charge time</div><div class="tile-value"></div>'
+            + '<div class="buttons"><button class="btn-small btn-go" id="ladNuBtn">Lad nu</button>'
+            + '<button class="btn-small btn-stop" id="folgPlanBtn">Følg plan</button></div>';
+        document.getElementById('tiles').append(timeTile);
 
         const tiles = {
             power: powerButton.querySelector('.tile-value'),
-            time: timeValueEl,
+            time: timeTile.querySelector('.tile-value'),
         };
 
         const hours = minutes => `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
@@ -124,8 +135,13 @@
 
         async function render() {
             try {
-                const states = await statesOf(Object.values(E));
+                const [states, buttonStates] = await Promise.all([
+                    statesOf(Object.values(E)),
+                    Promise.all([E.ladNu, E.ladStop, E.window].map(id => callApi('GET', `states/${id}`).catch(() => null))),
+                ]);
                 const s = key => states[E[key]];
+                // When the charging choice last changed: how long we have waited for the charger.
+                const lastChange = Math.max(0, ...buttonStates.filter(Boolean).map(b => new Date(b.last_changed).getTime()));
 
                 const level = parseFloat(s('battery'));
                 const color = batteryColor(level);
@@ -147,10 +163,12 @@
                 // Plugged in = the Zaptec charger sees the car (its long-lived API), not the Kia cloud.
                 const plugged = String(s('mode')).startsWith('connected');
                 const minutes = parseFloat(s('chargeMinutes'));
-                tiles.time.textContent = charging
-                    ? (Number.isNaN(minutes) ? 'Charging' : hours(minutes))
-                    : '–';   // plugged in or not is shown in the charger tile
-                tiles.time.classList.toggle('live', charging);
+                if (tiles.time) {
+                    tiles.time.textContent = charging
+                        ? (Number.isNaN(minutes) ? 'Charging' : hours(minutes))
+                        : '–';   // plugged in or not is shown in the charger tile
+                    tiles.time.classList.toggle('live', charging);
+                }
 
                 const online = document.getElementById('online');
                 const isOnline = s('online') === 'on';
@@ -160,14 +178,53 @@
                 // Zaptec's mode in words. "connected_finished" is also what a pause looks like, so it only counts as
                 // fully charged when the car itself reports a full battery.
                 const mode = s('mode');
-                const [statusText, statusClass] = !isOnline || isMissing(mode) ? ['Error', 'bad']
+                let [statusText, statusClass] = !isOnline || isMissing(mode) ? ['Error', 'bad']
                     : mode === 'connected_charging' ? ['Charging', 'live']
                     : mode === 'connected_finished' ? (level >= 99 ? ['Fully charged', ''] : ['Paused', 'warn'])
                     : mode === 'connected_requesting' ? ['Waiting to start', 'warn']
                     : mode === 'disconnected' ? ['Not plugged in', '']
                     : [mode, 'warn'];
+                // The buttons follow what the charger actually does, like the EV apps: after a press the button spins
+                // until the charger reports the new state. Starting can take minutes (Zaptec resume, or waking the
+                // car through Kia), so the hint says what we are waiting for.
+                const ladNuOn = s('ladNu') === 'on', ladStopOn = s('ladStop') === 'on';
+                const want = (ladNuOn || s('window') === 'on') && !ladStopOn;
+                const carFull = level >= 99;
+                const waitingForCar = want && plugged && !charging && !carFull;
+                // A press shows at once, before Home Assistant has answered.
+                if (pressed && Date.now() - pressed.at > 20e3) pressed = null;
+                const waited = (Date.now() - (pressed?.at ?? lastChange)) / 60e3;
+                // Spin for up to 2 minutes after a change; after that the car is simply pausing (the Ceed pauses
+                // for ~8 minutes by itself), and the automation wakes it through Kia after 10 minutes.
+                const pendingStart = (pressed?.start && !charging) || (waitingForCar && waited < 2);
+                const pendingStop = (pressed && !pressed.start && charging) || (!want && charging);
+                const active = (want && plugged && !carFull) || charging;   // the button now means "stop"
+                chargingNow = active;
+
+                const first = document.getElementById('ladNuBtn');
+                const busy = pendingStart || pendingStop;
+                first.innerHTML = pendingStart ? '<span class="spinner"></span>Starter…'
+                    : pendingStop ? '<span class="spinner"></span>Stopper…'
+                    : active ? 'Stop ladning' : 'Lad nu';
+                first.disabled = busy || !plugged;
+                first.classList.toggle('busy', busy);
+                first.classList.toggle('on', !busy && plugged && !active);   // green: you can charge
+                first.classList.toggle('stop', !busy && active);             // orange: charging
+                document.getElementById('folgPlanBtn').classList.toggle('on', !ladNuOn && !ladStopOn);
+
+                let hint = '';
+                if (pendingStart) {
+                    statusText = 'Starting…'; statusClass = 'warn';
+                    hint = mode === 'connected_finished' ? 'Asking the charger to resume' : 'Waiting for the car to draw power';
+                } else if (pendingStop) {
+                    statusText = 'Stopping…'; statusClass = 'warn';
+                } else if (waitingForCar) {
+                    statusText = 'Waiting for the car'; statusClass = 'warn';
+                    hint = 'The car pauses by itself; woken after 10 min';
+                } else if (!plugged && isOnline) hint = 'Plug in to charge';
                 statusTile.textContent = statusText;
                 statusTile.className = `tile-value status ${statusClass}`;
+                statusHint.textContent = hint;
 
                 const updated = new Date(s('updatedAt'));
                 document.getElementById('updated').textContent = Number.isNaN(updated.getTime())
@@ -187,50 +244,26 @@
             }
         }
 
-        // Lad nu / Følg plan buttons
-        const LAD_MAX_HOUSE_A = 10;
-        async function houseAmps() {
-            const p1 = await callApi('GET', 'states/sensor.p1_meter_power_phase_1');
-            const car = await callApi('GET', 'states/sensor.go2_current_phase_1');
-            const fresh = (Date.now() - new Date(p1.last_updated).getTime()) / 1000 < 30;
-            if (!fresh) return null;
-            return Math.max(0, parseFloat(p1.state) / 230 - parseFloat(car.state));
-        }
-        function setupButtonListeners() {
-            const ladNuBtn = document.getElementById('ladNuBtn');
-            const folgPlanBtn = document.getElementById('folgPlanBtn');
-            if (!ladNuBtn || !folgPlanBtn) return; // buttons not yet in DOM
-
-            ladNuBtn.onclick = async () => {
-                try {
-                    const house = await houseAmps();
-                    if (house === null) {
-                        alert('Ingen frisk P1-måling. Starter ikke.');
-                        return;
-                    }
-                    if (house > LAD_MAX_HOUSE_A) {
-                        alert(`Huset trækker ${house.toFixed(0)} A (max ${LAD_MAX_HOUSE_A} A). Starter ikke.`);
-                        return;
-                    }
-                    await callApi('POST', 'services/input_boolean/turn_on', { entity_id: 'input_boolean.lad_nu' });
-                    alert('Lad nu aktiveret. Laderen starter inden for et minut.');
-                } catch (error) {
-                    alert('Fejl: ' + error.message);
-                }
-            };
-            folgPlanBtn.onclick = async () => {
-                try {
-                    await callApi('POST', 'services/input_boolean/turn_off', { entity_id: 'input_boolean.lad_nu' });
-                    alert('Følger planen igen.');
-                } catch (error) {
-                    alert('Fejl: ' + error.message);
-                }
-            };
-        }
-        setupButtonListeners();
+        // The buttons only switch input_boolean.lad_nu / lad_stop. The automation "Ladeplan, start og stop laderen" starts
+        // and stops the charger, and the load balancing keeps L1 under 20 A.
+        // First button: "Stop ladning" while charging (also inside the plan's window), otherwise "Lad nu".
+        let chargingNow = false;
+        let pressed = null;   // { start, at }: the last press, shown until the charger confirms (max 20 s)
+        const turn = (on, entity_id) => callApi('POST', `services/input_boolean/turn_${on ? 'on' : 'off'}`, { entity_id });
+        const choose = (ladNu, ladStop, start) => {
+            if (start !== undefined) pressed = { start, at: Date.now() };
+            render();
+            return Promise.all([turn(ladNu, E.ladNu), turn(ladStop, E.ladStop)])
+                .then(render)
+                .catch(error => { pressed = null; showError(error); render(); });
+        };
+        document.getElementById('ladNuBtn').addEventListener('click', () => chargingNow ? choose(false, true, false) : choose(true, false, true));
+        document.getElementById('folgPlanBtn').addEventListener('click', () => choose(false, false));
 
         render();
         setInterval(render, 15e3);
+        // Redraw the moment the charger or the buttons change, not only on the 15 s poll.
+        watchEntities([E.mode, E.power, E.ladNu, E.ladStop, E.window], () => render());
     </script>
 </body>
 </html>

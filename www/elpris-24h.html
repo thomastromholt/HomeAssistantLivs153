@@ -40,8 +40,10 @@
             color: #c5d1d9;
             font-size: 13px;
             white-space: nowrap;
+            flex-wrap: wrap;
+            row-gap: 2px;
         }
-        .legend-box { width: 24px; height: 4px; margin-left: 8px; border-radius: 2px; }
+        .legend-box { flex-shrink: 0; width: 24px; height: 4px; margin-left: 8px; border-radius: 2px; }
         .legend-box:first-child { margin-left: 0; }
         .legend-box.shave { background: #34c759; }
         .legend-box.normal { background: #ff9500; }
@@ -212,7 +214,7 @@
         }
 
         // Charging plan, shown only (the charger is not touched): the cheapest hours from now until 07:00 that give the
-        // energy the car needs to reach the target. Same rules as docs/ladeplan.md and tools/charge_plan.py.
+        // energy the car needs to be full. Rules in docs/ladeplan.md.
         const CHARGE_TARGET = 100, CHARGE_DEADLINE_HOUR = 7, CHARGE_WINDOW_HOURS = 3;
         const BATTERY_KWH = 8.9, CHARGE_EFFICIENCY = 0.9, CHARGER_KW = 3.7;
         const SOC_FRESH_MIN = 90;   // the car's own reading is trusted for this long
@@ -255,32 +257,42 @@
             const deadline = new Date(now);
             deadline.setHours(CHARGE_DEADLINE_HOUR, 0, 0, 0);
             if (deadline.getTime() <= now) deadline.setDate(deadline.getDate() + 1);
-            // A static window: the cheapest run of CHARGE_WINDOW_HOURS in a row before the deadline. The fixed length
-            // leaves time to turn the charger down (load balancing) before the house gets near 20 A.
+            // The cheapest hours before the deadline, not necessarily in a row. The automation "Ladeplan, find
+            // ladetimerne" picks them (as many as the car needs to be full, at least 3) and writes them to
+            // input_text.ladeplan as hour numbers since 1970; the card draws exactly that plan. If the helper is
+            // empty, the card picks the CHARGE_WINDOW_HOURS cheapest hours itself.
             const firstHour = Math.floor(now / HOUR) * HOUR;
             const byStart = new Map(slots.map(s => [s.start, s.ore]));
-            let best = null;
-            for (let start = firstHour; start + CHARGE_WINDOW_HOURS * HOUR <= deadline.getTime(); start += HOUR) {
-                const ores = Array.from({ length: CHARGE_WINDOW_HOURS }, (_, k) => byStart.get(start + k * HOUR));
-                if (ores.some(v => v === undefined)) continue;
-                const avg = ores.reduce((a, b) => a + b, 0) / CHARGE_WINDOW_HOURS;
-                if (!best || avg < best.avg) best = { start, avg };
+            const stored = String(await stateOf('input_text.ladeplan').catch(() => null) ?? '')
+                .split(',').map(h => parseInt(h, 10) * HOUR).filter(t => t >= firstHour && t < deadline.getTime());
+            const hours = stored.length ? stored
+                : [...byStart.keys()].filter(t => t >= firstHour && t < deadline.getTime())
+                    .sort((a, b) => byStart.get(a) - byStart.get(b)).slice(0, CHARGE_WINDOW_HOURS);
+            const picked = new Set(hours);
+            if (!picked.size) { info.textContent = 'ingen plan endnu'; return picked; }
+            // "22–23, 03–05" (runs of hours in a row are joined) and the average price.
+            const clock = t => String(new Date(t).getHours()).padStart(2, '0');
+            const sorted = [...picked].sort((a, b) => a - b);
+            const runs = [];
+            for (const t of sorted) {
+                const last = runs[runs.length - 1];
+                if (last && last.end === t) last.end = t + HOUR; else runs.push({ start: t, end: t + HOUR });
             }
-            const picked = new Set();
-            if (!best) { info.textContent = 'intet 3-timers vindue endnu'; return picked; }
-            for (let k = 0; k < CHARGE_WINDOW_HOURS; k++) picked.add(best.start + k * HOUR);
-            const clock = t => new Date(t).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
-            info.textContent = `${clock(best.start)}–${clock(best.start + CHARGE_WINDOW_HOURS * HOUR)} · ${best.avg.toFixed(0)} öre`;
+            const prices = sorted.map(t => byStart.get(t)).filter(v => v !== undefined);
+            const avg = prices.reduce((a, b) => a + b, 0) / (prices.length || 1);
+            info.textContent = `${runs.map(r => `${clock(r.start)}–${clock(r.end)}`).join(', ')} · ${avg.toFixed(0)} öre`;
             return picked;
         }
         function isCharging(now, offsetHours) {
             return chargeHours.has(Math.floor((now + offsetHours * HOUR) / HOUR) * HOUR);
         }
 
+        // The hour a price covers, e.g. "fre 19–20".
         function clockTime(now, offsetHours) {
             const t = new Date(now + offsetHours * HOUR);
             const day = t.toLocaleDateString('sv-SE', { weekday: 'short' });
-            return day + ' ' + t.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+            const h = t.getHours();
+            return `${day} ${String(h).padStart(2, '0')}–${String((h + 1) % 24).padStart(2, '0')}`;
         }
 
         function axisLabel(now, offsetHours) {
@@ -318,6 +330,26 @@
                 ctx.moveTo(px, area.top);
                 ctx.lineTo(px, area.bottom);
                 ctx.stroke();
+                ctx.restore();
+            },
+        };
+
+        // The hour under the finger or mouse is marked as a bar over the whole hour, not as a point.
+        const hourBar = {
+            id: 'hourBar',
+            beforeDatasetsDraw(chart) {
+                const active = chart.tooltip?.getActiveElements?.() ?? [];
+                if (!active.length) return;
+                const { ctx, chartArea: area, scales: { x, y } } = chart;
+                const point = chart.data.datasets[active[0].datasetIndex].data[active[0].index];
+                const left = Math.max(area.left, x.getPixelForValue(point.hourStart));
+                const right = Math.min(area.right, x.getPixelForValue(point.hourStart + 1));
+                const top = y.getPixelForValue(point.y);
+                ctx.save();
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.10)';
+                ctx.fillRect(left, area.top, right - left, area.bottom - area.top);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+                ctx.fillRect(left, top, right - left, area.bottom - top);
                 ctx.restore();
             },
         };
@@ -363,6 +395,7 @@
                         borderWidth: 2,
                         fill: true,
                         pointRadius: 0,
+                        pointHoverRadius: 0,
                         segment: MODE === 'total' ? {
                             borderColor: ctx => pieceColor(now, ctx),
                             backgroundColor: ctx => pieceColor(now, ctx) + '33',
@@ -404,7 +437,7 @@
                         },
                     },
                 },
-                plugins: [nowLine, pendingNote(points[points.length - 1].x)],
+                plugins: [hourBar, nowLine, pendingNote(points[points.length - 1].x)],
             });
         }
 

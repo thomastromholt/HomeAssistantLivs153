@@ -1,13 +1,16 @@
-# Ladeplan, part 1: the charging window. Every 10 minutes it fetches the Nord Pool SE3 prices for today and tomorrow
-# (tomorrow from about 13:00), finds the cheapest run of three full hours from now until 07:00, and keeps
-# input_boolean.ladevindue on while that window runs. The price card draws the same window (docs/ladeplan.md).
+# Ladeplan, part 1: the charging hours. Every hour it fetches the Nord Pool SE3 prices for today and tomorrow
+# (tomorrow from about 13:00) and picks the cheapest hours from now until 07:00. They need not be in a row. The number
+# of hours is what the car needs to be full at 07:00 (at about 2.3 kW), at least 3. The hours go to input_text.ladeplan
+# (hour numbers since 1970, comma separated) and input_boolean.ladevindue is on during them. The plan is always made,
+# also when the car is unplugged; the price card draws input_text.ladeplan (docs/ladeplan.md).
 - id: ladeplan_styring
-  alias: Ladeplan, find ladevinduet
-  description: Finder det billigste 3-timers vindue før kl. 07 og holder input_boolean.ladevindue tændt, mens vinduet kører.
+  alias: Ladeplan, find ladetimerne
+  description: "Hver time: finder de billigste timer før kl. 07 (mindst 3, nok til fuld ladning), uanset om bilen er tilsluttet"
   mode: single
   triggers:
     - trigger: time_pattern
-      minutes: "/10"
+      hours: "*"
+      minutes: "0"
     - trigger: homeassistant
       event: start
   actions:
@@ -26,34 +29,43 @@
       response_variable: np_tomorrow
       continue_on_error: true
     - variables:
-        items_json: "{{ ((np_today.SE3 if np_today is defined else []) + (np_tomorrow.SE3 if np_tomorrow is defined else [])) | tojson }}"
-    - variables:
-        window_h: >-
-          {% set items = items_json | from_json %} {% set ns = namespace(sum={}, cnt={}) %} {% for p in items %}
+        # Hours needed: (100 % - battery) of 8.9 kWh at 90 % efficiency, at 2.3 kW (10-11 A on one phase, measured
+        # 2026-10-30), rounded up, at least 3. Without a battery reading: 5 hours (enough from empty).
+        soc: "{{ states('sensor.ceed_ev_battery_level') | float(-1) }}"
+        hours_needed: >-
+          {% if 0 <= soc <= 100 %}{{ [3, ((100 - soc) / 100 * 8.9 / 0.9 / 2.3) | round(0, 'ceil') | int] | max }}{% else %}5{% endif %}
+        plan: >-
+          {% set items = ((np_today.SE3 if np_today is defined else []) + (np_tomorrow.SE3 if np_tomorrow is defined else [])) %} {% set ns = namespace(sum={}, cnt={}) %} {% for p in items %}
             {% set h = (as_timestamp(p.start) // 3600) | int | string %}
-            {% set ns.sum = dict(ns.sum, **{h: ns.sum.get(h, 0) + p.price}) %}
-            {% set ns.cnt = dict(ns.cnt, **{h: ns.cnt.get(h, 0) + 1}) %}
-          {% endfor %} {% set avg = namespace(d={}) %} {% for h in ns.sum %}{% if ns.cnt[h] == 4 %}{% set avg.d = dict(avg.d, **{h: ns.sum[h] / 4}) %}{% endif %}{% endfor %} {% set dl = (as_timestamp(now().replace(hour=7, minute=0, second=0, microsecond=0)) // 3600) | int %} {% if dl * 3600 <= as_timestamp(now()) %}{% set dl = dl + 24 %}{% endif %} {% set nowh = (as_timestamp(now()) // 3600) | int %} {% set best = namespace(h=-1, a=99999) %} {% for h in range(nowh, dl - 2) %}
-            {% if (h|string) in avg.d and ((h+1)|string) in avg.d and ((h+2)|string) in avg.d %}
-              {% set a = (avg.d[h|string] + avg.d[(h+1)|string] + avg.d[(h+2)|string]) / 3 %}
-              {% if a < best.a %}{% set best.h = h %}{% set best.a = a %}{% endif %}
-            {% endif %}
-          {% endfor %} {{ best.h }}
+            {% set ns.sum = dict(ns.sum, **{(h): ns.sum.get(h, 0) + p.price}) %}
+            {% set ns.cnt = dict(ns.cnt, **{(h): ns.cnt.get(h, 0) + 1}) %}
+          {% endfor %} {% set avg = namespace(d={}) %} {% for h in ns.sum %}{% if ns.cnt[h] == 4 %}{% set avg.d = dict(avg.d, **{(h): ns.sum[h] / 4}) %}{% endif %}{% endfor %} {% set dl = (as_timestamp(now().replace(hour=7, minute=0, second=0, microsecond=0)) // 3600) | int %} {% if dl * 3600 <= as_timestamp(now()) %}{% set dl = dl + 24 %}{% endif %} {% set nowh = (as_timestamp(now()) // 3600) | int %} {% set c = namespace(l=[]) %} {% for h in range(nowh, dl) %}{% if (h|string) in avg.d %}{% set c.l = c.l + [{'h': h, 'p': avg.d[h|string]}] %}{% endif %}{% endfor %}
+          {{ (c.l | sort(attribute='p'))[:hours_needed | int] | map(attribute='h') | sort | join(',') }}
     - variables:
         nowh: "{{ (as_timestamp(now()) // 3600) | int }}"
-        in_window: "{{ window_h | int >= 0 and nowh | int >= window_h | int and nowh | int < window_h | int + 3 }}"
+        in_window: "{{ (nowh | string) in (plan | string | trim).split(',') }}"
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.ladeplan
+      data:
+        value: "{{ plan | string | trim }}"
     - action: "{{ 'input_boolean.turn_on' if in_window else 'input_boolean.turn_off' }}"
       target:
         entity_id: input_boolean.ladevindue
 
-# Ladeplan, part 2: starts and stops the charger. Charging is allowed in the window (input_boolean.ladevindue) or after
-# "Lad nu" (input_boolean.lad_nu). The charger starts by itself when the car is plugged in, so outside the allowed time
+# Ladeplan, part 2: starts and stops the charger. Charging is allowed in a planned hour (input_boolean.ladevindue) or after
+# "Lad nu" (input_boolean.lad_nu), unless "Stop ladning" (input_boolean.lad_stop) is on; both are cleared when the car
+# is unplugged. The charger starts by itself when the car is plugged in, so outside the allowed time
 # it is stopped again. Uses Zaptec's resume/stop buttons, which are only there in the matching state (switch.go2_charging
 # goes unavailable between sessions). Presses are spaced out: resume at most every 5 minutes, stop at most every minute.
 # The current itself is set by the load balancing (load_balance.yaml), which keeps L1 under 20 A.
+# If the installation's available current is below 6 A, the charger waits in connected_requesting ("power is
+# restricted") and resume is not offered. On 2026-10-30 the Zaptec cloud reported 0 A after a restart, so when charging
+# is allowed the installation is set back to its 16 A; the charger's own maximum still caps the current.
+# If the charger is ready but the car does not draw current, the charge is started through the Kia integration.
 - id: ladeplan_start_stop
   alias: Ladeplan, start og stop laderen
-  description: Starter laderen i ladevinduet eller ved Lad nu, og stopper den ellers. Bruger Zaptecs resume- og stopknapper.
+  description: Starter laderen i de planlagte timer eller ved Lad nu, og stopper den ellers. Bruger Zaptecs resume- og stopknapper.
   mode: queued
   max: 3
   triggers:
@@ -62,16 +74,21 @@
     - trigger: state
       entity_id:
         - input_boolean.lad_nu
+        - input_boolean.lad_stop
         - input_boolean.ladevindue
         - sensor.go2_charger_mode
   actions:
     - variables:
         mode_now: "{{ states('sensor.go2_charger_mode') }}"
-        allowed: "{{ is_state('input_boolean.ladevindue', 'on') or is_state('input_boolean.lad_nu', 'on') }}"
+        allowed: >-
+          {{ (is_state('input_boolean.ladevindue', 'on') or is_state('input_boolean.lad_nu', 'on'))
+             and not is_state('input_boolean.lad_stop', 'on') }}
+        # A press on the card (lad_nu / lad_stop changed) resumes at once; the automatic retries wait 5 minutes.
+        user_press: "{{ trigger.platform == 'state' and trigger.entity_id in ['input_boolean.lad_nu', 'input_boolean.lad_stop'] }}"
         resume_ok: >-
           {{ states('button.go2_resume_charging') != 'unavailable'
              and (states('button.go2_resume_charging') == 'unknown'
-                  or as_timestamp(now()) - as_timestamp(states('button.go2_resume_charging'), 0) > 300) }}
+                  or as_timestamp(now()) - as_timestamp(states('button.go2_resume_charging'), 0) > (20 if user_press else 300)) }}
         stop_ok: >-
           {{ states('button.go2_stop_charging') != 'unavailable'
              and (states('button.go2_stop_charging') == 'unknown'
@@ -79,7 +96,19 @@
         car_full: >-
           {{ states('sensor.ceed_ev_battery_level') | float(0) >= 99
              and as_timestamp(now()) - as_timestamp(states('sensor.ceed_last_updated_at'), 0) < 3 * 3600 }}
+        installation_a: "{{ states('number.livlandsgatan_153_available_current') | float(-1) }}"
+        requesting_s: "{{ as_timestamp(now()) - as_timestamp(states.sensor.go2_charger_mode.last_changed, 0) }}"
+        kia_ok: "{{ as_timestamp(now()) - as_timestamp(states('input_datetime.lad_kia_start'), 0) > 600 }}"
     - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ allowed and mode_now == 'connected_requesting' and 0 <= installation_a < 6 and not car_full }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: number.livlandsgatan_153_available_current
+              data:
+                value: 16
         - conditions:
             - condition: template
               value_template: "{{ allowed and mode_now in ['connected_requesting', 'connected_finished'] and resume_ok and not car_full }}"
@@ -87,6 +116,24 @@
             - action: button.press
               target:
                 entity_id: button.go2_resume_charging
+        # The charger offers current (not paused, so no resume button) but the car does not take it: a Kia that sat
+        # through a pause goes to sleep. Start the charge from the car's side, at most every 10 minutes (Kia's API
+        # has a daily limit), and only after 10 minutes: the Ceed pauses by itself for ~8 minutes and resumes.
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ allowed and mode_now == 'connected_requesting' and installation_a >= 6 and not car_full
+                   and states('button.go2_resume_charging') == 'unavailable' and requesting_s > 600 and kia_ok }}
+          sequence:
+            - action: input_datetime.set_datetime
+              target:
+                entity_id: input_datetime.lad_kia_start
+              data:
+                timestamp: "{{ as_timestamp(now()) }}"
+            - action: switch.turn_on
+              target:
+                entity_id: switch.ceed_ev_charging
+              continue_on_error: true
         - conditions:
             - condition: template
               value_template: "{{ not allowed and mode_now == 'connected_charging' and stop_ok }}"
@@ -94,11 +141,15 @@
             - action: button.press
               target:
                 entity_id: button.go2_stop_charging
-    # "Lad nu" ends when the car is unplugged.
+    # "Lad nu" and "Stop ladning" end when the car is unplugged.
     - if:
         - condition: template
-          value_template: "{{ is_state('input_boolean.lad_nu', 'on') and mode_now == 'disconnected' }}"
+          value_template: >-
+            {{ mode_now == 'disconnected'
+               and (is_state('input_boolean.lad_nu', 'on') or is_state('input_boolean.lad_stop', 'on')) }}
       then:
         - action: input_boolean.turn_off
           target:
-            entity_id: input_boolean.lad_nu
+            entity_id:
+              - input_boolean.lad_nu
+              - input_boolean.lad_stop
