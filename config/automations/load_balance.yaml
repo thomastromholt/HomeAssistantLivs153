@@ -6,7 +6,7 @@
 # Every 10 seconds:
 # - Over 20 A on L1 for 10 seconds: down to 6 A at once, and stay down for 30 minutes (input_datetime.lad_overload).
 # - P1 missing or older than 30 seconds: 6 A.
-# - Otherwise the limit is 20 A minus the house minus a 2 A margin, within 6-15 A.
+# - Otherwise the limit is 20 A minus the house minus a 2 A margin, within 12-15 A (normal: 12 A, full house: 15 A).
 #   Lowered at once if L1 is over 19 A, otherwise when the last change is at least 2 minutes old (the car's own current
 #   reading lags behind the P1 meter, so the house looks too high right after a raise).
 #   Raised only when the last change is at least 15 minutes old (Zaptec asks for that; frequent changes can make the car
@@ -40,7 +40,7 @@
         minutes_since_change: "{{ ((now() - states.number.go2_charger_max_current.last_changed).total_seconds() / 60) | round(1) }}"
         minutes_since_overload: >-
           {{ ((as_timestamp(now()) - as_timestamp(states('input_datetime.lad_overload'), 0)) / 60) | round(1) }}
-        target: "{{ [ [ (20 - house_a - 2) | round(0, 'floor'), 6 ] | max, 15 ] | min | int }}"
+        target: "{{ [ [ (20 - house_a - 2) | round(0, 'floor'), 12 ] | max, 15 ] | min | int }}"
     - choose:
         # Over 20 A on L1: down to 6 A and remember when.
         - conditions:
