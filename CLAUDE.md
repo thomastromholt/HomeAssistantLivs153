@@ -36,3 +36,7 @@ It logs in with the `.env` token, prints the page text and errors, and saves a s
 - The Livlandsgatan dashboard is one wide section (`column_span: 3`) of cards with `columns: 12` and `rows: N` so they pack without gaps.
 - `tools/page.js` renders any card page headless at card size: `node page.js ../.env "<url>" out.png 372 440`; `tools/dash.js` renders a whole dashboard; `tools/click.js` clicks inside a card to test the history pop-up.
 - `www/kia-car.png` is a car render cropped from the Kia app; it is not committed (gitignored).
+
+## Permissions (no confirmation prompts)
+
+`.claude/settings.json` (checked in) lists what Claude Code may run without asking: reading, `curl`, `node`/`python3`, deploy scripts, ssh to the box (home address and the Tailscale name), and git add/commit/push (never force). Hard denies stay: `rm -rf`, `sudo`, `git reset --hard`, `git clean`, force push, and over ssh `reboot`, `poweroff`, `shutdown`, `ha host`, `ha os`, `ha core stop`. Add a rule there when a harmless command keeps prompting; personal overrides go in `.claude/settings.local.json` (gitignored).

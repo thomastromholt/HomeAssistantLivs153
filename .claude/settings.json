@@ -35,7 +35,31 @@
       "Bash(git commit *)",
       "WebSearch",
       "Edit(//Users/thomastromholt/.claude/projects/**/memory/**)",
-      "Write(//Users/thomastromholt/.claude/projects/**/memory/**)"
+      "Write(//Users/thomastromholt/.claude/projects/**/memory/**)",
+      "Bash(cd *)",
+      "Bash(set -a*)",
+      "Bash(python3 *)",
+      "Bash(python *)",
+      "Bash(jq *)",
+      "Bash(diff *)",
+      "Bash(touch *)",
+      "Bash(pwd*)",
+      "Bash(which *)",
+      "Bash(ping *)",
+      "Bash(tools/deploy_automations.sh*)",
+      "Bash(HA_SSH_HOST=* tools/deploy*.sh*)",
+      "Bash(git push)",
+      "Bash(git push origin*)",
+      "Bash(git branch*)",
+      "Bash(git stash*)",
+      "Bash(git checkout*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *)",
+      "Bash(ssh -o * root@homeassistant-1.tailb28837.ts.net *)",
+      "Bash(ssh -o * root@192.168.1.77 *)",
+      "WebFetch",
+      "Read(//private/tmp/**)",
+      "Edit(//private/tmp/**)",
+      "Write(//private/tmp/**)"
     ],
     "defaultMode": "acceptEdits",
     "deny": [
@@ -51,7 +75,14 @@
       "Bash(ssh root@192.168.1.77 *shutdown*)",
       "Bash(ssh root@192.168.1.77 *ha host*)",
       "Bash(ssh root@192.168.1.77 *ha os*)",
-      "Bash(ssh root@192.168.1.77 *ha core stop*)"
+      "Bash(ssh root@192.168.1.77 *ha core stop*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *rm -rf*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *reboot*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *poweroff*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *shutdown*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *ha host*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *ha os*)",
+      "Bash(ssh root@homeassistant-1.tailb28837.ts.net *ha core stop*)"
     ]
   }
 }
