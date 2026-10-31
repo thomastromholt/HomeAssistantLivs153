@@ -12,6 +12,11 @@
         .muted { color: #8da0ad; font-weight: 400; }
         .sum { font-size: 12px; color: #8da0ad; line-height: 1.5; }
         .sum b { color: #f2f5f7; font-weight: 600; }
+        .map { width: 100%; border-radius: 12px; background: rgba(255,255,255,0.04); }
+        .map text { fill: #c5d1d9; font-family: inherit; }
+        .map .sub { fill: #8da0ad; font-size: 10px; }
+        .map .nm { font-size: 12px; font-weight: 600; fill: #f2f5f7; }
+        .map .lbl { font-size: 11px; paint-order: stroke; stroke: #131f28; stroke-width: 4px; }
         .rows { display: grid; gap: 6px; }
         .row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 90px 60px; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border-left: 3px solid #5fe085; font-size: 13px; }
         .row.fair { border-left-color: #ffb340; }
@@ -39,6 +44,7 @@
         </div>
         <div id="error" class="error" hidden></div>
         <div class="sum" id="sum"></div>
+        <svg class="map" id="map" role="img" aria-label="Thread network map"></svg>
         <div class="rows" id="rows"></div>
         <div class="foot" id="foot"></div>
     </div>
@@ -51,6 +57,66 @@
         const NAMES = { 1: 'Timmerflotte sensor', 2: 'Stue radiator', 3: 'Kajplats globe 1521 lm', 4: 'Kajplats globe 1055 lm', 5: 'Køkken radiator', 7: 'Soveværelse radiator', 8: 'Astrid radiator' };
         const quality = rssi => rssi >= -75 ? 'good' : rssi >= -85 ? 'fair' : 'poor';
         const word = { good: 'good', fair: 'fair', poor: 'weak' };
+        const COLOR = { good: '#5fe085', fair: '#ffb340', poor: '#ff6b61' };
+        const svgEl = (tag, attrs, text) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+
+        // Network map in three tiers: border router(s) on top, routers in the middle, battery devices below. An arrow points from
+        // a device to its parent (the router it sends through); router-to-router links have an arrowhead at both ends.
+        // The label on a line is the RSSI the device itself measures towards that neighbour.
+        function drawMap(data, nameOf) {
+            const nodes = new Map(), byRloc = new Map();
+            for (const n of data.nodes) { nodes.set('n' + n.node_id, { id: 'n' + n.node_id, name: nameOf(n.node_id), role: n.role, ok: n.available, tier: n.role === 'router' || n.role === 'leader' ? 1 : 2 }); if (n.rloc != null) byRloc.set(n.rloc, 'n' + n.node_id); }
+            const key = nb => nb.node != null ? 'n' + nb.node : byRloc.get(nb.rloc) || 'r' + nb.rloc;
+            const links = [];
+            for (const n of data.nodes) {
+                const mine = 'n' + n.node_id, sorted = [...n.neighbours].sort((a, b) => b.avg_rssi - a.avg_rssi);
+                for (const nb of (nodes.get(mine).tier === 1 ? sorted : sorted.slice(0, 1))) {
+                    const other = key(nb);
+                    if (!nodes.has(other)) nodes.set(other, { id: other, name: 'Border router', role: 'router', ok: true, tier: 0 });
+                    links.push({ from: mine, to: other, rssi: nb.avg_rssi });
+                }
+            }
+            // Router pairs reported from both sides become one line.
+            const seen = new Map();
+            for (const l of links) {
+                const both = nodes.get(l.from).tier < 2 && nodes.get(l.to).tier < 2, k = both ? [l.from, l.to].sort().join('|') : l.from + '>' + l.to;
+                if (seen.has(k)) { seen.get(k).rssi = Math.min(seen.get(k).rssi, l.rssi); seen.get(k).both = true; } else seen.set(k, { ...l, both: false });
+            }
+            const W = 1000, ROW = [50, 165, 300], H = 350, parentX = new Map();
+            const tiers = [0, 1, 2].map(t => [...nodes.values()].filter(n => n.tier === t));
+            tiers.forEach((list, t) => {
+                if (t === 2) { const parent = n => [...seen.values()].find(l => l.from === n.id)?.to; list.sort((a, b) => (parentX.get(parent(a)) ?? 0) - (parentX.get(parent(b)) ?? 0)); }
+                list.forEach((n, i) => { n.x = W * (i + 1) / (list.length + 1); n.y = ROW[t]; parentX.set(n.id, n.x); });
+            });
+            const svg = document.getElementById('map');
+            svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+            svg.replaceChildren();
+            const defs = svgEl('defs', {});
+            for (const q of Object.keys(COLOR)) {
+                const marker = svgEl('marker', { id: 'ah-' + q, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+                marker.append(svgEl('path', { d: 'M0,0 L10,5 L0,10 z', fill: COLOR[q] }));
+                defs.append(marker);
+            }
+            svg.append(defs);
+            const BW = 150, BH = 38;
+            const edge = (a, b) => {   // line between box borders
+                const dx = b.x - a.x, dy = b.y - a.y, k = Math.min(dx ? (BW / 2 + 4) / Math.abs(dx) : 9, dy ? (BH / 2 + 4) / Math.abs(dy) : 9);
+                return [a.x + dx * k, a.y + dy * k, b.x - dx * k, b.y - dy * k];
+            };
+            for (const l of seen.values()) {
+                const a = nodes.get(l.from), b = nodes.get(l.to), q = quality(l.rssi), [x1, y1, x2, y2] = edge(a, b);
+                svg.append(svgEl('line', { x1, y1, x2, y2, stroke: COLOR[q], 'stroke-width': 2, 'marker-end': `url(#ah-${q})`, ...(l.both ? { 'marker-start': `url(#ah-${q})` } : {}), ...(a.ok && b.ok ? {} : { 'stroke-dasharray': '5 4' }) }));
+                const t = l.both ? 0.5 : 0.28;   // battery devices: label near the device so the labels do not pile up
+                svg.append(svgEl('text', { x: x1 + (x2 - x1) * t, y: y1 + (y2 - y1) * t + 4, 'text-anchor': 'middle', class: 'lbl' }, `${l.rssi} dBm`));
+            }
+            for (const n of nodes.values()) {
+                const g = svgEl('g', {});
+                g.append(svgEl('rect', { x: n.x - BW / 2, y: n.y - BH / 2, width: BW, height: BH, rx: 10, fill: '#1c2a35', stroke: n.ok ? (n.tier < 2 ? '#64d2ff' : '#3a4b58') : '#ff6b61', 'stroke-width': 1.5, ...(n.ok ? {} : { 'stroke-dasharray': '4 3' }) }));
+                g.append(svgEl('text', { x: n.x, y: n.y - 2, 'text-anchor': 'middle', class: 'nm' }, n.name.length > 22 ? n.name.slice(0, 21) + '…' : n.name));
+                g.append(svgEl('text', { x: n.x, y: n.y + 11, 'text-anchor': 'middle', class: 'sub' }, n.ok ? (n.tier === 0 ? 'router · to the internet' : n.role) : `${n.role} · unavailable`));
+                svg.append(g);
+            }
+        }
         document.getElementById('close').addEventListener('click', () => closePopup());
 
         async function load() {
@@ -87,6 +153,7 @@
                         `<div class="dbm">${best ? `${best.avg_rssi}<small>dBm · ${word[q]}</small>` : '–'}</div>`;
                     return el;
                 }));
+                drawMap(data, nameOf);
                 const age = Math.round((Date.now() / 1000 - data.updated) / 60);
                 document.getElementById('foot').textContent = `Updated ${age < 1 ? 'just now' : `${age} min ago`} (every 10 min) · channel ${rows[0]?.n.channel ?? '–'} · RSSI is the average over time at the device's own radio`;
                 showError(null);

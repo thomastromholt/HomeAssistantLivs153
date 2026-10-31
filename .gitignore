@@ -21,3 +21,4 @@ www/kia-car.png
 
 # Personal documents (energy declaration, bills, consumption data): never commit, the repository is public
 private/
+tools/thread-snapshots/
