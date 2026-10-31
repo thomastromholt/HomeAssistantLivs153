@@ -7,6 +7,17 @@ The heat pump heats a **water tank**, and the radiators draw from that tank.
 - All radiators are connected **in parallel** to the tank, each with its own thermostat valve (IKEA LILJEBAGGE, see [liljebagge.md](liljebagge.md)). Each room is controlled on its own, and nothing is controlled at the supply line.
 - Because the radiators draw from a buffered tank, opening many valves at once (for example when heating hard in the morning) does not push the heat pump itself: the tank takes the load and the compressor just runs longer.
 
+## Where the heating curve lives (told by the owner 2026-10-31)
+
+The **heating curve is on the water tank inside the house** (the indoor unit), not on the heat pump outside. The **outdoor unit (the heat pump itself) just heats the tank from 45 to 50 °C** at one fixed speed and knows nothing about the weather curve. So:
+
+- The curve decides how hot the water going to the radiators is; the outdoor unit only keeps the tank between 45 and 50 °C. This replaces the earlier wording "no weather-compensated flow temperature" above and the doubt about the outdoor sensor feeding a curve: if the curve is indoors, check which outdoor sensor the indoor unit reads before blaming the sun.
+- Changing the curve moves the water temperature for every room at once. Use it when most rooms are too warm or too cold. For one warm room, change that room's target instead (`input_number.warm_<room>` / `low_<room>`).
+
+### Astrid's room, night of 2026-10-30 to 31
+
+Astrid said the room was very hot. The Airthings in her room read 22.8 °C at 01:00 and 22.2 °C at 04:00 against a thermostat target of 21 °C all night (her weekday plan is `0:warm,7:low,15:warm`, so warm covers 15:00 to 07:00, and warm was 21). The thermostat itself read about 1.3 °C lower than the Airthings, so a target of 21 gives about 22.3 °C in the room. `input_number.warm_astrid` was set to 19.5 °C (room about 20.8 °C); `room_plans` re-sends it to the thermostat within 5 minutes. If it is too cold in the evening, split the plan into an evening and a night level instead of raising warm again.
+
 ## What this means for the controls
 
 - **Fast recovery.** The water is always hot, so a radiator that opens after a setback delivers heat quickly. A deeper night setback costs little comfort in the morning.
