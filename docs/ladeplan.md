@@ -12,8 +12,9 @@ Kørende kode: `config/automations/charge_plan_control.yaml` (plan + start/stop)
    2,3 kW er målt 2026-10-30 (10–11 A på én fase, lastbalanceringen tillader op til 15 A). Uden batteri-aflæsning: 5 timer (nok fra tom).
    Eksempel: 16 % → 8,3 kWh → 4 timer. 60 % → 4,0 kWh → 2 → 3 timer.
 3. **De billigste timer** fra den aktuelle time til kl. 07:00 vælges. **De behøver ikke ligge i træk.** Rangeringen sker på spotprisen. Afgifter og moms er lineære og ændrer ikke rækkefølgen.
-4. Timerne skrives til `input_text.ladeplan` (timenumre siden 1970, kommasepareret), og `input_boolean.ladevindue` er tændt i en planlagt time.
-5. Planen laves **altid**, også når bilen ikke er sat i, så man kan se, hvornår den vil lade.
+4. **Tidlig plan:** Planen sammenlignes med de billigste timer inden for de næste 6 timer (eller antal timer + 2, hvis bilen skal bruge mange). Koster den tidlige plan højst **5 kr** mere end den billigste frem til kl. 07 (2,3 kW pr. time, spotpris), bruges den tidlige. Så skubbes ladningen ikke ind i natten for et par kroner, og bilen er klar tidligere. Konstanterne `early_window_h` og `max_extra_kr` står i `charge_plan_control.yaml`.
+5. Timerne skrives til `input_text.ladeplan` (timenumre siden 1970, kommasepareret), og `input_boolean.ladevindue` er tændt i en planlagt time.
+6. Planen laves **altid**, også når bilen ikke er sat i, så man kan se, hvornår den vil lade.
 
 Batteri-aflæsningen kan være et par timer gammel. Så bliver planen hellere for lang end for kort. Laderen stopper selv, når bilen er fuld (`connected_finished`).
 
