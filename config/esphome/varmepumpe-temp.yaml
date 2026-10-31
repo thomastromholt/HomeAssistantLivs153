@@ -28,13 +28,29 @@ one_wire:
     pin: GPIO4
 
 # First flash: one probe without an address (ESPHome logs the address of every probe it finds on the wire).
-# Then put each address in, and uncomment the return probe.
+# Then put the address in. The NTC (2 wires, 10 kOhm at 25 C, measured 11.76 kOhm at about 21 C) is the return probe.
+# NTC wiring: 3.3 V -> 10 kOhm resistor -> node -> NTC -> GND; the node goes to GPIO34 (ADC1, works with Wi-Fi).
 sensor:
   - platform: dallas_temp
     # address: 0x0000000000000000   # supply (fremløb)
     name: "Heatpump supply temperature"
     update_interval: 30s
-  # - platform: dallas_temp
-  #   address: 0x0000000000000000   # return (retur)
-  #   name: "Heatpump return temperature"
-  #   update_interval: 30s
+  - platform: adc
+    id: ntc_adc
+    pin: GPIO34
+    attenuation: 12db
+    update_interval: 10s
+    internal: true
+  - platform: resistance
+    id: ntc_resistance
+    sensor: ntc_adc
+    configuration: DOWNSTREAM
+    resistor: 10kOhm
+    internal: true
+  - platform: ntc
+    sensor: ntc_resistance
+    name: "Heatpump return temperature"
+    calibration:
+      b_constant: 3950
+      reference_temperature: 25°C
+      reference_resistance: 10kOhm
