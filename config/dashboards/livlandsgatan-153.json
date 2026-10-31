@@ -16,7 +16,7 @@
               "cards": [
                 {
                   "type": "iframe",
-                  "url": "/local/hus.html?v=1793441429",
+                  "url": "/local/hus.html?v=1793446723",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -30,7 +30,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/elpris-24h.html?mode=total&v=1793441429",
+                  "url": "/local/elpris-24h.html?mode=total&v=1793446723",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -38,7 +38,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/hus.html?v=1793441429",
+                  "url": "/local/hus.html?v=1793446723",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -52,7 +52,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/kia-ceed.html?v=1793441429",
+                  "url": "/local/kia-ceed.html?v=1793446723",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -60,7 +60,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/temperatur.html?v=1793441429",
+                  "url": "/local/temperatur.html?v=1793446723",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -68,7 +68,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/heatpump.html?v=1793441429",
+                  "url": "/local/heatpump.html?v=1793446723",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -76,7 +76,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/airthings.html?v=1793441429",
+                  "url": "/local/airthings.html?v=1793446723",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -84,7 +84,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/varmerapport.html?v=1793441429",
+                  "url": "/local/varmerapport.html?v=1793446723",
                   "grid_options": {
                     "columns": 36,
                     "rows": 9

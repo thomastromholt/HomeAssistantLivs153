@@ -6,28 +6,28 @@
     <title>Varmerapport</title>
     <link rel="stylesheet" href="/local/card-dark.css?v=1">
     <style>
-        .container { overflow-y: auto; gap: 6px; }
-        .summary { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 2px; font-size: 12px; color: #8da0ad; }
-        .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.08); color: #c5d1d9; }
+        .container { overflow-y: auto; gap: 4px; }
+        .summary { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 1px; font-size: 11px; color: #8da0ad; }
+        .badge { padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; background: rgba(255,255,255,0.08); color: #c5d1d9; }
         .badge.suggest { background: rgba(255,179,64,0.2); color: #ffb340; }
         .badge.warn { background: rgba(255,69,58,0.2); color: #ff6b61; }
         .badge.ok { background: rgba(52,199,89,0.18); color: #5fe085; }
-        .section-title { margin: 4px 0 1px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #8da0ad; }
-        .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px; }
-        .item { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,0.06); border-left: 2px solid #5fe085; }
+        .section-title { margin: 3px 0 1px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #8da0ad; }
+        .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px; }
+        .item { padding: 6px 8px; border-radius: 9px; background: rgba(255,255,255,0.06); border-left: 2px solid #5fe085; }
         .item.suggest { border-left-color: #ffb340; }
         .item.warn { border-left-color: #ff6b61; }
         .item.nodata { border-left-color: #6d808c; opacity: 0.8; }
-        .item-title { font-size: 13px; font-weight: 600; }
-        .item-detail { margin-top: 2px; font-size: 11px; color: #a9b8c2; line-height: 1.4; }
+        .item-title { font-size: 12px; font-weight: 600; }
+        .item-detail { margin-top: 1px; font-size: 10px; color: #a9b8c2; line-height: 1.3; }
         .item-room { color: #64d2ff; font-weight: 600; }
-        .actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
-        .actions button { padding: 4px 10px; border: 0; border-radius: 8px; background: rgba(255,255,255,0.1); color: #f2f5f7; font: inherit; font-size: 11px; cursor: pointer; }
+        .actions { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; align-items: center; }
+        .actions button { padding: 3px 8px; border: 0; border-radius: 7px; background: rgba(255,255,255,0.1); color: #f2f5f7; font: inherit; font-size: 10px; cursor: pointer; }
         .actions button.primary { background: rgba(255,179,64,0.25); color: #ffb340; }
         .actions button.yes { background: rgba(52,199,89,0.25); color: #5fe085; }
-        .actions .ask { flex: 1 1 100%; font-size: 11px; color: #ffb340; }
-        .done { font-size: 11px; color: #5fe085; }
-        .foot { margin-top: 4px; font-size: 10px; color: #6d808c; }
+        .actions .ask { flex: 1 1 100%; font-size: 10px; color: #ffb340; }
+        .done { font-size: 10px; color: #5fe085; }
+        .foot { margin-top: 3px; font-size: 9px; color: #6d808c; }
     </style>
 </head>
 <body>
