@@ -9,10 +9,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 HOST=${HA_SSH_HOST:-root@192.168.1.77}
-FILES="room_plans firmware_updates load_balance charge_plan_control"
+FILES="room_plans firmware_updates load_balance charge_plan_control thread_snapshot"
 
 for f in $FILES; do cat "config/automations/$f.yaml"; echo; done \
   | ssh "$HOST" "cat > /tmp/automations.new.yaml"
+
+# Scripts run by shell_command (config/scripts/); configuration.yaml on the box has shell_command.thread_snapshot.
+ssh "$HOST" "mkdir -p /config/scripts" && scp -q config/scripts/*.py "$HOST:/config/scripts/"
 
 ssh "$HOST" sh -s <<'REMOTE'
 set -e

@@ -1,0 +1,14 @@
+
+# Thread network snapshot for the Thread card (www/thread.html): every 10 minutes and at start, the Matter Server's Thread
+# diagnostics (role, RSSI, LQI) are written to /config/www/thread.json by config/scripts/thread_snapshot.py.
+- id: thread_snapshot
+  alias: Thread-netværk, gem status
+  mode: single
+  triggers:
+    - trigger: time_pattern
+      minutes: "/10"
+    - trigger: homeassistant
+      event: start
+  actions:
+    - action: shell_command.thread_snapshot
+      continue_on_error: true

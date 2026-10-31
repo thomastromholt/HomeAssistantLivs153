@@ -170,7 +170,7 @@
                 // estimate) and car charging (green, measured) stacked on top. The P1 total is averaged per bucket, the
                 // two step sensors are time-weighted. The parts never add up to more than the P1 total: the car first,
                 // then the heat pump, and the rest is everything else.
-                const bucket = hours <= 1 ? 30e3 : hours <= 6 ? 5 * 60e3 : 15 * 60e3, sums = new Map();   // 30 s points for an hour, 5 min for 6 h, 15 min for a day
+                const bucket = hours <= 1 ? 30e3 : hours <= 6 ? 60e3 : 3 * 60e3, sums = new Map();   // 30 s points for an hour, 1 min for 6 h, 3 min for a day (360-480 points)
                 for (const r of power) { const k = Math.floor(r.t / bucket) * bucket; const s = sums.get(k) || [0, 0]; s[0] += r.v; s[1]++; sums.set(k, s); }
                 const rows = [...sums].sort((a, b) => a[0] - b[0]).map(([t, [s, n]]) => {
                     const to = Math.min(t + bucket, end.getTime());

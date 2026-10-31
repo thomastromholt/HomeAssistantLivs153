@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash",
       "Bash(*install.hacs.xyz*)",
       "Bash(ls *)",
       "Bash(cat *)",

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thread-netværk</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .container { overflow-y: auto; gap: 8px; padding: 18px 20px 16px; }
+        .close { position: fixed; top: 10px; right: 10px; z-index: 10; border: 0; background: rgba(40, 52, 62, 0.92); color: #f2f5f7; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); }
+        .head { padding-right: 48px; }
+        .muted { color: #8da0ad; font-weight: 400; }
+        .sum { font-size: 12px; color: #8da0ad; line-height: 1.5; }
+        .sum b { color: #f2f5f7; font-weight: 600; }
+        .rows { display: grid; gap: 6px; }
+        .row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 90px 60px; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border-left: 3px solid #5fe085; font-size: 13px; }
+        .row.fair { border-left-color: #ffb340; }
+        .row.poor, .row.off { border-left-color: #ff6b61; }
+        .row.off { opacity: .75; }
+        .who b { display: block; font-size: 14px; }
+        .who small, .via small { color: #8da0ad; font-size: 11px; }
+        .role { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; background: rgba(100,210,255,.18); color: #64d2ff; margin-right: 4px; }
+        .role.sleepy { background: rgba(255,255,255,.08); color: #8da0ad; }
+        .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+        .bar i { display: block; height: 100%; border-radius: 3px; background: #5fe085; }
+        .fair .bar i { background: #ffb340; }
+        .poor .bar i, .off .bar i { background: #ff6b61; }
+        .dbm { text-align: right; font-variant-numeric: tabular-nums; }
+        .dbm small { display: block; color: #8da0ad; font-size: 10px; }
+        .foot { font-size: 11px; color: #6d808c; line-height: 1.5; }
+        @media (max-width: 560px) { .row { grid-template-columns: 1fr 70px; } .via, .bar-cell { display: none; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head">
+            <span class="name">Thread <span class="muted">· <span id="network">–</span></span></span>
+            <button class="close" id="close" aria-label="Close">✕</button>
+        </div>
+        <div id="error" class="error" hidden></div>
+        <div class="sum" id="sum"></div>
+        <div class="rows" id="rows"></div>
+        <div class="foot" id="foot"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        // Each device's link to the Thread mesh as the device itself reports it (RSSI and LQI to its parent or strongest
+        // neighbour), collected every 10 minutes by config/scripts/thread_snapshot.py into /local/thread.json.
+        // Rule of thumb: RSSI above -75 dBm is good, -85 to -75 fair, below -85 poor (a router closer by would help).
+        const NAMES = { 1: 'Timmerflotte sensor', 2: 'Stue radiator', 3: 'Kajplats globe 1521 lm', 4: 'Kajplats globe 1055 lm', 5: 'Køkken radiator', 7: 'Soveværelse radiator', 8: 'Astrid radiator' };
+        const quality = rssi => rssi >= -75 ? 'good' : rssi >= -85 ? 'fair' : 'poor';
+        const word = { good: 'good', fair: 'fair', poor: 'weak' };
+        document.getElementById('close').addEventListener('click', () => closePopup());
+
+        async function load() {
+            try {
+                const res = await fetch('/local/thread.json?t=' + Date.now());
+                if (!res.ok) throw new Error('No Thread data yet (thread.json missing)');
+                const data = await res.json();
+                const byNode = new Map(data.nodes.map(n => [n.node_id, n]));
+                const nameOf = id => NAMES[id] || byNode.get(id)?.name || `Node ${id}`;
+                document.getElementById('network').textContent = data.network || '–';
+                const rows = data.nodes.map(n => {
+                    const links = [...n.neighbours].sort((a, b) => b.avg_rssi - a.avg_rssi);
+                    const best = links[0] || null;
+                    return { n, best, via: best ? (best.node != null ? nameOf(best.node) : 'Border router') : '–' };
+                }).sort((a, b) => (a.n.role === 'router' ? 0 : 1) - (b.n.role === 'router' ? 0 : 1) || (a.best?.avg_rssi ?? -200) - (b.best?.avg_rssi ?? -200));
+                const routers = rows.filter(r => r.n.role === 'router' || r.n.role === 'leader');
+                const weak = rows.filter(r => r.best && quality(r.best.avg_rssi) === 'poor');
+                const offline = rows.filter(r => !r.n.available);
+                const parents = new Map();
+                for (const r of rows) if (r.n.role !== 'router' && r.best) parents.set(r.via, (parents.get(r.via) || 0) + 1);
+                document.getElementById('sum').innerHTML =
+                    `<b>${rows.length}</b> devices, <b>${routers.length}</b> routers (${routers.map(r => nameOf(r.n.node_id)).join(', ') || 'none'}). ` +
+                    (parents.size ? `Battery devices hang off: ${[...parents].map(([p, c]) => `<b>${p}</b> (${c})`).join(', ')}. ` : '') +
+                    (weak.length ? `Weak link: <b>${weak.map(r => nameOf(r.n.node_id)).join(', ')}</b>. ` : 'No weak links. ') +
+                    (offline.length ? `Reported unavailable: <b>${offline.map(r => nameOf(r.n.node_id)).join(', ')}</b>.` : '');
+                document.getElementById('rows').replaceChildren(...rows.map(({ n, best, via }) => {
+                    const q = best ? quality(best.avg_rssi) : 'poor';
+                    const el = document.createElement('div');
+                    el.className = `row ${n.available ? q : 'off'}`;
+                    const pct = best ? Math.max(0, Math.min(100, (best.avg_rssi + 100) / 40 * 100)) : 0;
+                    el.innerHTML = `<div class="who"><b>${nameOf(n.node_id)}</b><small><span class="role ${n.role === 'router' ? '' : 'sleepy'}">${n.role}</span>${n.available ? '' : 'unavailable'}</small></div>` +
+                        `<div class="via"><small>via</small><br>${via}</div>` +
+                        `<div class="bar-cell"><div class="bar"><i style="width:${pct}%"></i></div></div>` +
+                        `<div class="dbm">${best ? `${best.avg_rssi}<small>dBm · ${word[q]}</small>` : '–'}</div>`;
+                    return el;
+                }));
+                const age = Math.round((Date.now() / 1000 - data.updated) / 60);
+                document.getElementById('foot').textContent = `Updated ${age < 1 ? 'just now' : `${age} min ago`} (every 10 min) · channel ${rows[0]?.n.channel ?? '–'} · RSSI is the average over time at the device's own radio`;
+                showError(null);
+            } catch (e) { showError(e); }
+        }
+        load();
+        setInterval(load, 60e3);
+    </script>
+</body>
+</html>
