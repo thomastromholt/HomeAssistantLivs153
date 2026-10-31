@@ -6,8 +6,12 @@ esphome:
   name: varmepumpe-temp
   friendly_name: Varmepumpe temp
 
+# Board: ESP32-C3 with native USB (esptool 2026-10-31: ESP32-C3 QFN32 rev 0.4, 4 MB flash).
 esp32:
-  board: esp32dev
+  board: esp32-c3-devkitm-1
+  variant: esp32c3
+  framework:
+    type: esp-idf
 
 logger:
 
@@ -21,7 +25,9 @@ wifi:
   password: !secret wifi_password
   ap:
     ssid: "varmepumpe-temp"
-    password: !secret wifi_password
+    password: "varmepumpe1"
+
+captive_portal:
 
 one_wire:
   - platform: gpio
@@ -29,7 +35,7 @@ one_wire:
 
 # First flash: one probe without an address (ESPHome logs the address of every probe it finds on the wire).
 # Then put the address in. The NTC (2 wires, 10 kOhm at 25 C, measured 11.76 kOhm at about 21 C) is the return probe.
-# NTC wiring: 3.3 V -> 10 kOhm resistor -> node -> NTC -> GND; the node goes to GPIO34 (ADC1, works with Wi-Fi).
+# NTC wiring: 3.3 V -> 10 kOhm resistor -> node -> NTC -> GND; the node goes to GPIO3 (ADC1, works with Wi-Fi; GPIO0-4 are ADC1 on the C3).
 sensor:
   - platform: dallas_temp
     # address: 0x0000000000000000   # supply (fremløb)
@@ -37,7 +43,7 @@ sensor:
     update_interval: 30s
   - platform: adc
     id: ntc_adc
-    pin: GPIO34
+    pin: GPIO3
     attenuation: 12db
     update_interval: 10s
     internal: true
