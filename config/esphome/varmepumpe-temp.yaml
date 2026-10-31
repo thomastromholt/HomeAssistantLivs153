@@ -1,0 +1,40 @@
+# ESP32 with two DS18B20 probes on the heat pump's supply and return pipes (docs/heating-system.md).
+# The Wi-Fi name and password come from secrets.yaml in the ESPHome add-on (not in git).
+# Entity names match what www/heatpump.html expects: sensor.heatpump_supply_temperature.
+# Probes share one data wire on GPIO4 (4.7 kOhm between data and 3.3 V if the probes have no resistor).
+esphome:
+  name: varmepumpe-temp
+  friendly_name: Varmepumpe temp
+
+esp32:
+  board: esp32dev
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "varmepumpe-temp"
+    password: !secret wifi_password
+
+one_wire:
+  - platform: gpio
+    pin: GPIO4
+
+# First flash: one probe without an address (ESPHome logs the address of every probe it finds on the wire).
+# Then put each address in, and uncomment the return probe.
+sensor:
+  - platform: dallas_temp
+    # address: 0x0000000000000000   # supply (fremløb)
+    name: "Heatpump supply temperature"
+    update_interval: 30s
+  # - platform: dallas_temp
+  #   address: 0x0000000000000000   # return (retur)
+  #   name: "Heatpump return temperature"
+  #   update_interval: 30s

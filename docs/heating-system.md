@@ -45,6 +45,8 @@ Because of this the same schedule behaves differently per room. Check each room 
 The heat pump's outdoor sensor sits on the north side but gets morning sun until about 10–11. If the heat pump follows a heating curve, the sun can make it read too warm in the morning and lower the supply temperature, which then rises again only slowly after the sun is gone.
 That would make the radiators weak around noon, exactly when the Køkken loses heat (airing 12–13, people home 12–13 and after 16).
 
+**ESPHome (2026-10-31):** the ESPHome Device Builder add-on (`5c53de3b_esphome`) is installed on the box, and `config/esphome/varmepumpe-temp.yaml` (also copied to `/config/esphome/`) is the first config: one DS18B20 supply probe on GPIO4 (return probe commented out until the addresses are known). Wi-Fi name and password go in the add-on's `secrets.yaml` as `wifi_ssid` and `wifi_password`; they are not in git.
+
 **Waiting for data:** an ESP32 with supply and return temperature probes is on order (ordered 2026-10-20). Until it is installed nothing is changed here. The heat pump card (`www/heatpump.html`) already expects `sensor.heatpump_supply_temperature` and a power/energy sensor, so the probes can be named to match. Return temperature gives the heat delivered to the radiators (supply minus return).
 
 Not confirmed. It conflicts with the earlier description of a constant 45–50 °C tank (a fixed supply temperature would not care about the sensor). To check, note the heat pump's outdoor reading and supply temperature at 08, 10, 12 and 14 and compare with the weather integration (`weather.forecast_home`). If the sensor is the cause: shade it, shift the curve up for the morning, or lengthen the averaging time if the unit has that setting.
