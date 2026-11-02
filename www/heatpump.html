@@ -81,14 +81,7 @@
                 const states = await statesOf(Object.values(E));
                 const s = key => states[E[key]];
 
-                const supply = formatNumber(s('supply'), 1);
-                document.getElementById('supply').textContent = supply ?? '–';
-                const target = formatNumber(s('supplyTarget'), 1);
-                const weather = await callApi('GET', `states/${OUTDOOR}`).catch(() => null);
-                const outdoor = weather ? formatNumber(weather.attributes.temperature, 1) : null;
-                document.getElementById('supplyNote').textContent =
-                    [supply === null ? 'no supply probe yet' : null, target === null ? null : `target ${target} °C`, outdoor === null ? null : `outdoors ${outdoor} °C`]
-                        .filter(Boolean).join(' · ');
+                // Supply temp is now a regular tile, no separate display needed
 
                 const energy = parseFloat(s('energyToday'));
                 const now = new Date(), midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
