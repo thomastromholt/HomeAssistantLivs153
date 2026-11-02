@@ -426,7 +426,7 @@
         const COLD_MONTHS = [10, 11, 0, 1, 2], COLD_UPLIFT = 1.25, KR_PER_KWH = 2.2;
         const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         // Consumption read off the Ellevio chart for the period before the P1 meter started: month -> kWh up to and including 'through'.
-        const MANUAL_ACTUALS = { '2026-10': { kwh: 640, through: '2026-10-21' } };
+        const MANUAL_ACTUALS = { '2026-10': { kwh: 993, through: '2026-10-31' } };
         let fcChart = null;
         const monthKwh = (m, days, hdd, par, uplift) => par.a * days + par.b * hdd * (COLD_MONTHS.includes(m) ? uplift : 1);
 
@@ -497,8 +497,6 @@
                     + kpi('Next 6 months', `${Math.round(sum('exp')).toLocaleString('sv-SE')}<small> kWh</small>`, `about ${kr(sum('exp'))} · range ${Math.round(sum('low')).toLocaleString('sv-SE')}–${Math.round(sum('high')).toLocaleString('sv-SE')} kWh`)
                     + kpi(`${MONTH_NAMES[curM]} so far`, `${Math.round(actualToDate).toLocaleString('sv-SE')}<small> kWh</small>`,
                           `Until ${yesterdayKey.slice(8, 10)}/${yesterdayKey.slice(5, 7)}. The month is expected to end at ${Math.round(current.exp).toLocaleString('sv-SE')} kWh (${Math.round(current.low).toLocaleString('sv-SE')}–${Math.round(current.high).toLocaleString('sv-SE')}). The forecast said ${Math.round(expectedToDate).toLocaleString('sv-SE')} kWh for the days gone with the weather that was: ${expectedToDate > 0 ? `<span class="${actualToDate / expectedToDate - 1 > 0.1 ? 'warn-text' : 'good-text'}">${(actualToDate / expectedToDate - 1) * 100 > 0 ? '+' : ''}${((actualToDate / expectedToDate - 1) * 100).toFixed(0)} %</span>` : '–'}.`)
-                    + kpi('Tracking since 21 Oct', diff === null ? '–' : `<span class="${Math.abs(diff) <= 10 ? 'good-text' : diff > 0 ? 'warn-text' : 'good-text'}">${diff > 0 ? '+' : ''}${diff.toFixed(0)} %</span>`,
-                          diff === null ? 'Needs a few full days of data.' : `Actual ${actual.toFixed(0)} kWh over ${n} day${n === 1 ? '' : 's'} against ${expected.toFixed(0)} kWh forecast for the weather that was (${diff > 10 ? 'above' : diff < -10 ? 'below' : 'on track with'} the forecast).`)
                     + kpi('Model', `${par.a.toFixed(1)} + ${par.b.toFixed(2)}<small> kWh/day per degree-day</small>`, weight ? `Updated from your measurements (${Math.round(weight * 100)} % weight): ${fitText}.` : 'Starting values from May–October 2026. It learns as measured days arrive.');
 
                 if (fcChart) fcChart.destroy();

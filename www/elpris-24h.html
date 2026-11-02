@@ -476,7 +476,7 @@
                 draw(points, now, from, to);
 
                 const current = slots.find(s => s.start <= now && now < s.end);
-                const fmt = v => `${v.toFixed(1)} öre`;
+                const fmt = v => `${v.toFixed(0)} öre`;
                 document.getElementById('now').textContent = current ? fmt(VIEW.toPrice(current.ore)) : '–';
                 errorBox.hidden = true;
             } catch (error) {

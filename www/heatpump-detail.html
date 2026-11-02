@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Varmepumpe</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <style>
+        .container { overflow-y: auto; gap: 10px; padding: 18px 20px 16px; }
+        .close { position: fixed; top: 10px; right: 10px; z-index: 10; border: 0; background: rgba(40, 52, 62, 0.92); color: #f2f5f7; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); }
+        .head { padding-right: 48px; }
+        .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+        .kpi { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.06); }
+        .kpi .tile-label { font-size: 11px; color: #8da0ad; text-transform: uppercase; letter-spacing: 0.6px; }
+        .kpi .big { margin-top: 6px; font-size: 28px; font-weight: 300; }
+        .kpi .big small { font-size: 12px; color: #8da0ad; margin-left: 4px; }
+        .kpi .sub { font-size: 11px; color: #6d808c; margin-top: 3px; }
+        .chart { position: relative; height: 200px; margin: 8px 0; border-radius: 12px; background: rgba(255,255,255,0.04); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head">
+            <span class="name">NIBE <span class="muted">EVP 270 · detaljer</span></span>
+            <button class="close" id="close" aria-label="Close">✕</button>
+        </div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="kpis" id="kpis"></div>
+
+        <div id="status" style="margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(95,224,133,0.12); border-left: 3px solid #5fe085; font-size: 12px; line-height: 1.5; color: #a9b8c2;"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        const E = {
+            supply: 'sensor.heatpump_supply_temperature',
+            supplyTarget: 'sensor.heatpump_calculated_supply_temperature',
+            power: 'sensor.heatpump_power',
+            energyToday: 'sensor.heatpump_energy_today',
+            runtimeToday: 'sensor.heatpump_compressor_runtime_today',
+            startsToday: 'sensor.heatpump_compressor_starts_today',
+            compressor: 'binary_sensor.heatpump_compressor',
+        };
+
+        document.getElementById('close').addEventListener('click', () => closePopup());
+
+        async function load() {
+            try {
+                const states = await statesOf(Object.values(E));
+                const supply = parseFloat(states[E.supply]) || null;
+                const supplyTarget = parseFloat(states[E.supplyTarget]) || null;
+                const power = parseFloat(states[E.power]) || null;
+                const energy = parseFloat(states[E.energyToday]) || null;
+                const runtime = parseFloat(states[E.runtimeToday]) || null;
+                const starts = parseFloat(states[E.startsToday]) || null;
+                const running = states[E.compressor] === 'on';
+
+                const kpi = (label, value, unit, sub) =>
+                    `<div class="kpi"><div class="tile-label">${label}</div><div class="big">${value === null ? '–' : value}<small>${unit || ''}</small></div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+
+                document.getElementById('kpis').innerHTML =
+                    kpi('Supply temp', supply === null ? '–' : formatNumber(supply, 1), ' °C', supplyTarget ? `Target: ${formatNumber(supplyTarget, 1)} °C` : '') +
+                    kpi('Power', power === null ? '–' : formatNumber(power / 1000, 1), ' kW', running ? 'Running' : 'Idle') +
+                    kpi('Energy today', energy === null ? '–' : formatNumber(energy, 1), ' kWh') +
+                    kpi('Runtime', runtime === null ? '–' : formatNumber(runtime, 2), ' h', starts ? `${Math.round(starts)} starts` : '');
+
+                // Status analysis
+                let statusText = '';
+                if (supply !== null && supplyTarget !== null) {
+                    const diff = supplyTarget - supply;
+                    if (diff > 5) statusText += `<b style="color:#ffb340">Supply below target</b> by ${formatNumber(diff, 1)} °C — house may be slow to warm. `;
+                    else if (diff < -2) statusText += `<b style="color:#5fe085">Supply stable</b>, reaching target. `;
+                    else statusText += `<b style="color:#ffb340">Supply catching up</b> — ${formatNumber(diff, 1)} °C below target. `;
+                }
+                if (energy !== null) {
+                    if (energy > 8) statusText += `Solid usage today (${formatNumber(energy, 1)} kWh). `;
+                    else if (energy > 4) statusText += `Moderate usage (${formatNumber(energy, 1)} kWh). `;
+                }
+                if (runtime !== null && starts !== null) {
+                    const dutyCycle = runtime / 24 * 100;
+                    if (dutyCycle > 60) statusText += `<b style="color:#ffb340">High duty cycle</b> (${formatNumber(dutyCycle, 0)}%) — consider raising curve if outdoor temp allows. `;
+                    else if (dutyCycle < 20) statusText += `Light usage (${formatNumber(dutyCycle, 0)}% duty). `;
+                }
+                if (!statusText) statusText = 'System running normally. Monitor supply temperature and energy use.';
+                document.getElementById('status').innerHTML = statusText;
+
+                showError(null);
+            } catch (e) { showError(e); }
+        }
+        load();
+        setInterval(load, 10e3);
+    </script>
+</body>
+</html>

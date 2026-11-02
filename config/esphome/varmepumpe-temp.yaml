@@ -16,18 +16,16 @@ esp32:
 logger:
 
 api:
+  reboot_timeout: 0s
 
 ota:
   - platform: esphome
 
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-  ap:
-    ssid: "varmepumpe-temp"
-    password: "varmepumpe1"
-
-captive_portal:
+  ssid: casita
+  password: pamelita
+  power_save_mode: none
+  output_power: 8.5dB
 
 one_wire:
   - platform: gpio
@@ -38,7 +36,7 @@ one_wire:
 # NTC wiring: 3.3 V -> 10 kOhm resistor -> node -> NTC -> GND; the node goes to GPIO3 (ADC1, works with Wi-Fi; GPIO0-4 are ADC1 on the C3).
 sensor:
   - platform: dallas_temp
-    # address: 0x0000000000000000   # supply (fremløb)
+    address: 0x2c031501b86eff28   # supply (fremløb)
     name: "Heatpump supply temperature"
     update_interval: 30s
   - platform: adc
