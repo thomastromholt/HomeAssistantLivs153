@@ -17,6 +17,8 @@
         .kpi .big small { font-size: 12px; color: #8da0ad; margin-left: 4px; }
         .kpi .sub { font-size: 11px; color: #6d808c; margin-top: 3px; }
         .chart-container { position: relative; height: 280px; margin: 16px 0 8px; border-radius: 12px; background: rgba(255,255,255,0.04); padding: 12px; }
+        .running-bar { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-bottom: 8px; overflow: hidden; }
+        .running-bar-fill { height: 100%; width: 0%; background: #ff9500; transition: width 0.3s; }
     </style>
 </head>
 <body>
@@ -29,6 +31,9 @@
 
         <div class="kpis" id="kpis"></div>
 
+        <div class="running-bar">
+            <div class="running-bar-fill" id="runningBar"></div>
+        </div>
         <div class="chart-container">
             <canvas id="chart"></canvas>
         </div>
@@ -51,11 +56,12 @@
         document.getElementById('close').addEventListener('click', () => closePopup());
 
         let chart = null;
-        function initChart() {
+        function initChart(running) {
             const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
             const mockPower = [0.5, 0.4, 0.3, 0.2, 0.2, 2.5, 3.5, 4.2, 4.5, 4.3, 3.8, 3.2, 2.8, 3.1, 3.5, 3.9, 4.1, 3.8, 3.2, 2.5, 1.8, 1.2, 0.8, 0.6];
             const mockTemp = [-8, -9, -10, -11, -12, -11, -9, -7, -5, -3, 0, 2, 4, 3, 1, -2, -4, -6, -7, -8, -9, -9, -9, -8];
-            const mockRunning = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0];
+
+            document.getElementById('runningBar').style.width = running ? '100%' : '0%';
 
             const ctx = document.getElementById('chart').getContext('2d');
             if (chart) chart.destroy();
@@ -64,16 +70,6 @@
                 data: {
                     labels: hours,
                     datasets: [
-                        {
-                            label: 'Running',
-                            data: mockRunning,
-                            borderColor: 'transparent',
-                            backgroundColor: 'rgba(95, 224, 133, 0.25)',
-                            borderWidth: 0,
-                            pointRadius: 0,
-                            fill: true,
-                            yAxisID: 'y2',
-                        },
                         {
                             label: 'Power (kW)',
                             data: mockPower,
@@ -127,16 +123,6 @@
                             ticks: { color: '#ff9500', font: { size: 11 } },
                             min: -15,
                             max: 10
-                        },
-                        y2: {
-                            type: 'linear',
-                            position: 'right',
-                            title: { display: true, text: 'Running', color: '#5fe085' },
-                            grid: { drawOnChartArea: false },
-                            ticks: { color: '#5fe085', font: { size: 11 } },
-                            min: 0,
-                            max: 1,
-                            offset: true
                         }
                     }
                 }
@@ -184,7 +170,7 @@
                 document.getElementById('status').innerHTML = statusText;
 
                 showError(null);
-                initChart();
+                initChart(running);
             } catch (e) { showError(e); }
         }
         load();
