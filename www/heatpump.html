@@ -76,21 +76,21 @@
         const OUTDOOR = 'weather.forecast_home';
 
 
-        function tile(label, entityId) {
+        function tile(label, entityId, onDialog) {
             const button = document.createElement('button');
             button.className = 'tile';
             button.innerHTML = '<div class="tile-label"></div><div class="tile-value"></div>';
             button.querySelector('.tile-label').textContent = label;
-            button.addEventListener('click', () => { if (button.dataset.live) openHistory(entityId); });
+            button.addEventListener('click', () => { if (onDialog) onDialog(); else if (button.dataset.live) openHistory(entityId); });
             document.getElementById('tiles').append(button);
             return button;
         }
-        const supplyTile = tile('Supply temp', E.supply);
-        supplyTile.addEventListener('click', () => openPopup('/local/heatpump-detail.html?v=' + Date.now()));
+        const openDialog = () => openPopup('/local/heatpump-detail.html?v=' + Date.now());
+        const supplyTile = tile('Supply temp', E.supply, openDialog);
         const tiles = {
             supply: supplyTile,
-            today: tile("Today's consumption", E.energyToday),
-            compressor: tile('Outdoor unit', E.compressor),
+            today: tile("Today's consumption", E.energyToday, openDialog),
+            compressor: tile('Outdoor unit', E.compressor, openDialog),
         };
 
         function setTile(button, text, entityId, level) {
