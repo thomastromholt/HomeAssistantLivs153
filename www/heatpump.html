@@ -114,10 +114,12 @@
                 setTile(tiles.supply, supply === null ? '–' : `${formatNumber(supply, 1)}<small> °C</small>`, E.supply);
 
                 const energy = parseFloat(s('energyToday'));
+                const power = parseFloat(s('power')) || 0;
                 const now = new Date(), midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
                 const hoursToday = (now - midnight) / 3600e3;
                 const estimated = energy && hoursToday > 0 ? energy * 24 / hoursToday : null;
-                const todayText = energy === null ? '–' : `${formatNumber(energy, 1)}<small> kWh</small><br><span style="font-size:10px;color:#6d808c">${estimated ? '~' + formatNumber(estimated, 0) + ' est.' : ''}</span>`;
+                const currentPower = power / 1000;
+                const todayText = energy === null ? '–' : `${formatNumber(energy, 1)}<small> kWh</small><br><span style="font-size:10px;color:#6d808c">${currentPower > 0 ? formatNumber(currentPower, 1) + ' kW now' : 'Idle'}</span>`;
                 setTile(tiles.today, todayText, E.energyToday);
 
                 const running = s('compressor') === 'on';

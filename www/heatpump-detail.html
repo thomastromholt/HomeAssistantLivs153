@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Varmepumpe</title>
     <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         .container { overflow-y: auto; gap: 10px; padding: 18px 20px 16px; }
         .close { position: fixed; top: 10px; right: 10px; z-index: 10; border: 0; background: rgba(40, 52, 62, 0.92); color: #f2f5f7; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); }
@@ -15,7 +16,7 @@
         .kpi .big { margin-top: 6px; font-size: 28px; font-weight: 300; }
         .kpi .big small { font-size: 12px; color: #8da0ad; margin-left: 4px; }
         .kpi .sub { font-size: 11px; color: #6d808c; margin-top: 3px; }
-        .chart { position: relative; height: 200px; margin: 8px 0; border-radius: 12px; background: rgba(255,255,255,0.04); }
+        .chart-container { position: relative; height: 280px; margin: 16px 0 8px; border-radius: 12px; background: rgba(255,255,255,0.04); padding: 12px; }
     </style>
 </head>
 <body>
@@ -27,6 +28,10 @@
         <div id="error" class="error" hidden></div>
 
         <div class="kpis" id="kpis"></div>
+
+        <div class="chart-container">
+            <canvas id="chart"></canvas>
+        </div>
 
         <div id="status" style="margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(95,224,133,0.12); border-left: 3px solid #5fe085; font-size: 12px; line-height: 1.5; color: #a9b8c2;"></div>
     </div>
@@ -44,6 +49,78 @@
         };
 
         document.getElementById('close').addEventListener('click', () => closePopup());
+
+        let chart = null;
+        function initChart() {
+            const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
+            const mockPower = [0.5, 0.4, 0.3, 0.2, 0.2, 2.5, 3.5, 4.2, 4.5, 4.3, 3.8, 3.2, 2.8, 3.1, 3.5, 3.9, 4.1, 3.8, 3.2, 2.5, 1.8, 1.2, 0.8, 0.6];
+            const mockTemp = [-8, -9, -10, -11, -12, -11, -9, -7, -5, -3, 0, 2, 4, 3, 1, -2, -4, -6, -7, -8, -9, -9, -9, -8];
+
+            const ctx = document.getElementById('chart').getContext('2d');
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: hours,
+                    datasets: [
+                        {
+                            label: 'Power (kW)',
+                            data: mockPower,
+                            borderColor: '#64d2ff',
+                            backgroundColor: 'rgba(100, 210, 255, 0.1)',
+                            borderWidth: 2.5,
+                            pointRadius: 0,
+                            tension: 0.4,
+                            yAxisID: 'y',
+                            fill: true,
+                        },
+                        {
+                            label: 'Outdoor temp (°C)',
+                            data: mockTemp,
+                            borderColor: '#ff9500',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2.5,
+                            pointRadius: 0,
+                            tension: 0.4,
+                            yAxisID: 'y1',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { labels: { color: '#a9b8c2', font: { size: 12 } } },
+                        filler: { propagate: true }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#6d808c', font: { size: 11 } }
+                        },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Power (kW)', color: '#64d2ff' },
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#64d2ff', font: { size: 11 } },
+                            min: 0,
+                            max: 5
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Temp (°C)', color: '#ff9500' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: '#ff9500', font: { size: 11 } },
+                            min: -15,
+                            max: 10
+                        }
+                    }
+                }
+            });
+        }
 
         async function load() {
             try {
@@ -86,6 +163,7 @@
                 document.getElementById('status').innerHTML = statusText;
 
                 showError(null);
+                initChart();
             } catch (e) { showError(e); }
         }
         load();
