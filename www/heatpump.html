@@ -81,7 +81,8 @@
                 const states = await statesOf(Object.values(E));
                 const s = key => states[E[key]];
 
-                // Supply temp is now a regular tile, no separate display needed
+                const supply = parseFloat(s('supply'));
+                setTile(tiles.supply, supply === null ? '–' : `${formatNumber(supply, 1)}<small> °C</small>`, E.supply);
 
                 const energy = parseFloat(s('energyToday'));
                 const now = new Date(), midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
