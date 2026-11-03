@@ -145,7 +145,7 @@
 
                 document.getElementById('kpis').innerHTML =
                     kpi('Supply temp', supply === null ? '–' : formatNumber(supply, 1), ' °C', supplyTarget ? `Target: ${formatNumber(supplyTarget, 1)} °C` : '') +
-                    kpi('Power', power === null ? '–' : formatNumber(power / 1000, 1), ' kW', running ? 'Running' : 'Idle') +
+                    kpi('Power', power === null ? '–' : formatNumber(power / 1000, 1), ' kW') +
                     kpi('Energy today', energy === null ? '–' : formatNumber(energy, 1), ' kWh') +
                     kpi('Runtime', runtime === null ? '–' : formatNumber(runtime, 2), ' h', starts ? `${Math.round(starts)} starts` : '') +
                     kpi('Status', running ? 'Running' : 'Idle', '', compressorMissing ? 'no data' : '');
