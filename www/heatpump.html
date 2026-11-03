@@ -90,7 +90,6 @@
         const tiles = {
             supply: supplyTile,
             today: tile("Today's consumption", E.energyToday, openDialog),
-            compressor: tile('Outdoor unit', E.compressor, openDialog),
         };
 
         function setTile(button, text, entityId, level) {
@@ -123,8 +122,6 @@
                 setTile(tiles.today, todayText, E.energyToday);
 
                 const running = s('compressor') === 'on';
-                setTile(tiles.compressor, s('compressor') === null ? '–' : running ? 'Running' : 'Idle', E.compressor, running ? 'good' : '');
-                const runtime = parseFloat(s('runtimeToday'));
                 const compressorMissing = states[E.compressor] === null;
                 const status = document.getElementById('status');
                 status.textContent = compressorMissing ? 'No data' : running ? 'Running' : 'Idle';
