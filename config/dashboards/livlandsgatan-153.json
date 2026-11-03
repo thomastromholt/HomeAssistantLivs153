@@ -84,6 +84,14 @@
                 },
                 {
                   "type": "iframe",
+                  "url": "/local/kajplats.html?v=1793552704",
+                  "grid_options": {
+                    "columns": 12,
+                    "rows": 5
+                  }
+                },
+                {
+                  "type": "iframe",
                   "url": "/local/varmerapport.html?v=1793552704",
                   "grid_options": {
                     "columns": 36,
