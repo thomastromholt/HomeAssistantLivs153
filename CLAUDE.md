@@ -37,6 +37,13 @@ It logs in with the `.env` token, prints the page text and errors, and saves a s
 - `tools/page.js` renders any card page headless at card size: `node page.js ../.env "<url>" out.png 372 440`; `tools/dash.js` renders a whole dashboard; `tools/click.js` clicks inside a card to test the history pop-up.
 - `www/kia-car.png` is a car render cropped from the Kia app; it is not committed (gitignored).
 
+## Heat pump control
+
+NIBE EVP 270 has a dry-contact input (labeled for heat curve offset). Measured draw: **0.22 mA** — safe to drive directly from ESP32 GPIO without relay.
+
+**Wiring:** ESP32 GPIO4 → NIBE dry contact pin 1 / GND → NIBE dry contact pin 2.
+When GPIO HIGH: NIBE applies -3°C curve offset (peak shaving). When LOW: normal heating.
+
 ## Permissions (no confirmation prompts)
 
 `.claude/settings.json` (checked in) allows every Bash command without asking (the denies below still win), plus: reading, `curl`, `node`/`python3`, deploy scripts, ssh to the box (home address and the Tailscale name), and git add/commit/push (never force). Hard denies stay: `rm -rf`, `sudo`, `git reset --hard`, `git clean`, force push, and over ssh `reboot`, `poweroff`, `shutdown`, `ha host`, `ha os`, `ha core stop`. Add a rule there when a harmless command keeps prompting; personal overrides go in `.claude/settings.local.json` (gitignored).
