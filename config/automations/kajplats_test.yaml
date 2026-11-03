@@ -1,0 +1,13 @@
+- id: kajplats_1500_follows_1000
+  alias: Kajplats test - 1500 follows 1000
+  description: When Kajplats 1000 (1055lm) turns on, turn on Kajplats 1500 (1521lm) immediately
+  mode: single
+  trigger:
+    - trigger: state
+      entity_id: light.kajplats_e27_ws_globe_1055lm
+      to: "on"
+  condition: []
+  action:
+    - action: light.turn_on
+      target:
+        entity_id: light.kajplats_e27_ws_globe_1521lm
