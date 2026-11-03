@@ -1,5 +1,5 @@
-- id: kajplats_1500_follows_1000
-  alias: Kajplats test - 1500 follows 1000
+- id: kajplats_1500_follows_1000_on
+  alias: Kajplats test - 1500 follows 1000 ON
   description: When Kajplats 1000 (1055lm) turns on, turn on Kajplats 1500 (1521lm) immediately
   mode: single
   trigger:
@@ -9,5 +9,21 @@
   condition: []
   action:
     - action: light.turn_on
+      target:
+        entity_id: light.kajplats_e27_ws_globe_1521lm
+
+- id: kajplats_1500_follows_1000_off
+  alias: Kajplats test - 1500 follows 1000 OFF
+  description: When Kajplats 1000 (1055lm) loses connection or turns off, turn off Kajplats 1500 (1521lm)
+  mode: single
+  trigger:
+    - trigger: state
+      entity_id: light.kajplats_e27_ws_globe_1055lm
+      to:
+        - "off"
+        - "unavailable"
+  condition: []
+  action:
+    - action: light.turn_off
       target:
         entity_id: light.kajplats_e27_ws_globe_1521lm
