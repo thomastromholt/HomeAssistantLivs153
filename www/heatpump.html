@@ -90,7 +90,6 @@
         const tiles = {
             supply: supplyTile,
             today: tile("Today's consumption", E.energyToday, openDialog),
-            status: tile('Status', E.compressor),
         };
 
         function setTile(button, text, entityId, level) {
@@ -124,7 +123,6 @@
 
                 const running = s('compressor') === 'on';
                 const compressorMissing = states[E.compressor] === null;
-                setTile(tiles.status, compressorMissing ? '–' : running ? 'Running' : 'Idle', E.compressor, running ? 'good' : '');
                 const status = document.getElementById('status');
                 status.textContent = compressorMissing ? 'No data' : running ? 'Running' : 'Idle';
                 status.className = `pill ${compressorMissing ? 'fair' : running ? 'good' : ''}`;
