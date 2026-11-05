@@ -3,6 +3,7 @@
 const { spawn } = require('child_process'), crypto = require('crypto');
 const host = process.argv[2] || process.env.HA_SSH_HOST || 'root@192.168.1.77';
 const command = process.argv[3] || 'get_nodes';
+const args = process.argv[4] ? JSON.parse(process.argv[4]) : undefined;   // e.g. '{"node_id":7,"attribute_path":"0/53/22"}' for read_attribute
 const p = spawn('ssh', ['-o', 'ConnectTimeout=10', host, 'nc core-matter-server 5580']);
 let buf = Buffer.alloc(0), upgraded = false;
 const frame = text => {
@@ -23,7 +24,7 @@ p.stdout.on('data', chunk => {
     if (buf.length < off + len) return;
     const text = buf.subarray(off, off + len).toString(); buf = buf.subarray(off + len);
     let m; try { m = JSON.parse(text); } catch { continue; }
-    if (m.fabric_id !== undefined && !sent) { sent = true; p.stdin.write(frame(JSON.stringify({ message_id: '1', command }))); }
+    if (m.fabric_id !== undefined && !sent) { sent = true; p.stdin.write(frame(JSON.stringify({ message_id: '1', command, ...(args ? { args } : {}) }))); }
     else if (m.message_id === '1') { console.log(JSON.stringify(m.result ?? m)); process.exit(0); }
   }
 });

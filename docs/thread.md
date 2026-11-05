@@ -38,6 +38,20 @@ Afterwards a probe with `--probe-methods spinel:460800 probe` should report `SL-
 2. Settings → Devices & services → Add device → Add Matter device → scan the code on the device.
 3. Put the device in the Stue area.
 
+## Link statistics (Thread card)
+
+The Matter Server holds no subscription to the Thread diagnostics cluster (0x35), so `get_nodes` only returns what a device said when
+it last joined: RSSI and the Tx counters stay identical for days. `config/scripts/thread_snapshot.py` therefore reads `0/53/*` live
+from every available device with `read_attribute` (about 1 s each; a sleepy device on a weak link may need the second try).
+`node tools/matter-ws.js root@<box> read_attribute '{"node_id":7,"attribute_path":"0/53/*"}'` does the same by hand.
+
+"Lost today" on the card = (TxRetry + max-retry expiries) / (TxTotal + TxRetry) since the first run of the day, from counters that
+count since the device booted (baseline in `/config/.thread_counters.json`; a falling counter means a reboot and the baseline
+resets to zero). A message nearly always arrives after a retry, so this measures link quality, not data loss: the expiry counters
+(frames given up) stay below 0.1 %. "Dropouts" = growth of DetachedRoleCount (the device lost its parent). The TIMMERFLOTTE
+sensor exposes no counters. Values from 2026-11-05: Stue and Soveværelse sit at -90 dBm, and Astrid, with the best signal, has
+the most dropouts (108 in 15 days).
+
 ## Going back to Zigbee
 
 Flash the Zigbee firmware above, add the Zigbee integration again and restore the saved network data

@@ -24,6 +24,8 @@
       "Bash(tools/deploy.sh*)",
       "Bash(npm i puppeteer-core*)",
       "Bash(ssh root@192.168.1.77 *)",
+      "Bash(ssh root@192.168.68.58 *)",
+      "Bash(ssh root@192.168.68.58 ha *)",
       "Bash(scp *)",
       "Bash(curl *)",
       "Bash(git status*)",
@@ -62,7 +64,7 @@
       "Edit(//private/tmp/**)",
       "Write(//private/tmp/**)"
     ],
-    "defaultMode": "acceptEdits",
+    "defaultMode": "dontAsk",
     "deny": [
       "Bash(git push --force*)",
       "Bash(git push -f*)",

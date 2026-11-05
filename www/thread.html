@@ -18,7 +18,7 @@
         .map .nm { font-size: 12px; font-weight: 600; fill: #f2f5f7; }
         .map .lbl { font-size: 11px; paint-order: stroke; stroke: #131f28; stroke-width: 4px; }
         .rows { display: grid; gap: 6px; }
-        .row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 90px 60px; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border-left: 3px solid #5fe085; font-size: 13px; }
+        .row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 90px 60px 76px; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border-left: 3px solid #5fe085; font-size: 13px; }
         .row.fair { border-left-color: #ffb340; }
         .row.poor, .row.off { border-left-color: #ff6b61; }
         .row.off { opacity: .75; }
@@ -32,8 +32,11 @@
         .poor .bar i, .off .bar i { background: #ff6b61; }
         .dbm { text-align: right; font-variant-numeric: tabular-nums; }
         .dbm small { display: block; color: #8da0ad; font-size: 10px; }
+        .loss { text-align: right; font-variant-numeric: tabular-nums; }
+        .loss .bar { margin-bottom: 4px; }
+        .loss small { display: block; color: #8da0ad; font-size: 10px; }
         .foot { font-size: 11px; color: #6d808c; line-height: 1.5; }
-        @media (max-width: 560px) { .row { grid-template-columns: 1fr 70px; } .via, .bar-cell { display: none; } }
+        @media (max-width: 560px) { .row { grid-template-columns: 1fr 70px 70px; } .via, .bar-cell, .loss .bar { display: none; } }
     </style>
 </head>
 <body>
@@ -58,6 +61,11 @@
         const NAMES = { 1: 'Timmerflotte sensor', 2: 'Stue radiator', 3: 'Kajplats globe 1521 lm', 4: 'Kajplats globe 1055 lm', 5: 'Køkken radiator', 7: 'Soveværelse radiator', 8: 'Astrid radiator' };
         const quality = rssi => rssi >= -75 ? 'good' : rssi >= -85 ? 'fair' : 'poor';
         const word = { good: 'good', fair: 'fair', poor: 'weak' };
+        // Lost today = share of this device's radio transmissions since the start of the day that had to be sent again (or were
+        // given up). The message itself nearly always gets through after a retry, but a high share drains the battery and
+        // means a weak or noisy link. Dropouts = times the device lost its parent and had to rejoin the network.
+        const lossOf = t => { const attempts = t ? t.tx + t.retry : 0; return attempts >= 20 ? { pct: (t.retry + t.expired) / attempts * 100, attempts, ...t } : null; };
+        const lossQuality = pct => pct < 10 ? 'good' : pct < 25 ? 'fair' : 'poor';
         const COLOR = { good: '#5fe085', fair: '#ffb340', poor: '#ff6b61' };
         const svgEl = (tag, attrs, text) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
 
@@ -150,13 +158,15 @@
                 const routers = rows.filter(r => r.n.role === 'router' || r.n.role === 'leader');
                 const weak = rows.filter(r => r.best && quality(r.best.avg_rssi) === 'poor');
                 const offline = rows.filter(r => !r.n.available);
+                const worstLoss = rows.filter(r => r.n.available).map(r => ({ r, l: lossOf(r.n.today) })).filter(x => x.l).sort((a, b) => b.l.pct - a.l.pct)[0];
                 const parents = new Map();
                 for (const r of rows) if (r.n.role !== 'router' && r.best) parents.set(r.via, (parents.get(r.via) || 0) + 1);
                 document.getElementById('sum').innerHTML =
                     `<b>${rows.length}</b> devices, <b>${routers.length}</b> routers (${routers.map(r => nameOf(r.n.node_id)).join(', ') || 'none'}). ` +
                     (parents.size ? `Battery devices hang off: ${[...parents].map(([p, c]) => `<b>${p}</b> (${c})`).join(', ')}. ` : '') +
                     (weak.length ? `Weak link: <b>${weak.map(r => nameOf(r.n.node_id)).join(', ')}</b>. ` : 'No weak links. ') +
-                    (offline.length ? `Reported unavailable: <b>${offline.map(r => nameOf(r.n.node_id)).join(', ')}</b>.` : '');
+                    (offline.length ? `Reported unavailable: <b>${offline.map(r => nameOf(r.n.node_id)).join(', ')}</b>. ` : '') +
+                    (worstLoss ? `Most lost today: <b>${nameOf(worstLoss.r.n.node_id)}</b> (${Math.round(worstLoss.l.pct)} %).` : '');
                 const rowsContainer = document.getElementById('rows');
                 const rowElements = rows.map(({ n, best, via }) => {
                     const q = best ? quality(best.avg_rssi) : 'poor';
@@ -167,12 +177,21 @@
                         `<div class="via"><small>via</small><br>${via}</div>` +
                         `<div class="bar-cell"><div class="bar"><i style="width:${pct}%"></i></div></div>` +
                         `<div class="dbm">${best ? `${best.avg_rssi}<small>dBm · ${word[q]}</small>` : '–'}</div>`;
+                    const l = n.available ? lossOf(n.today) : null;
+                    const lossCell = document.createElement('div');
+                    lossCell.className = 'loss';
+                    if (l) {
+                        lossCell.title = `${l.retry} of ${l.attempts} transmissions had to be re-sent, ${l.expired} gave up after all retries; ${l.detached} times the device lost the network`;
+                        lossCell.innerHTML = `<div class="bar"><i style="width:${Math.min(100, l.pct / 40 * 100)}%;background:${COLOR[lossQuality(l.pct)]}"></i></div>${Math.round(l.pct)} %<small>${l.detached} dropout${l.detached === 1 ? '' : 's'}</small>`;
+                    } else lossCell.innerHTML = `–<small>lost today</small>`;
+                    el.append(lossCell);
                     return el;
                 });
                 rowsContainer.replaceChildren(...rowElements);
                 drawMap(data, nameOf);
                 const age = Math.round((Date.now() / 1000 - data.updated) / 60);
-                document.getElementById('foot').textContent = `Updated ${age < 1 ? 'just now' : `${age} min ago`} (every 10 min) · channel ${rows[0]?.n.channel ?? '–'} · RSSI is the average over time at the device's own radio`;
+                const since = new Date(data.since * 1000).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('foot').textContent = `Updated ${age < 1 ? 'just now' : `${age} min ago`} (every 10 min) · channel ${rows[0]?.n.channel ?? '–'} · RSSI and error counters are read live from each device · Lost today = share of transmissions re-sent since ${since}`;
                 showError(null);
             } catch (e) { showError(e); }
         }
