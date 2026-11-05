@@ -402,13 +402,7 @@
                         + `<b>${formatNumber(Math.abs(f.slope), 1)} kWh</b> ${f.slope < 0 ? 'more' : 'less'} per degree colder<br>`
                         + `At 0 °C: <b>${formatNumber(f.at(0), 0)} kWh</b> · at 10 °C: <b>${formatNumber(f.at(10), 0)} kWh</b><br>`
                         + `Fit (R²): ${formatNumber(f.r2, 2)}</div>`;
-                }).join('') + (groups.length === 2 && groups[0].fit && groups[1].fit
-                    ? `<div class="sig-card"><b>Difference after the change</b><br>`
-                        + [0, 5, 10].map(t => { const d = groups[1].fit.at(t) - groups[0].fit.at(t); return `At ${t} °C: <b style="color:${d <= 0 ? '#5fe085' : '#ff6b61'}">${d > 0 ? '+' : ''}${formatNumber(d, 1)} kWh</b> a day`; }).join('<br>') + '</div>' : '');
-                if (todayPoint) statsEl.insertAdjacentHTML('beforeend', `<div class="sig-card"><span class="dotname" style="border:2px solid #ffb340;background:none"></span><b>Hvis det fortsætter sådan her</b><br>${formatNumber(todayPoint.soFar, 1)} kWh indtil nu, så lander vi på ca. <b>${formatNumber(todayPoint.y, 1)} kWh</b> i dag ved ${formatNumber(todayPoint.x, 1)} °C. Ikke med i linjen: dagen er ikke slut.</div>`);
-                note.textContent = (points.length < 14 ? 'Few days so far: the line is only a rough guide until there are a few weeks of data, and a colder spell. ' : '')
-                    + (false ? '' : 'The heat pump figure is the run time times 3 kW (the compressor draws about 3 kW) and ignores the elpatron, which will add to it in the cold. ')
-                    + 'Temperature: daily mean from Open-Meteo for the home position.';
+                }).join('');
             } catch (error) { showError(error); }
         }
         document.getElementById('sigSplit').value = sigSplit;
@@ -514,7 +508,7 @@
                         plugins: { legend: { labels: { color: '#c5d1d9', boxWidth: 12 } }, tooltip: { callbacks: { label: i => `${i.dataset.label}: ${formatNumber(i.parsed.y, 0)} kWh` } } },
                     },
                 });
-                document.getElementById('fcNote').textContent = 'Weather: the normal for each month over 15 years. The cold months are given a 25 % worse efficiency than the mild ones, which is a guess until the first cold weeks show what the heat pump really uses (the elpatron can make it much higher). The winter range is -15 % to +15 % in degree-days, and 2 times the heating cost in the cold months at the top. 2025 under the previous owner (23,074 kWh, heat pump 15,109) lies above this range and is not used; see the energy declaration summary.';
+                document.getElementById('fcNote').textContent = '';
             } catch (error) { showError(error); }
         }
 

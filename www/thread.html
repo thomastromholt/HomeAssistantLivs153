@@ -18,7 +18,7 @@
         .map .nm { font-size: 12px; font-weight: 600; fill: #f2f5f7; }
         .map .lbl { font-size: 11px; paint-order: stroke; stroke: #131f28; stroke-width: 4px; }
         .rows { display: grid; gap: 6px; }
-        .row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 90px 60px 76px; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border-left: 3px solid #5fe085; font-size: 13px; }
+        .row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 90px 60px; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border-left: 3px solid #5fe085; font-size: 13px; }
         .row.fair { border-left-color: #ffb340; }
         .row.poor, .row.off { border-left-color: #ff6b61; }
         .row.off { opacity: .75; }
@@ -61,10 +61,9 @@
         const NAMES = { 1: 'Timmerflotte sensor', 2: 'Stue radiator', 3: 'Kajplats globe 1521 lm', 4: 'Kajplats globe 1055 lm', 5: 'Køkken radiator', 7: 'Soveværelse radiator', 8: 'Astrid radiator' };
         const quality = rssi => rssi >= -75 ? 'good' : rssi >= -85 ? 'fair' : 'poor';
         const word = { good: 'good', fair: 'fair', poor: 'weak' };
-        // Lost today = share of this device's radio transmissions since the start of the day that had to be sent again (or were
-        // given up). The message itself nearly always gets through after a retry, but a high share drains the battery and
-        // means a weak or noisy link. Dropouts = times the device lost its parent and had to rejoin the network.
-        const lossOf = t => { if (!t) return null; const attempts = t.tx + t.retry; return { pct: attempts ? (t.retry + t.expired) / attempts * 100 : 0, attempts, ...t }; };
+        // Lost today = share of transmissions from the start of the day that were completely lost (expired after all retries).
+        // Dropouts = times the device lost its parent and had to rejoin the network.
+        const lossOf = t => { if (!t) return null; return { pct: t.tx ? (t.expired / t.tx) * 100 : 0, ...t }; };
         const lossQuality = pct => pct < 10 ? 'good' : pct < 25 ? 'fair' : 'poor';
         const COLOR = { good: '#5fe085', fair: '#ffb340', poor: '#ff6b61' };
         const svgEl = (tag, attrs, text) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
@@ -177,17 +176,6 @@
                         `<div class="via"><small>via</small><br>${via}</div>` +
                         `<div class="bar-cell"><div class="bar"><i style="width:${pct}%"></i></div></div>` +
                         `<div class="dbm">${best ? `${best.avg_rssi}<small>dBm · ${word[q]}</small>` : '–'}</div>`;
-                    const l = n.available ? lossOf(n.today) : null;
-                    const lossCell = document.createElement('div');
-                    lossCell.className = 'loss';
-                    if (!l && n.available && best) {   // no counters on this device: its own current error rate towards the parent
-                        lossCell.title = 'This device has no transmission counters; this is its current frame error rate towards the parent';
-                        lossCell.innerHTML = `<div class="bar"><i style="width:${Math.min(100, best.frame_error / 40 * 100)}%;background:${COLOR[lossQuality(best.frame_error)]}"></i></div>${best.frame_error} %`;
-                    } else if (l) {
-                        lossCell.title = `${l.retry} of ${l.attempts} transmissions had to be re-sent, ${l.expired} gave up after all retries; ${l.detached} times the device lost the network`;
-                        lossCell.innerHTML = `<div class="bar"><i style="width:${Math.min(100, l.pct / 40 * 100)}%;background:${COLOR[lossQuality(l.pct)]}"></i></div>${Math.round(l.pct)} %${l.detached ? `<small>${l.detached} dropout${l.detached === 1 ? '' : 's'}</small>` : ''}`;
-                    } else lossCell.innerHTML = `–<small>lost today</small>`;
-                    el.append(lossCell);
                     return el;
                 });
                 rowsContainer.replaceChildren(...rowElements);
