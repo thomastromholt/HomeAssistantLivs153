@@ -46,8 +46,15 @@ When GPIO HIGH: NIBE applies -3°C curve offset (peak shaving). When LOW: normal
 
 ## Data access & automation
 
-I can read/write HA config via SSH (`ssh root@192.168.68.58` from local network):
-- **Thermostat data:** `/config/.storage/core.restore_state` (read-only, regenerated)
+I can read/write HA config via SSH to NUC at 192.168.68.58 — no permission prompts needed. I handle:
+
+**Reading thermostat & sensor values:** Use Tailscale address `homeassistant-1.tailb28837.ts.net` (local IP times out). Method:
+```bash
+TOKEN=$(grep HOMEASSISTANT_TOKEN .env | cut -d= -f2 | tr -d ' "')
+curl -s -H "Authorization: Bearer $TOKEN" "http://homeassistant-1.tailb28837.ts.net/api/states/climate.entity_id"
+```
+
+**Config access via SSH:**
 - **Room plans (weekday/weekend):** `/config/.storage/input_text` (read/write directly)
 - **Automations & helpers:** via SSH + sed/jq editing
 - **Dashboard config:** `/config/.storage/lovelace.*` and `/config/dashboards/`
@@ -56,4 +63,8 @@ I handle all HA config changes myself — no need to ask you to edit in the UI.
 
 ## Permissions (no confirmation prompts)
 
-`.claude/settings.json` (checked in) allows every Bash command without asking (the denies below still win), plus: reading, `curl`, `node`/`python3`, deploy scripts, ssh to the box (home address and the Tailscale name), and git add/commit/push (never force). Hard denies stay: `rm -rf`, `sudo`, `git reset --hard`, `git clean`, force push, and over ssh `reboot`, `poweroff`, `shutdown`, `ha host`, `ha os`, `ha core stop`. Add a rule there when a harmless command keeps prompting; personal overrides go in `.claude/settings.local.json` (gitignored).
+`.claude/settings.json` (checked in) allows:
+- **SSH to NUC (192.168.68.58) without prompts:** full access for reading/writing config, searching logs, running commands
+- **All Bash commands** (the denies below still win): reading, `curl`, `node`/`python3`, deploy scripts, git add/commit/push (never force)
+
+Hard denies stay: `rm -rf`, `sudo`, `git reset --hard`, `git clean`, force push, and over ssh `reboot`, `poweroff`, `shutdown`, `ha host`, `ha os`, `ha core stop`. Personal overrides go in `.claude/settings.local.json` (gitignored).
