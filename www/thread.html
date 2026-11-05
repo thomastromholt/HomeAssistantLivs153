@@ -64,7 +64,7 @@
         // Lost today = share of this device's radio transmissions since the start of the day that had to be sent again (or were
         // given up). The message itself nearly always gets through after a retry, but a high share drains the battery and
         // means a weak or noisy link. Dropouts = times the device lost its parent and had to rejoin the network.
-        const lossOf = t => { const attempts = t ? t.tx + t.retry : 0; return attempts >= 20 ? { pct: (t.retry + t.expired) / attempts * 100, attempts, ...t } : null; };
+        const lossOf = t => { if (!t) return null; const attempts = t.tx + t.retry; return { pct: attempts ? (t.retry + t.expired) / attempts * 100 : 0, attempts, ...t }; };
         const lossQuality = pct => pct < 10 ? 'good' : pct < 25 ? 'fair' : 'poor';
         const COLOR = { good: '#5fe085', fair: '#ffb340', poor: '#ff6b61' };
         const svgEl = (tag, attrs, text) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
@@ -180,9 +180,12 @@
                     const l = n.available ? lossOf(n.today) : null;
                     const lossCell = document.createElement('div');
                     lossCell.className = 'loss';
-                    if (l) {
+                    if (!l && n.available && best) {   // no counters on this device: its own current error rate towards the parent
+                        lossCell.title = 'This device has no transmission counters; this is its current frame error rate towards the parent';
+                        lossCell.innerHTML = `<div class="bar"><i style="width:${Math.min(100, best.frame_error / 40 * 100)}%;background:${COLOR[lossQuality(best.frame_error)]}"></i></div>${best.frame_error} %`;
+                    } else if (l) {
                         lossCell.title = `${l.retry} of ${l.attempts} transmissions had to be re-sent, ${l.expired} gave up after all retries; ${l.detached} times the device lost the network`;
-                        lossCell.innerHTML = `<div class="bar"><i style="width:${Math.min(100, l.pct / 40 * 100)}%;background:${COLOR[lossQuality(l.pct)]}"></i></div>${Math.round(l.pct)} %<small>${l.detached} dropout${l.detached === 1 ? '' : 's'}</small>`;
+                        lossCell.innerHTML = `<div class="bar"><i style="width:${Math.min(100, l.pct / 40 * 100)}%;background:${COLOR[lossQuality(l.pct)]}"></i></div>${Math.round(l.pct)} %${l.detached ? `<small>${l.detached} dropout${l.detached === 1 ? '' : 's'}</small>` : ''}`;
                     } else lossCell.innerHTML = `–<small>lost today</small>`;
                     el.append(lossCell);
                     return el;
