@@ -44,6 +44,16 @@ NIBE EVP 270 has a dry-contact input (labeled for heat curve offset). Measured d
 **Wiring:** ESP32 GPIO4 → NIBE dry contact pin 1 / GND → NIBE dry contact pin 2.
 When GPIO HIGH: NIBE applies -3°C curve offset (peak shaving). When LOW: normal heating.
 
+## Data access & automation
+
+I can read/write HA config via SSH (`ssh root@192.168.68.58` from local network):
+- **Thermostat data:** `/config/.storage/core.restore_state` (read-only, regenerated)
+- **Room plans (weekday/weekend):** `/config/.storage/input_text` (read/write directly)
+- **Automations & helpers:** via SSH + sed/jq editing
+- **Dashboard config:** `/config/.storage/lovelace.*` and `/config/dashboards/`
+
+I handle all HA config changes myself — no need to ask you to edit in the UI.
+
 ## Permissions (no confirmation prompts)
 
 `.claude/settings.json` (checked in) allows every Bash command without asking (the denies below still win), plus: reading, `curl`, `node`/`python3`, deploy scripts, ssh to the box (home address and the Tailscale name), and git add/commit/push (never force). Hard denies stay: `rm -rf`, `sudo`, `git reset --hard`, `git clean`, force push, and over ssh `reboot`, `poweroff`, `shutdown`, `ha host`, `ha os`, `ha core stop`. Add a rule there when a harmless command keeps prompting; personal overrides go in `.claude/settings.local.json` (gitignored).
