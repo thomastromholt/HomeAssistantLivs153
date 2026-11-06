@@ -402,7 +402,11 @@
                         + `<b>${formatNumber(Math.abs(f.slope), 1)} kWh</b> ${f.slope < 0 ? 'more' : 'less'} per degree colder<br>`
                         + `At 0 °C: <b>${formatNumber(f.at(0), 0)} kWh</b> · at 10 °C: <b>${formatNumber(f.at(10), 0)} kWh</b><br>`
                         + `Fit (R²): ${formatNumber(f.r2, 2)}</div>`;
-                }).join('');
+                }).join('') + (groups.length === 2 && groups[0].fit && groups[1].fit
+                    ? `<div class="sig-card"><b>Expected yearly heat pump consumption</b><br>`
+                        + `Before: <b>${formatNumber(365 * groups[0].fit.at(6), 0)} kWh</b> (at average 6 °C)<br>`
+                        + `After: <b>${formatNumber(365 * groups[1].fit.at(6), 0)} kWh</b> (at average 6 °C)<br>`
+                        + `Difference: <b style="color:${365 * (groups[1].fit.at(6) - groups[0].fit.at(6)) <= 0 ? '#5fe085' : '#ff6b61'}">${365 * (groups[1].fit.at(6) - groups[0].fit.at(6)) > 0 ? '+' : ''}${formatNumber(365 * (groups[1].fit.at(6) - groups[0].fit.at(6)), 0)} kWh</b> per year</div>` : '');
             } catch (error) { showError(error); }
         }
         document.getElementById('sigSplit').value = sigSplit;

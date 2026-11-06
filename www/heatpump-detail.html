@@ -16,7 +16,8 @@
         .kpi .big { margin-top: 6px; font-size: 28px; font-weight: 300; }
         .kpi .big small { font-size: 12px; color: #8da0ad; margin-left: 4px; }
         .kpi .sub { font-size: 11px; color: #6d808c; margin-top: 3px; }
-        .chart-container { position: relative; height: 280px; margin: 16px 0 8px; border-radius: 12px; background: rgba(255,255,255,0.04); padding: 12px; }
+        .chart-container { position: relative; height: 320px; margin: 0; border-radius: 12px; background: rgba(255,255,255,0.04); padding: 12px; }
+        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
         .running-bar { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-bottom: 8px; overflow: hidden; }
         .running-bar-fill { height: 100%; width: 0%; background: #ff9500; transition: width 0.3s; }
     </style>
@@ -34,8 +35,20 @@
         <div class="running-bar">
             <div class="running-bar-fill" id="runningBar"></div>
         </div>
+
+        <div style="margin-top: 16px; font-size: 12px; color: #8da0ad; text-transform: uppercase; letter-spacing: 0.6px;">24-hour overview</div>
+        <div class="charts-grid">
+            <div class="chart-container">
+                <canvas id="chart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="returnTempChart"></canvas>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; font-size: 12px; color: #8da0ad; text-transform: uppercase; letter-spacing: 0.6px;">Heat curve (7 days)</div>
         <div class="chart-container">
-            <canvas id="chart"></canvas>
+            <canvas id="curveChart"></canvas>
         </div>
 
         <div id="status" style="margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(95,224,133,0.12); border-left: 3px solid #5fe085; font-size: 12px; line-height: 1.5; color: #a9b8c2;"></div>
@@ -44,7 +57,8 @@
     <script src="/local/card-common.js?v=1"></script>
     <script>
         const E = {
-            supply: 'sensor.heatpump_supply_temperature',
+            supply: 'sensor.varmepumpe_temp_heatpump_supply_temperature',
+            return: 'sensor.varmepumpe_temp_heatpump_return_temperature',
             supplyTarget: 'sensor.heatpump_calculated_supply_temperature',
             power: 'sensor.heatpump_power',
             energyToday: 'sensor.heatpump_energy_today',
@@ -55,11 +69,150 @@
 
         document.getElementById('close').addEventListener('click', () => closePopup());
 
-        let chart = null;
-        function initChart(running) {
+        let chart = null, returnTempChart = null, curveChart = null, heatCurve = null;
+
+        async function initReturnTempChart() {
+            try {
+                const start24h = new Date(new Date() - 24 * 864e5).toISOString();
+                const now = new Date().toISOString();
+
+                const supplyUrl = `history/period/${start24h}?filter_entity_id=${E.supply}&end_time=${encodeURIComponent(now)}&significant_changes_only=0`;
+                const returnUrl = `history/period/${start24h}?filter_entity_id=${E.return}&end_time=${encodeURIComponent(now)}&significant_changes_only=0`;
+
+                const supplyRows = (await callApi('GET', supplyUrl))[0] || [];
+                const returnRows = (await callApi('GET', returnUrl))[0] || [];
+
+                const supplyData = supplyRows.filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ t: new Date(r.last_updated), y: parseFloat(r.state) }));
+                const returnData = returnRows.filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ t: new Date(r.last_updated), y: parseFloat(r.state) }));
+
+                if (supplyData.length > 5 && returnData.length > 5) {
+                    const ctx = document.getElementById('returnTempChart').getContext('2d');
+                    if (returnTempChart) returnTempChart.destroy();
+
+                    returnTempChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            datasets: [
+                                { label: 'Supply', data: supplyData.map(d => ({x: +d.t, y: d.y})), borderColor: '#5fe085', tension: 0.2, borderWidth: 2, pointRadius: 0 },
+                                { label: 'Return', data: returnData.map(d => ({x: +d.t, y: d.y})), borderColor: '#ff9500', tension: 0.2, borderWidth: 2, pointRadius: 0 }
+                            ]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+                            scales: {
+                                x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' }, tooltipFormat: 'HH:mm' }, grid: { display: false }, ticks: { color: '#6d808c', font: { size: 10 }, maxRotation: 0 } },
+                                y: { title: { display: true, text: 'Temp (°C)', color: '#a9b8c2' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c' } }
+                            },
+                            plugins: { legend: { labels: { color: '#a9b8c2', font: { size: 11 } } } }
+                        }
+                    });
+                }
+            } catch (e) { console.warn('Could not init return temp chart:', e); }
+        }
+
+        async function initCurveChart() {
+            try {
+                const start7d = new Date(new Date() - 7 * 864e5).toISOString();
+                const now = new Date().toISOString();
+
+                const supplyUrl = `history/period/${start7d}?filter_entity_id=${E.supply}&end_time=${encodeURIComponent(now)}&significant_changes_only=0`;
+                const weatherUrl = `history/period/${start7d}?filter_entity_id=weather.forecast_home&end_time=${encodeURIComponent(now)}&significant_changes_only=0`;
+
+                const supplyRows = (await callApi('GET', supplyUrl))[0] || [];
+                const weatherRows = (await callApi('GET', weatherUrl))[0] || [];
+
+                const supplyData = supplyRows.filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ t: new Date(r.last_updated), s: parseFloat(r.state) }));
+                const tempData = weatherRows.filter(r => !Number.isNaN(parseFloat(r.attributes?.temperature))).map(r => ({ t: new Date(r.last_updated), o: parseFloat(r.attributes.temperature) }));
+
+                const points = supplyData.map(su => {
+                    const closest = tempData.reduce((best, to) => Math.abs(to.t - su.t) < Math.abs(best.t - su.t) ? to : best, tempData[0]);
+                    return { x: closest?.o ?? null, y: su.s };
+                }).filter(p => p.x !== null && p.y !== null);
+
+                if (points.length > 10) {
+                    const n = points.length, mx = points.reduce((s, p) => s + p.x, 0) / n, my = points.reduce((s, p) => s + p.y, 0) / n;
+                    const sxx = points.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxy = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+                    const slope = sxy / sxx, intercept = my - slope * mx;
+                    heatCurve = { slope, intercept, at: x => intercept + slope * x };
+
+                    const ctx = document.getElementById('curveChart').getContext('2d');
+                    if (curveChart) curveChart.destroy();
+
+                    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+                    const linePoints = [{ x: minX - 5, y: heatCurve.at(minX - 5) }, { x: maxX + 5, y: heatCurve.at(maxX + 5) }];
+
+                    curveChart = new Chart(ctx, {
+                        type: 'scatter',
+                        data: {
+                            datasets: [
+                                { label: 'Measured', data: points, backgroundColor: 'rgba(100,210,255,0.5)', borderColor: '#64d2ff', pointRadius: 3, showLine: false },
+                                { label: 'Curve fit', type: 'line', data: linePoints, borderColor: '#ffb340', borderWidth: 3, pointRadius: 0, tension: 0, fill: false }
+                            ]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false, animation: false,
+                            scales: {
+                                x: { type: 'linear', title: { display: true, text: 'Outdoor temp (°C)', color: '#a9b8c2' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c' } },
+                                y: { title: { display: true, text: 'Supply temp (°C)', color: '#a9b8c2' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c' } }
+                            },
+                            plugins: { legend: { labels: { color: '#a9b8c2', font: { size: 11 } } } }
+                        }
+                    });
+                }
+            } catch (e) { console.warn('Could not init curve chart:', e); }
+        }
+
+        async function initChart(running) {
+            const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
-            const mockPower = [0.5, 0.4, 0.3, 0.2, 0.2, 2.5, 3.5, 4.2, 4.5, 4.3, 3.8, 3.2, 2.8, 3.1, 3.5, 3.9, 4.1, 3.8, 3.2, 2.5, 1.8, 1.2, 0.8, 0.6];
-            const mockTemp = [-8, -9, -10, -11, -12, -11, -9, -7, -5, -3, 0, 2, 4, 3, 1, -2, -4, -6, -7, -8, -9, -9, -9, -8];
+
+            // Fetch hourly power data
+            let powerByHour = Array(24).fill(null);
+            try {
+                const result = await callWS({ type: 'recorder/statistics_during_period', start_time: today.toISOString(), end_time: now.toISOString(), statistic_ids: ['sensor.heatpump_power'], period: 'hour', types: ['mean'] });
+                if (result && result['sensor.heatpump_power']) {
+                    result['sensor.heatpump_power'].forEach(r => {
+                        const h = new Date(r.start).getHours();
+                        powerByHour[h] = r.mean ? r.mean / 1000 : null; // W to kW
+                    });
+                }
+            } catch (e) { console.warn('Could not fetch power history:', e); }
+
+            // Fetch outdoor temp history
+            let tempByHour = Array(24).fill(null);
+            try {
+                const url = `history/period/${today.toISOString()}?filter_entity_id=weather.forecast_home&end_time=${encodeURIComponent(now.toISOString())}&significant_changes_only=0`;
+                const rows = (await callApi('GET', url))[0] || [];
+                rows.forEach(r => {
+                    const temp = parseFloat(r.attributes?.temperature);
+                    if (!Number.isNaN(temp)) {
+                        const h = new Date(r.last_updated).getHours();
+                        if (tempByHour[h] === null) tempByHour[h] = temp;
+                    }
+                });
+            } catch (e) { console.warn('Could not fetch weather history:', e); }
+
+            // Detect heat curve from last 7 days
+            let heatCurve = null;
+            try {
+                const start7d = new Date(now - 7 * 864e5);
+                const hwUrl = `history/period/${start7d.toISOString()}?filter_entity_id=${E.supply},weather.forecast_home&end_time=${encodeURIComponent(now.toISOString())}&significant_changes_only=0`;
+                const hwRows = await callApi('GET', hwUrl);
+                const supplyData = (hwRows[0] || []).filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ t: new Date(r.last_updated), s: parseFloat(r.state) }));
+                const tempData = (hwRows[1] || []).filter(r => !Number.isNaN(parseFloat(r.attributes?.temperature))).map(r => ({ t: new Date(r.last_updated), o: parseFloat(r.attributes.temperature) }));
+
+                const points = supplyData.map(su => {
+                    const closest = tempData.reduce((best, to) => Math.abs(to.t - su.t) < Math.abs(best.t - su.t) ? to : best, tempData[0]);
+                    return { x: closest?.o ?? null, y: su.s };
+                }).filter(p => p.x !== null && p.y !== null);
+
+                if (points.length > 10) {
+                    const n = points.length, mx = points.reduce((s, p) => s + p.x, 0) / n, my = points.reduce((s, p) => s + p.y, 0) / n;
+                    const sxx = points.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxy = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+                    const slope = sxy / sxx, intercept = my - slope * mx;
+                    heatCurve = { slope, intercept, at: x => intercept + slope * x };
+                }
+            } catch (e) { console.warn('Could not detect heat curve:', e); }
 
             document.getElementById('runningBar').style.width = running ? '100%' : '0%';
 
@@ -72,7 +225,7 @@
                     datasets: [
                         {
                             label: 'Power (kW)',
-                            data: mockPower,
+                            data: powerByHour,
                             borderColor: '#64d2ff',
                             backgroundColor: 'rgba(100, 210, 255, 0.1)',
                             borderWidth: 2.5,
@@ -83,14 +236,25 @@
                         },
                         {
                             label: 'Outdoor temp (°C)',
-                            data: mockTemp,
+                            data: tempByHour,
                             borderColor: '#ff9500',
                             backgroundColor: 'transparent',
                             borderWidth: 2.5,
                             pointRadius: 0,
                             tension: 0.4,
                             yAxisID: 'y1',
-                        }
+                        },
+                        ...(heatCurve ? [{
+                            label: 'Heat curve (expected supply)',
+                            data: tempByHour.map(t => t !== null ? heatCurve.at(t) : null),
+                            borderColor: '#5fe085',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            tension: 0,
+                            yAxisID: 'y',
+                        }] : [])
                     ]
                 },
                 options: {
@@ -133,22 +297,53 @@
             try {
                 const states = await statesOf(Object.values(E));
                 const supply = parseFloat(states[E.supply]) || null;
+                const returnTemp = parseFloat(states[E.return]) || null;
                 const supplyTarget = parseFloat(states[E.supplyTarget]) || null;
-                const power = parseFloat(states[E.power]) || null;
+                let power = parseFloat(states[E.power]) || null;
+                if (power !== null && power < 0) power = 0;  // negative power = exporting, show as 0
                 const energy = parseFloat(states[E.energyToday]) || null;
                 const runtime = parseFloat(states[E.runtimeToday]) || null;
                 const starts = parseFloat(states[E.startsToday]) || null;
                 const running = states[E.compressor] === 'on';
 
+                const deltaT = supply !== null && returnTemp !== null ? supply - returnTemp : null;
+                let estimatedPower = deltaT !== null && power === null ? Math.max(0, deltaT * 0.95) : null; // ~0.95 kW per °C (rough estimate)
+                const compressorMissing = states[E.compressor] === null;
+
                 const kpi = (label, value, unit, sub) =>
                     `<div class="kpi"><div class="tile-label">${label}</div><div class="big">${value === null ? '–' : value}<small>${unit || ''}</small></div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 
                 document.getElementById('kpis').innerHTML =
-                    kpi('Supply temp', supply === null ? '–' : formatNumber(supply, 1), ' °C', supplyTarget ? `Target: ${formatNumber(supplyTarget, 1)} °C` : '') +
-                    kpi('Power', power === null ? '–' : formatNumber(power / 1000, 1), ' kW') +
+                    kpi('Supply', supply === null ? '–' : formatNumber(supply, 1), ' °C', supplyTarget ? `Target: ${formatNumber(supplyTarget, 1)} °C` : '') +
+                    kpi('Return', returnTemp === null ? '–' : formatNumber(returnTemp, 1), ' °C', deltaT ? `ΔT: ${formatNumber(deltaT, 1)} °C` : '') +
+                    kpi('Power', power === null ? formatNumber(estimatedPower, 1) || '–' : formatNumber(power / 1000, 1), ' kW', power === null && estimatedPower ? '(estimated)' : '') +
                     kpi('Energy today', energy === null ? '–' : formatNumber(energy, 1), ' kWh') +
                     kpi('Runtime', runtime === null ? '–' : formatNumber(runtime, 2), ' h', starts ? `${Math.round(starts)} starts` : '') +
                     kpi('Status', running ? 'Running' : 'Idle', '', compressorMissing ? 'no data' : '');
+
+                // Heat curve detection: fit supply temp vs outdoor temp over last 7 days
+                let curveText = '';
+                try {
+                    const start7d = new Date(now - 7 * 864e5);
+                    const hwUrl = `history/period/${start7d.toISOString()}?filter_entity_id=${E.supply},weather.forecast_home&end_time=${encodeURIComponent(now.toISOString())}&significant_changes_only=0`;
+                    const hwRows = await callApi('GET', hwUrl);
+                    const supplyData = (hwRows[0] || []).filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ t: new Date(r.last_updated), s: parseFloat(r.state) }));
+                    const tempData = (hwRows[1] || []).filter(r => !Number.isNaN(parseFloat(r.attributes?.temperature))).map(r => ({ t: new Date(r.last_updated), o: parseFloat(r.attributes.temperature) }));
+
+                    // Match closest outdoor temp to each supply reading
+                    const points = supplyData.map(su => {
+                        const closest = tempData.reduce((best, to) => Math.abs(to.t - su.t) < Math.abs(best.t - su.t) ? to : best, tempData[0]);
+                        return { x: closest?.o ?? null, y: su.s };
+                    }).filter(p => p.x !== null && p.y !== null);
+
+                    if (points.length > 10) {
+                        // Linear regression
+                        const n = points.length, mx = points.reduce((s, p) => s + p.x, 0) / n, my = points.reduce((s, p) => s + p.y, 0) / n;
+                        const sxx = points.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxy = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+                        const slope = sxy / sxx, intercept = my - slope * mx;
+                        curveText = `<b>Heat curve (last 7 days):</b> Supply = ${formatNumber(intercept, 0)} + ${formatNumber(Math.abs(slope), 1)} °C/°C outdoor. At 0°C: ${formatNumber(intercept, 0)} °C. (R² data points: ${n})`;
+                    }
+                } catch (e) { console.warn('Could not detect curve:', e); }
 
                 // Status analysis
                 let statusText = '';
@@ -167,11 +362,14 @@
                     if (dutyCycle > 60) statusText += `<b style="color:#ffb340">High duty cycle</b> (${formatNumber(dutyCycle, 0)}%) — consider raising curve if outdoor temp allows. `;
                     else if (dutyCycle < 20) statusText += `Light usage (${formatNumber(dutyCycle, 0)}% duty). `;
                 }
+                if (curveText) statusText += (statusText ? '<br>' : '') + curveText;
                 if (!statusText) statusText = 'System running normally. Monitor supply temperature and energy use.';
                 document.getElementById('status').innerHTML = statusText;
 
                 showError(null);
                 initChart(running);
+                initReturnTempChart();
+                initCurveChart();
             } catch (e) { showError(e); }
         }
         load();
