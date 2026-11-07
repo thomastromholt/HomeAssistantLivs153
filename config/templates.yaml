@@ -28,3 +28,29 @@
       unit_of_measurement: kWh
       device_class: energy
       state: "{{ (states('sensor.heatpump_compressor_runtime_today') | float(0) * 3) | round(1) }}"
+
+# Calibrated heat pump pipe temperatures: raw x gain + offset. Tune the input_number helpers on the dashboard, no reflash needed.
+# The raw ESP32 sensors stay untouched (sensor.varmepumpe_temp_heatpump_*).
+- sensor:
+    - name: Heatpump supply temperature calibrated
+      unique_id: heatpump_supply_temperature_calibrated
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement
+      availability: >-
+        {{ is_number(states('sensor.varmepumpe_temp_heatpump_supply_temperature'))
+           and is_number(states('input_number.hp_supply_cal_gain')) and is_number(states('input_number.hp_supply_cal_offset')) }}
+      state: >-
+        {{ (states('sensor.varmepumpe_temp_heatpump_supply_temperature') | float * states('input_number.hp_supply_cal_gain') | float
+            + states('input_number.hp_supply_cal_offset') | float) | round(2) }}
+    - name: Heatpump return temperature calibrated
+      unique_id: heatpump_return_temperature_calibrated
+      unit_of_measurement: °C
+      device_class: temperature
+      state_class: measurement
+      availability: >-
+        {{ is_number(states('sensor.varmepumpe_temp_heatpump_return_temperature'))
+           and is_number(states('input_number.hp_return_cal_gain')) and is_number(states('input_number.hp_return_cal_offset')) }}
+      state: >-
+        {{ (states('sensor.varmepumpe_temp_heatpump_return_temperature') | float * states('input_number.hp_return_cal_gain') | float
+            + states('input_number.hp_return_cal_offset') | float) | round(2) }}

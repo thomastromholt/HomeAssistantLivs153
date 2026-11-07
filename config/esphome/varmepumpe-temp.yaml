@@ -42,7 +42,8 @@ sensor:
     id: ntc_adc
     pin: GPIO3
     attenuation: 12db
-    update_interval: 10s
+    samples: 16
+    update_interval: 5s
     internal: true
   - platform: resistance
     id: ntc_resistance
@@ -53,6 +54,11 @@ sensor:
   - platform: ntc
     sensor: ntc_resistance
     name: "Heatpump return temperature"
+    filters:
+      - median:
+          window_size: 7
+          send_every: 2
+          send_first_at: 1
     calibration:
       b_constant: 3950
       reference_temperature: 25°C

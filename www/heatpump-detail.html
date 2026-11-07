@@ -34,6 +34,13 @@
         .chart-box { border-radius: 12px; background: rgba(255,255,255,0.04); padding: 12px; }
         .chart { position: relative; height: 380px; min-height: 380px; }
 
+        .range-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
+        .range-bar .chart-title { margin-bottom: 0; }
+        .seg { display: flex; gap: 4px; }
+        .seg button { padding: 5px 12px; border: 0; border-radius: 9px; background: rgba(255,255,255,0.06); color: #8da0ad; font: inherit; font-size: 12px; cursor: pointer; }
+        .seg button.on { background: rgba(100,210,255,0.2); color: #64d2ff; }
+        .chart-section + .chart-section { margin-top: 12px; }
+
         .running-bar { height: 2px; background: rgba(255,255,255,0.08); border-radius: 1px; margin-bottom: 8px; overflow: hidden; }
         .running-bar-fill { height: 100%; width: 0%; background: #ff9500; transition: width 0.3s; }
     </style>
@@ -93,8 +100,13 @@
         </div>
 
         <!-- Charts -->
+        <div class="range-bar">
+            <div class="chart-title">Recent history</div>
+            <div class="seg" id="range">
+                <button data-r="1h">1h</button><button data-r="24h">24h</button><button data-r="3d">3d</button><button data-r="7d">7d</button><button data-r="30d">30d</button>
+            </div>
+        </div>
         <div class="chart-section">
-            <div class="chart-title">24-hour overview</div>
             <div class="charts-row">
                 <div class="chart-box">
                     <div class="chart"><canvas id="powerChart"></canvas></div>
@@ -105,8 +117,8 @@
             </div>
         </div>
 
-        <div class="chart-section">
-            <div class="chart-title">Heat curve (7 days)</div>
+        <div class="chart-section" id="curveSection">
+            <div class="chart-title">Heat curve · <span id="curveRange"></span></div>
             <div class="chart-box">
                 <div class="chart"><canvas id="curveChart"></canvas></div>
             </div>
@@ -120,6 +132,9 @@
         const E = {
             supply: 'sensor.varmepumpe_temp_heatpump_supply_temperature',
             return: 'sensor.varmepumpe_temp_heatpump_return_temperature',
+            supplyCal: 'sensor.heatpump_supply_temperature_calibrated',
+            returnCal: 'sensor.heatpump_return_temperature_calibrated',
+            cal: { supplyGain: 'input_number.hp_supply_cal_gain', supplyOffset: 'input_number.hp_supply_cal_offset', returnGain: 'input_number.hp_return_cal_gain', returnOffset: 'input_number.hp_return_cal_offset' },
             power: 'sensor.heatpump_power',
             energyToday: 'sensor.heatpump_energy_today',
             runtimeToday: 'sensor.heatpump_compressor_runtime_today',
@@ -131,162 +146,173 @@
 
         let powerChart = null, tempChart = null, curveChart = null, heatCurve = null;
 
-        async function initTempChart() {
-            try {
-                const canvas = document.getElementById('tempChart');
-                if (!canvas) return;
-                const start = new Date(Date.now() - 864e5).toISOString();
-                const result = await callApi('GET', `history/period/${start}?filter_entity_id=${E.supply},${E.return}`);
-                const bucket = rows => {
-                    const m = new Map();
-                    for (const r of rows || []) {
-                        const v = parseFloat(r.state);
-                        if (Number.isNaN(v)) continue;
-                        const k = Math.floor(new Date(r.last_updated).getTime() / 3e5) * 3e5;
-                        const a = m.get(k) || [0, 0]; a[0] += v; a[1]++; m.set(k, a);
-                    }
-                    return [...m].sort((a, b) => a[0] - b[0]).map(([x, [s, n]]) => ({ x, y: s / n }));
-                };
-                const byId = id => (result || []).find(s => s[0] && s[0].entity_id === id);
-                const supplyData = bucket(byId(E.supply)), returnData = bucket(byId(E.return));
-                if (supplyData.length < 2 || returnData.length < 2) return;
-                if (tempChart) tempChart.destroy();
-                const hhmm = v => new Date(v).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
-                tempChart = new Chart(canvas.getContext('2d'), {
-                    type: 'line',
-                    data: {
-                        datasets: [
-                            { label: 'Supply', data: supplyData, borderColor: '#5fe085', backgroundColor: 'transparent', tension: 0.2, borderWidth: 2, pointRadius: 0 },
-                            { label: 'Return', data: returnData, borderColor: '#ff9500', backgroundColor: 'transparent', tension: 0.2, borderWidth: 2, pointRadius: 0 }
-                        ]
-                    },
-                    options: {
-                        responsive: true, maintainAspectRatio: false, animation: false,
-                        interaction: { mode: 'nearest', axis: 'x', intersect: false },
-                        scales: {
-                            x: { type: 'linear', grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c', font: { size: 10 }, maxTicksLimit: 7, maxRotation: 0, callback: hhmm } },
-                            y: { title: { display: true, text: 'Temp (°C)', color: '#a9b8c2' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c' } }
-                        },
-                        plugins: {
-                            legend: { labels: { color: '#a9b8c2', font: { size: 11 } } },
-                            tooltip: { callbacks: { title: items => hhmm(items[0].parsed.x) } }
-                        }
-                    }
-                });
-            } catch (e) { console.warn('Temp chart:', e); }
+        const HOUR = 3600e3, DAY = 864e5;
+        const RANGES = {
+            '1h':  { ms: HOUR,       bucket: 30e3,  period: '5minute', label: 'last hour' },
+            '24h': { ms: DAY,        bucket: 3e5,   period: '5minute', label: 'last 24 hours' },
+            '3d':  { ms: 3 * DAY,    bucket: 9e5,   period: '5minute', label: 'last 3 days', stats: true },
+            '7d':  { ms: 7 * DAY,    bucket: 18e5,  period: '5minute', label: 'last 7 days', stats: true },
+            '30d': { ms: 30 * DAY,   bucket: HOUR,  period: 'hour',    label: 'last 30 days', stats: true },
+        };
+        let range = '24h';
+        try { const saved = localStorage.getItem('hp_range'); if (RANGES[saved]) range = saved; } catch (e) {}
+
+        const GRID = { color: 'rgba(255,255,255,0.05)' };
+        const bucketize = (points, size) => {
+            const m = new Map();
+            for (const { t, v } of points) {
+                if (v === null || Number.isNaN(v)) continue;
+                const k = Math.floor(t / size) * size;
+                const a = m.get(k) || [0, 0]; a[0] += v; a[1]++; m.set(k, a);
+            }
+            return [...m].sort((x, y) => x[0] - y[0]).map(([x, [sum, n]]) => ({ x, y: sum / n }));
+        };
+        const clock = v => new Date(v).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+        const dayLabel = v => new Date(v).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' });
+        const fullLabel = v => `${dayLabel(v)} ${clock(v)}`;
+        const tickLabel = r => v => RANGES[r].ms <= DAY ? clock(v) : dayLabel(v);
+
+        async function historyRows(ids, startMs, withAttributes) {
+            const qs = withAttributes ? '' : '&minimal_response&no_attributes';
+            const res = await callApi('GET', `history/period/${new Date(startMs).toISOString()}?filter_entity_id=${ids.join(',')}${qs}`);
+            const out = {};
+            for (const series of res || []) if (series[0]) out[series[0].entity_id] = series;
+            return out;
+        }
+        const numericRows = rows => (rows || []).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: parseFloat(r.state) }));
+        const outdoorRows = rows => (rows || []).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: parseFloat(r.attributes?.temperature) }));
+
+        async function statsRows(ids, startMs, period) {
+            const res = await callWS({ type: 'recorder/statistics_during_period', start_time: new Date(startMs).toISOString(), end_time: new Date().toISOString(), statistic_ids: ids, period, types: ['mean'] });
+            const out = {};
+            for (const id of ids) out[id] = (res?.[id] || []).map(r => ({ t: new Date(r.start).getTime(), v: r.mean }));
+            return out;
         }
 
-        async function initPowerChart() {
-            const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const hours = Array.from({length: 24}, (_, i) => `${i}:00`);
-
-            let powerByHour = Array(24).fill(null);
+        let chartToken = 0;
+        async function loadCharts() {
+            const r = range, cfg = RANGES[r], token = ++chartToken;
+            const end = Date.now(), start = end - cfg.ms;
+            document.getElementById('curveRange').textContent = cfg.label;
             try {
-                const result = await callWS({ type: 'recorder/statistics_during_period', start_time: today.toISOString(), end_time: now.toISOString(), statistic_ids: ['sensor.heatpump_power'], period: 'hour', types: ['mean'] });
-                if (result && result['sensor.heatpump_power']) {
-                    result['sensor.heatpump_power'].forEach(r => {
-                        const h = new Date(r.start).getHours();
-                        powerByHour[h] = r.mean ? r.mean / 1000 : null;
-                    });
-                }
-            } catch (e) { console.warn('Power history:', e); }
+                const cs = await statesOf(Object.values(E.cal));
+                const num = (id, dflt) => { const v = parseFloat(cs[id]); return Number.isNaN(v) ? dflt : v; };
+                const fix = (rows, g, o) => (rows || []).map(p => ({ t: p.t, v: p.v === null || Number.isNaN(p.v) ? null : p.v * g + o }));
+                const gS = num(E.cal.supplyGain, 1), oS = num(E.cal.supplyOffset, 0), gR = num(E.cal.returnGain, 1), oR = num(E.cal.returnOffset, 0);
+                const [temps, power] = await Promise.all([
+                    cfg.stats ? statsRows([E.supply, E.return], start, cfg.period).catch(() => ({}))
+                              : historyRows([E.supply, E.return], start, false).then(h => ({ [E.supply]: numericRows(h[E.supply]), [E.return]: numericRows(h[E.return]) })).catch(() => ({})),
+                    statsRows([E.power], start, cfg.period).catch(() => ({})),
+                ]);
+                const firstTemp = Math.min(...[E.supply, E.return].map(id => (temps[id] || []).find(p => p.v !== null)?.t ?? Infinity));
+                const weatherStart = Number.isFinite(firstTemp) ? Math.max(start, firstTemp - 2 * HOUR) : start;
+                const weather = await historyRows(['weather.forecast_home'], weatherStart, true).catch(() => ({}));
+                if (token !== chartToken) return;
+                const supply = bucketize(fix(temps[E.supply], gS, oS), cfg.bucket);
+                const ret = bucketize(fix(temps[E.return], gR, oR), cfg.bucket);
+                const pw = bucketize((power[E.power] || []).map(p => ({ t: p.t, v: p.v === null ? null : p.v / 1000 })), cfg.bucket);
+                const outdoor = bucketize(outdoorRows(weather['weather.forecast_home']), Math.max(cfg.bucket, HOUR / 2)).map(p => ({ x: p.x, y: Math.round(p.y * 10) / 10 }));
+                renderTempChart(r, start, end, supply, ret);
+                renderPowerChart(r, start, end, pw, outdoor);
+                renderCurveChart(supply, outdoor);
+            } catch (e) { console.warn('Charts:', e); }
+        }
 
-            let tempByHour = Array(24).fill(null);
-            try {
-                const result = await callWS({ type: 'recorder/statistics_during_period', start_time: today.toISOString(), end_time: now.toISOString(), statistic_ids: ['weather.forecast_home'], period: 'hour', types: ['mean'] });
-                if (result && result['weather.forecast_home']) {
-                    result['weather.forecast_home'].forEach(r => {
-                        const h = new Date(r.start).getHours();
-                        const temp = r.mean;
-                        tempByHour[h] = temp;
-                    });
-                }
-            } catch (e) { console.warn('Weather history:', e); }
+        const timeAxis = (r, start, end) => ({ type: 'linear', min: start, max: end, grid: GRID, ticks: { color: '#6d808c', font: { size: 10 }, maxTicksLimit: 7, maxRotation: 0, callback: tickLabel(r) } });
+        const legend = { labels: { color: '#a9b8c2', font: { size: 11 } } };
+        const tooltipTitle = { callbacks: { title: items => fullLabel(items[0].parsed.x) } };
+        const lineSet = (label, data, color, extra) => ({ label, data, borderColor: color, backgroundColor: 'transparent', tension: 0.2, borderWidth: 2, pointRadius: 0, ...extra });
 
-            const canvas = document.getElementById('powerChart');
-            if (!canvas) return;
-            if (powerChart) powerChart.destroy();
-
-            powerChart = new Chart(canvas.getContext('2d'), {
+        function renderTempChart(r, start, end, supply, ret) {
+            const canvas = document.getElementById('tempChart');
+            if (tempChart) tempChart.destroy();
+            tempChart = new Chart(canvas.getContext('2d'), {
                 type: 'line',
-                data: {
-                    labels: hours,
-                    datasets: [
-                        { label: 'Power (kW)', data: powerByHour, borderColor: '#64d2ff', backgroundColor: 'rgba(100, 210, 255, 0.1)', borderWidth: 2.5, pointRadius: 0, tension: 0.4, yAxisID: 'y', fill: true },
-                        { label: 'Outdoor (°C)', data: tempByHour, borderColor: '#ff9500', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, tension: 0.4, yAxisID: 'y1' }
-                    ]
-                },
+                data: { datasets: [lineSet('Supply', supply, '#5fe085'), lineSet('Return', ret, '#ff9500')] },
                 options: {
                     responsive: true, maintainAspectRatio: false, animation: false,
-                    plugins: { legend: { labels: { color: '#a9b8c2', font: { size: 11 } } } },
-                    scales: {
-                        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c', font: { size: 10 } } },
-                        y: { type: 'linear', position: 'left', title: { display: true, text: 'Power (kW)', color: '#64d2ff' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64d2ff', font: { size: 10 } }, min: 0 },
-                        y1: { type: 'linear', position: 'right', title: { display: true, text: 'Temp (°C)', color: '#ff9500' }, grid: { display: false }, ticks: { color: '#ff9500', font: { size: 10 } } }
-                    }
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    scales: { x: timeAxis(r, start, end), y: { title: { display: true, text: 'Temp (°C)', color: '#a9b8c2' }, grid: GRID, ticks: { color: '#6d808c' } } },
+                    plugins: { legend, tooltip: tooltipTitle }
                 }
             });
         }
 
-        async function initCurveChart() {
-            try {
-                const start7d = new Date(new Date() - 7 * 864e5).toISOString();
-                const now = new Date().toISOString();
-
-                const supplyUrl = `history/period/${start7d}?filter_entity_id=${E.supply}&end_time=${encodeURIComponent(now)}&significant_changes_only=0`;
-                const tempUrl = `history/period/${start7d}?filter_entity_id=weather.forecast_home&end_time=${encodeURIComponent(now)}`;
-
-                const supplyRows = (await callApi('GET', supplyUrl))[0] || [];
-                const tempRows = (await callApi('GET', tempUrl))[0] || [];
-
-                const supplyData = supplyRows.filter(r => !Number.isNaN(parseFloat(r.state))).map(r => ({ t: new Date(r.last_updated), s: parseFloat(r.state) }));
-                const tempData = tempRows.filter(r => !Number.isNaN(parseFloat(r.attributes?.temperature))).map(r => ({ t: new Date(r.last_updated), o: parseFloat(r.attributes.temperature) }));
-
-                const points = supplyData.map(su => {
-                    const closest = tempData.reduce((best, to) => Math.abs(to.t - su.t) < Math.abs(best.t - su.t) ? to : best, tempData[0]);
-                    return { x: closest?.o ?? null, y: su.s };
-                }).filter(p => p.x !== null && p.y !== null);
-
-                if (points.length > 10) {
-                    const n = points.length, mx = points.reduce((s, p) => s + p.x, 0) / n, my = points.reduce((s, p) => s + p.y, 0) / n;
-                    const sxx = points.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxy = points.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
-                    const slope = sxy / sxx, intercept = my - slope * mx;
-                    heatCurve = { slope, intercept, at: x => intercept + slope * x };
-
-                    const canvas = document.getElementById('curveChart');
-                    if (!canvas) return;
-                    if (curveChart) curveChart.destroy();
-
-                    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
-                    const linePoints = [{ x: minX - 5, y: heatCurve.at(minX - 5) }, { x: maxX + 5, y: heatCurve.at(maxX + 5) }];
-
-                    curveChart = new Chart(canvas.getContext('2d'), {
-                        type: 'scatter',
-                        data: {
-                            datasets: [
-                                { label: 'Measured', data: points, backgroundColor: 'rgba(100,210,255,0.5)', borderColor: '#64d2ff', pointRadius: 3, showLine: false },
-                                { label: 'Curve fit', type: 'line', data: linePoints, borderColor: '#ffb340', borderWidth: 3, pointRadius: 0, tension: 0, fill: false }
-                            ]
-                        },
-                        options: {
-                            responsive: true, maintainAspectRatio: false, animation: false,
-                            scales: {
-                                x: { type: 'linear', title: { display: true, text: 'Outdoor temp (°C)', color: '#a9b8c2' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c' } },
-                                y: { title: { display: true, text: 'Supply temp (°C)', color: '#a9b8c2' }, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c' } }
-                            },
-                            plugins: { legend: { labels: { color: '#a9b8c2', font: { size: 11 } } } }
-                        }
-                    });
+        function renderPowerChart(r, start, end, pw, outdoor) {
+            const canvas = document.getElementById('powerChart');
+            if (powerChart) powerChart.destroy();
+            powerChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { datasets: [
+                    lineSet('Power (kW)', pw, '#64d2ff', { backgroundColor: 'rgba(100,210,255,0.1)', fill: true, yAxisID: 'y', stepped: 'before', tension: 0 }),
+                    lineSet('Outdoor (°C)', outdoor, '#ffb340', { yAxisID: 'y1' })
+                ] },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    scales: {
+                        x: timeAxis(r, start, end),
+                        y: { type: 'linear', position: 'left', min: 0, title: { display: true, text: 'Power (kW)', color: '#64d2ff' }, grid: GRID, ticks: { color: '#64d2ff', font: { size: 10 } } },
+                        y1: { type: 'linear', position: 'right', suggestedMin: Math.min(...outdoor.map(p => p.y), 0) - 1, suggestedMax: Math.max(...outdoor.map(p => p.y), 0) + 1, title: { display: true, text: 'Outdoor (°C)', color: '#ffb340' }, grid: { display: false }, ticks: { color: '#ffb340', font: { size: 10 }, callback: v => Math.round(v * 10) / 10 } }
+                    },
+                    plugins: { legend, tooltip: tooltipTitle }
                 }
-            } catch (e) { console.warn('Curve chart:', e); }
+            });
         }
+
+        function renderCurveChart(supply, outdoor) {
+            if (curveChart) { curveChart.destroy(); curveChart = null; }
+            const section = document.getElementById('curveSection');
+            section.hidden = true;
+            if (!outdoor.length) return;
+            const points = supply.map(su => {
+                const o = outdoor.reduce((best, c) => Math.abs(c.x - su.x) < Math.abs(best.x - su.x) ? c : best, outdoor[0]);
+                return { x: o.y, y: su.y };
+            });
+            const xs = points.map(p => p.x);
+            if (points.length < 10 || Math.max(...xs) - Math.min(...xs) < 1) return;
+            section.hidden = false;
+            const n = points.length, mx = points.reduce((a, p) => a + p.x, 0) / n, my = points.reduce((a, p) => a + p.y, 0) / n;
+            const sxx = points.reduce((a, p) => a + (p.x - mx) ** 2, 0), sxy = points.reduce((a, p) => a + (p.x - mx) * (p.y - my), 0);
+            if (!sxx) { section.hidden = true; return; }
+            const slope = sxy / sxx, intercept = my - slope * mx;
+            heatCurve = { slope, intercept, at: x => intercept + slope * x };
+            const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+            curveChart = new Chart(document.getElementById('curveChart').getContext('2d'), {
+                type: 'scatter',
+                data: { datasets: [
+                    { label: 'Measured', data: points, backgroundColor: 'rgba(100,210,255,0.5)', borderColor: '#64d2ff', pointRadius: 3, showLine: false },
+                    { label: 'Curve fit', type: 'line', data: [{ x: minX - 5, y: heatCurve.at(minX - 5) }, { x: maxX + 5, y: heatCurve.at(maxX + 5) }], borderColor: '#ffb340', borderWidth: 3, pointRadius: 0, tension: 0, fill: false }
+                ] },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    scales: {
+                        x: { type: 'linear', title: { display: true, text: 'Outdoor temp (°C)', color: '#a9b8c2' }, grid: GRID, ticks: { color: '#6d808c' } },
+                        y: { title: { display: true, text: 'Supply temp (°C)', color: '#a9b8c2' }, grid: GRID, ticks: { color: '#6d808c' } }
+                    },
+                    plugins: { legend }
+                }
+            });
+        }
+
+        const rangeBar = document.getElementById('range');
+        const markRange = () => rangeBar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.r === range));
+        rangeBar.addEventListener('click', e => {
+            const r = e.target.dataset?.r;
+            if (!r || r === range) return;
+            range = r;
+            try { localStorage.setItem('hp_range', r); } catch (err) {}
+            markRange();
+            loadCharts();
+        });
+        markRange();
 
         async function load() {
             try {
-                const states = await statesOf([E.supply, E.return, E.power, E.energyToday, E.runtimeToday, E.startsToday, E.compressor]);
+                const states = await statesOf([E.supplyCal, E.returnCal, E.power, E.energyToday, E.runtimeToday, E.startsToday, E.compressor]);
 
-                const supply = parseFloat(states[E.supply]);
-                const returnTemp = parseFloat(states[E.return]);
+                const supply = parseFloat(states[E.supplyCal]);
+                const returnTemp = parseFloat(states[E.returnCal]);
                 const power = parseFloat(states[E.power]) || 0;
                 const energy = parseFloat(states[E.energyToday]);
                 const runtime = parseFloat(states[E.runtimeToday]);
@@ -321,14 +347,13 @@
                 if (!statusText) statusText = 'System running normally.';
                 document.getElementById('status').innerHTML = statusText;
 
-                initPowerChart();
-                initTempChart();
-                initCurveChart();
             } catch (e) { console.warn('Load error:', e); }
         }
 
         load();
         setInterval(load, 10e3);
+        loadCharts();
+        setInterval(loadCharts, 60e3);
     </script>
 </body>
 </html>

@@ -89,14 +89,6 @@
                     "columns": 36,
                     "rows": 9
                   }
-                },
-                {
-                  "type": "iframe",
-                  "url": "/local/temp-debug.html?v=1793915095",
-                  "grid_options": {
-                    "columns": 12,
-                    "rows": 4
-                  }
                 }
               ]
             }
