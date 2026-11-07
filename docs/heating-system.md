@@ -161,3 +161,29 @@ Every room has a plan for **weekdays** and one for **weekends**, stored in Home 
 To change a plan, edit the text of the helper (Settings → Devices & services → Helpers), or change the temperatures there. The 5 minute check picks it up. The old night mode (a separate automation with its own helpers) is gone.
 
 Regulation on the room thermometer is **not** used: the thermostat's temperature offset does not change what it reports, see [liljebagge.md](liljebagge.md). The two rooms are left to run on their own readings first, so the difference can be compared.
+
+## Heating curve changes (log)
+
+The curve is set on the indoor unit (see "Where the heating curve lives"). Log every change here with the date, so supply temperature, room temperatures and energy can be compared before and after.
+
+| Date | Change | Why |
+|------|--------|-----|
+| 2026-11-07 about 20:00 | Curve offset lowered from **0 to −1**, same slope | A test: is −1 enough to keep the rooms warm? Compare the room temperatures and the supply temperature in the heat pump pop-up over the next days. If a room gets too cold, go back to 0 (or raise that room's own target instead, see above). |
+
+## Supply and return probes (ESP32 `varmepumpe-temp`)
+
+Two probes on the heat pump's pipes: a DS18B20 (AliExpress, so possibly a clone) on the supply pipe, and a 10 kΩ NTC on the return pipe, read by an ESP32-C3 (`config/esphome/varmepumpe-temp.yaml`). The NTC has 16 samples per reading and a median over 7 values in the firmware to remove ADC spikes.
+
+**Calibration lives in Home Assistant, not in the firmware**, so it can be changed without flashing. `config/templates.yaml` defines `sensor.heatpump_supply_temperature_calibrated` and `sensor.heatpump_return_temperature_calibrated` as `raw × gain + offset`, with the factors in `input_number.hp_supply_cal_gain / _offset` and `hp_return_cal_gain / _offset` (defined in `configuration.yaml` on the box, no `initial`, so the values survive a restart). The raw sensors (`sensor.varmepumpe_temp_heatpump_*`) stay untouched. The heat pump pop-up (`www/heatpump-detail.html`) draws its history from the raw sensors and applies the current factors in the browser, so changing a factor also corrects the history. The live numbers use the calibrated sensors.
+
+Current values (2026-11-07):
+
+| | Gain | Offset | Basis |
+|---|---|---|---|
+| Supply (DS18B20) | 1.000 | +1.09 | A guess from TIMMERFLOTTE at 22 °C, see below |
+| Return (NTC) | 0.9704 | +2.323 | `0.9704 × raw + 1.233` makes the NTC match the DS18B20, plus the same +1.09 |
+
+- **Return matched to supply (reliable):** with both probes in the same medium (same pipe at about 41.7 °C, same ice bath, same air) the NTC was fitted to the DS18B20: `supply = 0.9704 × return + 1.233`, residual at most 0.03 °C across 4–42 °C. This is what delta T depends on. The air point is the least reliable (gradient near the heat pump).
+- **Absolute level (not confirmed):** the +1.09 °C comes from the IKEA TIMMERFLOTTE sensor (`sensor.timmerflotte_temp_hmd_sensor_temperatur`), which sits near the heat pump where the air is warmer, so it is a reference good to about ±1 °C only. Nothing in the history can confirm or reject it.
+- **To confirm it:** compare with the heat pump's own display of the supply temperature at about 40 °C while it runs, and set the supply offset to the difference. A real ice bath (a glass of crushed ice with only a little water, stirred) gives the 0 °C point; the first try used one large cube and read 4–5 °C, so it was not a bath. A genuine DS18B20 or a TMP117 would remove the doubt about the AliExpress probe.
+- **The TIMMERFLOTTE sensor is slow:** after being moved it needs about 30 minutes to settle, and it only reports when the value changes.
