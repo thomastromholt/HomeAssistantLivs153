@@ -153,8 +153,8 @@ Every room has a plan for **weekdays** and one for **weekends**, stored in Home 
 
 | Room | Warm | Low | Weekday plan | Weekend plan |
 |------|------|-----|--------------|--------------|
-| Stue | 21 | 19 | low until 06:30, warm 06:30–08:00, low 08:00–15:00, warm 15:00–23:00, low from 23:00 | low until 06:30, warm 06:30–23:00, low from 23:00 |
-| Køkken | 21 | 19 | same as Stue (the thermostat reads about 2 °C high) | same as Stue |
+| Stue | 20.5 | 20.5 | low until 15:00, warm 15:00–23:00, low from 23:00 | warm all day (changed 2026-11-07, was low all day) |
+| Køkken | 20.5 | 20.0 | same as Stue (the thermostat reads about 2 °C high) | warm all day (changed 2026-11-07, was low all day) |
 | Soveværelse | 21 | 18 | warm until 07:00, low 07:00–15:00, warm from 15:00 (told an hour before 16:00) | warm all day |
 | Astrid | 21 | 18 | same as Soveværelse | warm all day |
 
