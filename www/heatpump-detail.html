@@ -174,7 +174,7 @@
 
         async function historyRows(ids, startMs, withAttributes) {
             const qs = withAttributes ? '' : '&minimal_response&no_attributes';
-            const res = await callApi('GET', `history/period/${new Date(startMs).toISOString()}?filter_entity_id=${ids.join(',')}${qs}`);
+            const res = await callApi('GET', `history/period/${new Date(startMs).toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${encodeURIComponent(new Date().toISOString())}${qs}`);
             const out = {};
             for (const series of res || []) if (series[0]) out[series[0].entity_id] = series;
             return out;
@@ -193,7 +193,7 @@
         async function loadCharts() {
             const r = range, cfg = RANGES[r], token = ++chartToken;
             const end = Date.now(), start = end - cfg.ms;
-            document.getElementById('curveRange').textContent = cfg.label;
+            document.getElementById('curveRange').textContent = (r === '1h' ? RANGES['24h'] : cfg).label;
             try {
                 const cs = await statesOf(Object.values(E.cal));
                 const num = (id, dflt) => { const v = parseFloat(cs[id]); return Number.isNaN(v) ? dflt : v; };
@@ -214,7 +214,15 @@
                 const outdoor = bucketize(outdoorRows(weather['weather.forecast_home']), Math.max(cfg.bucket, HOUR / 2)).map(p => ({ x: p.x, y: Math.round(p.y * 10) / 10 }));
                 renderTempChart(r, start, end, supply, ret);
                 renderPowerChart(r, start, end, pw, outdoor);
-                renderCurveChart(supply, outdoor);
+                if (r === '1h') {
+                    const c = RANGES['24h'], s24 = end - c.ms;
+                    const [t24, w24] = await Promise.all([historyRows([E.supply], s24, false), historyRows(['weather.forecast_home'], s24, true)]);
+                    if (token !== chartToken) return;
+                    renderCurveChart(
+                        bucketize(fix(numericRows(t24[E.supply]), gS, oS), c.bucket),
+                        bucketize(outdoorRows(w24['weather.forecast_home']), HOUR / 2).map(p => ({ x: p.x, y: Math.round(p.y * 10) / 10 }))
+                    );
+                } else renderCurveChart(supply, outdoor);
             } catch (e) { console.warn('Charts:', e); }
         }
 
