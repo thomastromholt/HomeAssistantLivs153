@@ -170,6 +170,8 @@ The curve is set on the indoor unit (see "Where the heating curve lives"). Log e
 |------|--------|-----|
 | 2026-11-07 about 20:00 | Curve offset lowered from **0 to −1**, same slope | A test: is −1 enough to keep the rooms warm? Compare the room temperatures and the supply temperature in the heat pump pop-up over the next days. If a room gets too cold, go back to 0 (or raise that room's own target instead, see above). |
 
+The curve does not change the compressor's efficiency: the outdoor unit always heats the tank 45 → 50 °C, and the curve only sets how hot the water mixed out to the radiators is. Lowering it saves almost no energy (slightly lower pipe losses); the thermostats just open the valves wider, so the radiators deliver the same heat and the compressor refills the same amount in the tank. The cost is slower warm-ups after the plan switches. Reference from 2026-11-06 and 07, before the −1 test: rooms 0.1–0.4 °C below target on average in the daytime and more than 0.5 °C below for 2.5–4.6 of 15 hours; compressor 11–12 h a day at 1–3 °C outdoors; supply (calibrated) 44–46 °C against a tank limit of 50 °C.
+
 ## Supply and return probes (ESP32 `varmepumpe-temp`)
 
 Two probes on the heat pump's pipes: a DS18B20 (AliExpress, so possibly a clone) on the supply pipe, and a 10 kΩ NTC on the return pipe, read by an ESP32-C3 (`config/esphome/varmepumpe-temp.yaml`). The NTC has 16 samples per reading and a median over 7 values in the firmware to remove ADC spikes.
