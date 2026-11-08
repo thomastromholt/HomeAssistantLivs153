@@ -9,7 +9,7 @@ Managed with Claude Code over SSH.
 |------|---------|
 | Host | Intel NUC (16 GB) running Home Assistant OS, `192.168.1.77` |
 | Thread / Matter | Sonoff ZBDongle-E V2 flashed as a Thread radio (OpenThread Border Router add-on) plus the Matter server, see [docs/thread.md](docs/thread.md). IKEA TIMMERFLOTTE sensor and LILJEBAGGE radiator thermostat in Stue, two KAJPLATS bulbs as Thread routers |
-| Air quality | Airthings Wave Plus (Bluetooth): radon, CO₂, VOC, temperature, humidity, pressure |
+| Air quality | Airthings Wave Plus (Bluetooth): radon, CO₂, VOC, temperature, humidity, pressure. In the workshop (værkstedet) since 2026-11-07, before that in Astrid's room |
 | EV | Kia Ceed PHEV (Kia Uvo integration), Zaptec Go2 and Stugan chargers |
 | Prices | Nord Pool SE3 (15-minute), see [docs/elpriskalkulator.md](docs/elpriskalkulator.md) |
 | Heating | NIBE EVP 270 heating a 45–50 °C water tank, radiators in parallel with one LILJEBAGGE thermostat per room, see [docs/heating-system.md](docs/heating-system.md). No open interface to the heat pump (its card shows dummy values for now) |

@@ -16,6 +16,8 @@ The **heating curve is on the water tank inside the house** (the indoor unit), n
 
 ### Astrid's room, night of 2026-10-30 to 31
 
+_Note: the Airthings moved from Astrid's room to the workshop on 2026-11-07, so Astrid's room now shows the thermostat's own reading like the other rooms (it runs about 1.3 °C low there, see below)._
+
 Astrid said the room was very hot. The Airthings in her room read 22.8 °C at 01:00 and 22.2 °C at 04:00 against a thermostat target of 21 °C all night (her weekday plan is `0:warm,7:low,15:warm`, so warm covers 15:00 to 07:00, and warm was 21). The thermostat itself read about 1.3 °C lower than the Airthings, so a target of 21 gives about 22.3 °C in the room. `input_number.warm_astrid` was set to 19.5 °C (room about 20.8 °C); `room_plans` re-sends it to the thermostat within 5 minutes. If it is too cold in the evening, split the plan into an evening and a night level instead of raising warm again.
 
 ## What this means for the controls
@@ -122,12 +124,12 @@ All four LILJEBAGGE thermostats are on firmware 1.1.6 (2026-10-21). `config/auto
 | Slow to warm up | below target more than half of the first 2 h of a warm period (but fine later) | start the weekday warm period 1 hour earlier |
 | Above target | 1 °C or more over target in more than 25 % of the warm time (rooms with a thermometer) | lower warm by 0.5 °C |
 | Humidity | above 60 % for more than 20 % of the time | text only |
-| CO2 at night | above 1000 ppm for more than 20 % of 23:00–07:00 (Astrid, Airthings) | text only |
+| CO2 at night | above 1000 ppm for more than 20 % of 23:00–07:00 (needs a CO₂ meter in the room; none since 2026-11-07) | text only |
 | Radon | week average of 200 Bq/m³ or more | text only (get it measured) |
 | Heat pump cycling | more than 24 compressor starts a day on average | text only (check flow and valves) |
 | Thermostat | battery under 25 %, offline, new firmware | firmware: update now (asks first) |
 
-The room reading is the room thermometer where there is one (Astrid: Airthings); Køkken, Soveværelse and, since 2026-10-25, Stue use the thermostat's own reading, which sits at the valve and runs high when the radiator is warm.
+The room reading is the room thermometer where there is one (none now); Astrid (since 2026-11-07, when the Airthings moved to the workshop), Køkken, Soveværelse and, since 2026-10-25, Stue use the thermostat's own reading, which sits at the valve and runs high when the radiator is warm.
 
 **Timmerflotte moved to the basement (Gildestuen) on 2026-10-25 at about 21:38 CET (20:38 UTC).** Its entities keep their IDs (`sensor.timmerflotte_temp_hmd_sensor_temperatur` and `_luftfugtighed`) so the history is not lost, but the display name is now "Gildestuen". Everything before 21:38 CET on 2026-10-25 is Stue, everything after is Gildestuen. It went offline at 22:06 CET the same evening (weak Thread signal in the basement, to be checked). The break is in the data, not in the file. Stue needs its own meter again if it should have a room thermometer. The thresholds are my first guesses and are easy to change in the file. It needs a few days of data before the heat pump and comfort checks mean much (data starts 2026-10-20).
 

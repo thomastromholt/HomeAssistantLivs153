@@ -1,7 +1,7 @@
 # Ladeplan, part 1: the charging hours. Every hour it fetches the Nord Pool SE3 prices for today and tomorrow
 # (tomorrow from about 13:00) and picks the cheapest hours from now until 07:00. They need not be in a row. The number
 # of hours is what the car needs to be full at 07:00 (at about 2.3 kW), at least 3. If the cheapest hours soon (next 6 h)
-# cost at most 5 kr more than the cheapest until 07:00, those are used instead (only before 21:00; from 21:00 the
+# cost at most 5 kr more than the cheapest until 07:00, those are used instead (only before 21:00, and only if they are also at most 30 öre/kWh dearer on average; from 21:00 the
 # cheapest hours until 07:00 are always used). The hours go to input_text.ladeplan
 # (hour numbers since 1970, comma separated) and input_boolean.ladevindue is on during them. The plan is always made,
 # also when the car is unplugged; the price card draws input_text.ladeplan (docs/ladeplan.md).
@@ -41,6 +41,9 @@
         # charge is not pushed into the night for a few kroner.
         early_window_h: 6
         max_extra_kr: 5
+        # ...and the early hours may also cost at most this many öre/kWh more on average (prices are SEK/MWh, so /10). A small
+        # charge makes a big price gap look small in kroner.
+        max_extra_ore: 30
         # From 21:00 (evening) the early plan is not used: the cheapest hours until 07:00 are always taken, since there
         # is no "soon" left to save for, and the night is when it is cheapest.
         early_until_h: 21
@@ -50,8 +53,8 @@
             {% set ns.sum = dict(ns.sum, **{(h): ns.sum.get(h, 0) + p.price}) %}
             {% set ns.cnt = dict(ns.cnt, **{(h): ns.cnt.get(h, 0) + 1}) %}
           {% endfor %} {% set avg = namespace(d={}) %} {% for h in ns.sum %}{% if ns.cnt[h] == 4 %}{% set avg.d = dict(avg.d, **{(h): ns.sum[h] / 4}) %}{% endif %}{% endfor %} {% set dl = (as_timestamp(now().replace(hour=7, minute=0, second=0, microsecond=0)) // 3600) | int %} {% if dl * 3600 <= as_timestamp(now()) %}{% set dl = dl + 24 %}{% endif %} {% set nowh = (as_timestamp(now()) // 3600) | int %} {% set c = namespace(l=[]) %} {% for h in range(nowh, dl) %}{% if (h|string) in avg.d %}{% set c.l = c.l + [{'h': h, 'p': avg.d[h|string]}] %}{% endif %}{% endfor %}
-          {% set n = hours_needed | int %} {% set full = (c.l | sort(attribute='p'))[:n] %} {% set early = (c.l | selectattr('h', 'lt', nowh + [early_window_h | int, n + 2] | max) | sort(attribute='p'))[:n] %} {% set extra_kr = ((early | sum(attribute='p')) - (full | sum(attribute='p'))) * 2.3 / 1000 %}
-          {{ (early if now().hour < early_until_h | int and (early | length) == (full | length) and extra_kr < max_extra_kr | float else full) | map(attribute='h') | sort | join(',') }}
+          {% set n = hours_needed | int %} {% set full = (c.l | sort(attribute='p'))[:n] %} {% set early = (c.l | selectattr('h', 'lt', nowh + [early_window_h | int, n + 2] | max) | sort(attribute='p'))[:n] %} {% set extra_kr = ((early | sum(attribute='p')) - (full | sum(attribute='p'))) * 2.3 / 1000 %} {% set extra_ore = (((early | sum(attribute='p')) - (full | sum(attribute='p'))) / ([n, 1] | max)) / 10 %}
+          {{ (early if now().hour < early_until_h | int and (early | length) == (full | length) and extra_kr < max_extra_kr | float and extra_ore < max_extra_ore | float else full) | map(attribute='h') | sort | join(',') }}
     - variables:
         nowh: "{{ (as_timestamp(now()) // 3600) | int }}"
         in_window: "{{ (nowh | string) in (plan | string | trim).split(',') }}"

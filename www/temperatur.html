@@ -49,7 +49,21 @@
                 <button class="cell" id="basementTemp">
                     <div class="tile-label">Thermometer</div>
                     <div class="cell-value temp" id="basementValue"></div>
-                    <div class="cell-sub humidity" id="basementHumidity"></div>
+                </button>
+                <button class="cell" id="basementHumCell">
+                    <div class="tile-label">Humidity</div>
+                    <div class="cell-value humidity" id="basementHumidity"></div>
+                </button>
+            </div>
+            <div class="zone">
+                <div class="zone-name">Værksted</div>
+                <button class="cell" id="workshopTemp">
+                    <div class="tile-label">Thermometer</div>
+                    <div class="cell-value temp" id="workshopValue"></div>
+                </button>
+                <button class="cell" id="workshopHumCell">
+                    <div class="tile-label">Humidity</div>
+                    <div class="cell-value humidity" id="workshopHumidity"></div>
                 </button>
             </div>
             <div class="outside">
@@ -72,10 +86,7 @@
             { key: 'stue', name: 'Stue', suffix: '', deviceId: '88a5efd90680fa98c6117641c9084aec', night: false },
             { key: 'kokken', name: 'Køkken', suffix: '_2', deviceId: '693637959f507ce567f16408ba4b712d', night: false },
             { key: 'sovevaerelse', name: 'Soveværelse', suffix: '_3', deviceId: '6cc6d13bf6e043fa587d7ca0f61089d0', night: false },
-            { key: 'astrid', name: 'Astrid', suffix: '_4', deviceId: 'd5c9bb2a681637513a7bde75b298a786', night: false,
-              // The Airthings stands in this room for now and works as its thermometer.
-              thermometer: { label: 'Thermometer', name: 'Airthings', temperature: 'sensor.airthings_wave_270668_temperatur',
-                             humidity: 'sensor.airthings_wave_270668_luftfugtighed' } },
+            { key: 'astrid', name: 'Astrid', suffix: '_4', deviceId: 'd5c9bb2a681637513a7bde75b298a786', night: false },
         ];
 
         // Airthings' own guide values for humidity.
@@ -87,6 +98,11 @@
         const percent = value => {
             const text = formatNumber(value, 0);
             return text === null ? '–' : `💧 ${text} %`;
+        };
+
+        const humValue = value => {
+            const text = formatNumber(value, 0);
+            return text === null ? '–' : `${text}<small> %</small>`;
         };
 
         for (const z of ZONES) {
@@ -119,6 +135,11 @@
         // The basement meter (Timmerflotte, moved from Stue on 2026-10-25). Its history is one entity: before and after the move.
         const BASEMENT = { temperature: 'sensor.timmerflotte_temp_hmd_sensor_temperatur', humidity: 'sensor.timmerflotte_temp_hmd_sensor_luftfugtighed' };
         document.getElementById('basementTemp').addEventListener('click', () => openHistory(BASEMENT.temperature));
+        document.getElementById('basementHumCell').addEventListener('click', () => openHistory(BASEMENT.humidity));
+        // The workshop meter: the Airthings Wave Plus (moved here from Astrid's room on 2026-11-07).
+        const WORKSHOP = { temperature: 'sensor.airthings_wave_270668_temperatur', humidity: 'sensor.airthings_wave_270668_luftfugtighed' };
+        document.getElementById('workshopTemp').addEventListener('click', () => openHistory(WORKSHOP.temperature));
+        document.getElementById('workshopHumCell').addEventListener('click', () => openHistory(WORKSHOP.humidity));
         document.getElementById('outTemp').addEventListener('click', () => openHistory(OUTDOOR));
         document.getElementById('outHumidity').addEventListener('click', () => openHistory(OUTDOOR));
 
@@ -177,10 +198,20 @@
                 const basementHum = await stateOf(BASEMENT.humidity).catch(() => null);
                 document.getElementById('basementValue').innerHTML = degrees(basementTemp);
                 const basementHumEl = document.getElementById('basementHumidity');
-                basementHumEl.textContent = percent(basementHum);
+                basementHumEl.innerHTML = humValue(basementHum);
                 basementHumEl.classList.remove('good', 'fair', 'poor');
                 if (!isMissing(basementHum)) basementHumEl.classList.add(humidityLevel(parseFloat(basementHum)));
                 if (isMissing(basementTemp)) problems.push('Gildestuen: Timmerflotte is offline');
+
+                // Værksted: the Airthings (its own room, no thermostat).
+                const workshopTemp = await stateOf(WORKSHOP.temperature).catch(() => null);
+                const workshopHum = await stateOf(WORKSHOP.humidity).catch(() => null);
+                document.getElementById('workshopValue').innerHTML = degrees(workshopTemp);
+                const workshopHumEl = document.getElementById('workshopHumidity');
+                workshopHumEl.innerHTML = humValue(workshopHum);
+                workshopHumEl.classList.remove('good', 'fair', 'poor');
+                if (!isMissing(workshopHum)) workshopHumEl.classList.add(humidityLevel(parseFloat(workshopHum)));
+                if (isMissing(workshopTemp)) problems.push('Værksted: Airthings is offline');
 
                 const weather = await callApi('GET', `states/${OUTDOOR}`).catch(() => null);
                 const out = weather && weather.attributes;
@@ -195,7 +226,7 @@
             }
         }
 
-        watchEntities([...ZONES.flatMap(z => [z.climate, z.update, z.nightActive, z.thermometer && z.thermometer.temperature].filter(Boolean)), BASEMENT.temperature], () => render());
+        watchEntities([...ZONES.flatMap(z => [z.climate, z.update, z.nightActive, z.thermometer && z.thermometer.temperature].filter(Boolean)), BASEMENT.temperature, WORKSHOP.temperature], () => render());
         render();
         setInterval(render, 30e3);
     </script>
