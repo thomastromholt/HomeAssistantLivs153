@@ -157,8 +157,8 @@ Every room has a plan for **weekdays** and one for **weekends**, stored in Home 
 |------|------|-----|--------------|--------------|
 | Stue | 20.5 | 19 | low until 15:00, warm 15:00–23:00, low from 23:00 | low until 07:00, warm 07:00–23:00, low from 23:00 (changed 2026-11-07, was low all day) |
 | Køkken | 20.5 | 19 | same as Stue (the thermostat reads about 2 °C high) | low until 07:00, warm 07:00–23:00, low from 23:00 (changed 2026-11-07, was low all day) |
-| Soveværelse | 21 | 18 | warm until 07:00, low 07:00–15:00, warm from 15:00 (told an hour before 16:00) | warm all day |
-| Astrid | 21 | 18 | same as Soveværelse | warm all day |
+| Soveværelse | 21 | 18 | warm until 07:15, low 07:15–15:00, warm from 15:00 (told an hour before 16:00) | warm all day |
+| Astrid | 21 | 18 | warm until 07:00, low 07:00–15:00, warm from 15:00 (Soveværelse since 2026-11-12: low from 07:15) | warm all day |
 
 To change a plan, edit the text of the helper (Settings → Devices & services → Helpers), or change the temperatures there. The 5 minute check picks it up. The old night mode (a separate automation with its own helpers) is gone.
 
