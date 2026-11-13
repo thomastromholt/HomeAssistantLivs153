@@ -164,6 +164,20 @@ To change a plan, edit the text of the helper (Settings → Devices & services �
 
 Regulation on the room thermometer is **not** used: the thermostat's temperature offset does not change what it reports, see [liljebagge.md](liljebagge.md). The two rooms are left to run on their own readings first, so the difference can be compared.
 
+## Where the loose meters stand
+
+The Timmerflotte and the Airthings have no thermostat, so the temperature card shows them as their own rows (Gildestuen, Værksted) and opens `www/temperatur-detail.html` on a click: temperature and humidity over 1 h to 30 d, shaded by where the meter stood, plus a log of every move. **When a meter is moved, add a line to its `moves` list at the top of the script in that file** (`from` is the time it got there; `temp: true` for a short visit). Known moves:
+
+| Meter | Place | Period |
+|-------|-------|--------|
+| Timmerflotte | Stue | until 2026-10-25 |
+| Timmerflotte | Gildestuen (basement) | from 2026-10-25 |
+| Timmerflotte | Next to the heat pump (reference for the supply/return calibration) | 2026-11-07 about 10:20–13:30 |
+| Airthings | Astrid's room | until 2026-11-07 about 22:15 (CO₂ fell from 1076 to 489 ppm in half an hour) |
+| Airthings | Værksted | from 2026-11-07 about 22:15 |
+
+The recorder keeps about 10 days of detail, so older periods come from the long-term statistics (hourly), and only inside the dashboard.
+
 ## Heating curve changes (log)
 
 The curve is set on the indoor unit (see "Where the heating curve lives"). Log every change here with the date, so supply temperature, room temperatures and energy can be compared before and after.
