@@ -15,13 +15,13 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
 cp www/* "$STAGE"/
-sed -i '' -E "s/(card-dark\.css|card-common\.js)\?v=[0-9a-z]+/\1?v=$STAMP/g" "$STAGE"/*.html
+sed -i '' -E "s/(card-dark\.css|card-common\.js|card-summer\.css)\?v=[0-9a-z]+/\1?v=$STAMP/g" "$STAGE"/*.html
 scp -q "$STAGE"/* "$HOST":/config/www/
 
 ssh "$HOST" "STAMP=$STAMP sh -s" <<'REMOTE'
 set -e
 cd /config/.storage
-for f in lovelace.livlandsgatan-153 lovelace.el-priser; do
+for f in lovelace.livlandsgatan-153 lovelace.el-priser lovelace.stugan; do
   cp "$f" "$f.bak"
   sed -i -E 's/(\.html\?[^"]*v=)[0-9a-z]+/\1'"$STAMP"'/g' "$f"
   jq empty "$f"
@@ -31,5 +31,6 @@ REMOTE
 
 scp -q "$HOST":/config/.storage/lovelace.livlandsgatan-153 config/dashboards/livlandsgatan-153.json
 scp -q "$HOST":/config/.storage/lovelace.el-priser config/dashboards/el-priser.json
+scp -q "$HOST":/config/.storage/lovelace.stugan config/dashboards/stugan.json
 scp -q "$HOST":/config/.storage/lovelace_dashboards config/dashboards/registry.json
 echo "Deployed ($STAMP). HA is restarting; give it ~25 s."

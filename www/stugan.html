@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stugan</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script>if (new URLSearchParams(location.search).get('theme') === 'summer') { document.documentElement.className = 'summer'; document.write('<link rel="stylesheet" href="/local/card-summer.css?v=1">'); }</script>
+    <style>
+        .container { overflow-y: auto; gap: 12px; padding: 16px 16px 14px; }
+        body.single .panel { background: none; padding: 0; }
+        body.single .panel-head { display: none; }
+        body.single .grid { grid-template-columns: 1fr; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+        .panel { border-radius: 16px; background: rgba(255,255,255,0.05); padding: 14px; }
+        .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+        .panel-title { font-size: 15px; font-weight: 600; }
+        .panel-sub { font-size: 11px; color: #6d808c; }
+        .missing { padding: 12px; border-radius: 12px; border: 1px dashed rgba(255,255,255,0.14); color: #8da0ad; font-size: 12px; line-height: 1.5; }
+        .missing b { color: #c5d1d9; }
+
+        .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+        .t { border: 0; border-radius: 12px; background: rgba(255,255,255,0.06); color: inherit; font: inherit; text-align: left; padding: 9px 10px; cursor: pointer; min-width: 0; }
+        .t:hover { background: rgba(255,255,255,0.11); }
+        .t .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #8da0ad; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .t .v { margin-top: 3px; font-size: 20px; font-weight: 300; white-space: nowrap; }
+        .t .v small { font-size: 11px; color: #8da0ad; margin-left: 2px; }
+        .t.off .v { color: #6d808c; }
+        .t.alert { background: rgba(255,69,58,0.18); }
+        .t.alert .v { color: #ff6b61; font-weight: 600; }
+        .t.ok .v { color: #5fe085; }
+        .t.hot .v { color: #ffb340; }
+        .t.big { grid-column: span 2; }
+        .t.big .v { font-size: 30px; color: #64d2ff; }
+
+        :root { --cols: minmax(62px, 1fr) 40px 40px 44px 34px 52px; }
+        .rooms { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+        .grp { margin: 4px 2px 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.7px; color: #8da0ad; }
+        .grp:first-child { margin-top: 0; }
+          .room { display: grid; grid-template-columns: var(--cols); gap: 6px; align-items: center; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,0.06); cursor: pointer; border: 0; color: inherit; font: inherit; text-align: left; width: 100%; }
+        .room:hover { background: rgba(255,255,255,0.11); }
+        .room .n { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .room .c { font-size: 18px; font-weight: 300; color: #64d2ff; }
+        .room .c small, .room .g small { font-size: 11px; color: #8da0ad; margin-left: 1px; }
+          .room-head { display: grid; grid-template-columns: var(--cols); gap: 6px; padding: 0 10px 4px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; color: #6d808c; }
+        .room-head span { text-align: right; }
+        .room-head span:first-child { text-align: left; }
+        .room .h { font-size: 12px; color: #8ab4ff; text-align: right; }
+        .room .h small { font-size: 9px; color: #8da0ad; margin-left: 1px; }
+        .room .c { text-align: right; } .room .g { text-align: right; }
+        .room.example { opacity: 0.8; }
+        .exp { padding: 3px 11px; border-radius: 999px; background: rgba(255,179,64,0.16); color: #ffb340; font-size: 11px; font-weight: 600; }
+        .room .p { font-size: 13px; color: #ffb340; text-align: right; }
+        .room .p small { font-size: 10px; color: #8da0ad; margin-left: 1px; }
+        .room .g { font-size: 14px; color: #c5d1d9; text-align: right; }
+        .chip { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.08); color: #8da0ad; white-space: nowrap; }
+        .chip.heat { background: rgba(255,159,10,0.2); color: #ffb340; }
+        .chip.cool { background: rgba(100,210,255,0.2); color: #64d2ff; }
+        .chip.on { background: rgba(95,224,133,0.18); color: #5fe085; }
+        .chip.bad { background: rgba(255,69,58,0.2); color: #ff6b61; }
+        .sep { height: 8px; }
+        .tiles.hp3 { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+        .hp3 .t { padding: 6px 9px; }
+        .hp3 .t .v { font-size: 17px; margin-top: 1px; }
+        .hp3 .t .l { font-size: 9px; }
+        /* a single block fills the card: the Grohe card's three numbers sit at the bottom and are a size larger */
+        body.single #grid { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+        body.single .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        body.single .panel > .gh { flex: 1; }
+        .gh-mins { margin-top: auto; }
+        .brand { width: 32px; height: 32px; border-radius: 9px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+        .sens-curve { margin-top: 8px; padding: 10px 10px 6px; border-radius: 14px; background: rgba(255,255,255,0.04); cursor: pointer; }
+        .sens-curve:hover { background: rgba(255,255,255,0.07); }
+        .sc-cap { display: flex; justify-content: space-between; margin: 0 2px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8da0ad; }
+        .sc-cap span { color: #ffb340; text-transform: none; letter-spacing: 0; }
+        .sc-cv { position: relative; height: 140px; }
+        .zone { display: flex; align-items: center; gap: 6px; height: 42px; padding: 3px 8px; border-radius: 14px; border: 1px solid rgba(100,210,255,0.28); background: rgba(100,210,255,0.05); cursor: pointer; }
+        .zone:hover { background: rgba(100,210,255,0.1); }
+        .zone.example { opacity: 0.85; }
+        .zone-name { flex: none; width: 84px; display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; min-width: 0; }
+        .zone-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .zone-name i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #6d808c; }
+        .zone-heat .zone-name i { background: #ffb340; box-shadow: 0 0 8px #ffb340; animation: pulse 1.6s infinite; }
+        .zone-cool .zone-name i { background: #64d2ff; box-shadow: 0 0 8px #64d2ff; }
+        .zone-on .zone-name i, .zone-idle .zone-name i { visibility: hidden; } /* only a heating (or offline) heater gets a marker */
+        .zone-bad .zone-name i { background: #ff6b61; }
+        .zone-bad { border-color: rgba(255,107,97,0.3); }
+        @keyframes pulse { 50% { opacity: 0.35; } }
+        .zone .cell { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding: 1px 3px; border-radius: 9px; background: rgba(255,255,255,0.06); text-align: center; }
+        .zone .tile-label { font-size: 8px; letter-spacing: 0.5px; }
+        .zone .cell-value { font-size: 17px; font-weight: 300; line-height: 1.15; white-space: nowrap; }
+        .zone .cell-value small { font-size: 9px; color: #8da0ad; margin-left: 1px; }
+        .zone .cell-value.temp { color: #64d2ff; }
+        .zone .cell-value.pow { color: #ffb340; }
+        .zone .cell-value.hum { color: #8ab4ff; }
+        .zone .cell-value.warn { color: #ffb340; }
+        .zone .cell-value.bad { color: #ff6b61; }
+        .zone.lvl-warn { border-color: rgba(255,179,64,0.55); background: rgba(255,179,64,0.07); }
+        .zone.lvl-bad { border-color: rgba(255,107,97,0.6); background: rgba(255,107,97,0.09); }
+        .gh { display: flex; flex-direction: column; gap: 10px; }
+        @keyframes ghflow { to { stroke-dashoffset: -12; } }
+        .gh-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .gh-pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .gh-pill i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+        .gh-pill.ok { background: rgba(52,199,89,0.16); color: #5fe085; }
+        .gh-pill.bad { background: rgba(255,69,58,0.2); color: #ff6b61; }
+        .gh-temp { border: 0; background: none; color: #c5d1d9; font: inherit; font-size: 18px; font-weight: 300; cursor: pointer; display: flex; align-items: baseline; gap: 3px; }
+        .gh-temp small { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6d808c; margin-right: 4px; }
+        .gh-temp em { font-style: normal; font-size: 11px; color: #8da0ad; }
+        .gh-hero { cursor: pointer; }
+        .gh-big { font-size: 46px; font-weight: 200; line-height: 1; letter-spacing: -1.5px; color: #64d2ff; display: flex; align-items: baseline; gap: 8px; }
+        .gh-big small { font-size: 13px; letter-spacing: 0; font-weight: 400; color: #8da0ad; }
+        .gh-bar { height: 6px; margin-top: 10px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
+        .gh-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #2a8fd6, #64d2ff); }
+        .gh-sub { margin-top: 5px; font-size: 11px; color: #8da0ad; }
+        .gh-wk { position: relative; display: flex; align-items: flex-end; gap: 7px; height: 76px; padding-top: 14px; }
+        .gh-d { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; min-width: 0; }
+        .gh-d b { font-size: 9px; font-weight: 500; color: #8da0ad; height: 11px; }
+        .gh-d i { display: block; width: 100%; border-radius: 5px 5px 2px 2px; background: linear-gradient(180deg, rgba(100,210,255,0.55), rgba(100,210,255,0.16)); }
+        .gh-d.last i { background: linear-gradient(180deg, #7fdcff, rgba(100,210,255,0.4)); box-shadow: 0 0 14px rgba(100,210,255,0.35); }
+        .gh-d.last b { color: #64d2ff; }
+        .gh-d span { font-size: 9px; color: #6d808c; text-transform: uppercase; }
+        .gh-avg { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255,179,64,0.55); pointer-events: none; margin-bottom: 20px; }
+        .gh-avg span { position: absolute; right: 0; top: -13px; font-size: 9px; color: #ffb340; }
+        .gh-mins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .gh-mini { border: 0; border-radius: 14px; background: rgba(255,255,255,0.06); color: inherit; font: inherit; text-align: left; padding: 11px 12px 13px; cursor: pointer; min-width: 0; }
+        .gh-mini:hover { background: rgba(255,255,255,0.11); }
+        .gh-mini .l { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #8da0ad; white-space: nowrap; }
+        .gh-mini .v { margin-top: 5px; font-size: 23px; font-weight: 300; white-space: nowrap; }
+        .gh-mini .v small { font-size: 10px; color: #8da0ad; margin-left: 2px; }
+        .gh-mini.off .v { color: #6d808c; }
+        .gh-note { padding: 8px 12px; border-radius: 10px; background: rgba(255,179,64,0.12); color: #ffb340; font-size: 12px; }
+        .product { display: flex; justify-content: center; margin: 0 0 8px; }
+        .product img { height: 82px; filter: drop-shadow(0 10px 16px rgba(0,0,0,0.5)); opacity: 0.92; }
+        .product.on img { opacity: 1; filter: drop-shadow(0 0 16px rgba(100,210,255,0.28)) drop-shadow(0 10px 16px rgba(0,0,0,0.5)); }
+        .wk { display: flex; align-items: flex-end; gap: 6px; height: 64px; margin-top: 12px; }
+        .wk-d { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; }
+        .wk-d i { display: block; width: 100%; border-radius: 4px 4px 2px 2px; background: linear-gradient(180deg, rgba(100,210,255,0.85), rgba(100,210,255,0.3)); }
+        .wk-d span { font-size: 9px; color: #6d808c; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head"><span class="name">Stugan <span class="muted">sommerhuset</span></span></div>
+        <div id="error" class="error" hidden></div>
+        <div id="problems" class="problems" hidden></div>
+        <div class="grid" id="grid"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        const DEMO = new URLSearchParams(location.search).has('demo');
+        const THEME = new URLSearchParams(location.search).get('theme') || '';
+        if (new URLSearchParams(location.search).get('block')) document.body.classList.add('single');
+
+        /* The cottage's devices. The cards find each integration's entities themselves (through the entity registry), so nothing
+           here names an entity: add the integration in Settings -> Devices & services and it shows up. */
+        const BLOCKS = [
+            { key: 'mill', title: 'Varme', sub: 'Mill', platforms: ['mill', 'mill_local'],
+              how: 'Tilføj <b>Mill</b> under Indstillinger → Enheder & tjenester (log ind med din Mill-konto).' },
+            { key: 'sensibo', title: 'Klima', sub: 'Sensibo', platforms: ['sensibo'],
+              how: 'Tilføj <b>Sensibo</b> under Indstillinger → Enheder & tjenester (kræver en API-nøgle fra home.sensibo.com/me/api).' },
+            { key: 'grohe', title: 'Vand', sub: 'Grohe Sense', platforms: ['grohe_smarthome', 'grohe_sense', 'grohe'],
+              how: 'Grohe Sense er ikke en indbygget integration. Installér <b>Grohe Smarthome</b> (Flo-Schilli/ha-grohe_smarthome) via HACS, og log ind med din Grohe-konto.' },
+        ];
+        const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const isOk = s => s && !['unavailable', 'unknown', 'None'].includes(s.state);
+        const num = s => isOk(s) ? parseFloat(s.state) : NaN;
+        const fmt = (v, d = 1) => Number.isNaN(v) ? '–' : v.toLocaleString('da-DK', { minimumFractionDigits: d, maximumFractionDigits: d });
+        const unitOf = s => s.attributes.unit_of_measurement || '';
+
+        // What to show as a tile, by device class, in this order.
+        const TILE_ORDER = ['power', 'energy', 'monetary', 'temperature', 'humidity', 'volume_flow_rate', 'water', 'volume', 'pressure', 'battery', 'signal_strength'];
+        const TILE_LABEL = { power: 'Effekt', energy: 'Energi', monetary: 'Pris', temperature: 'Temperatur', humidity: 'Fugt', volume_flow_rate: 'Flow', water: 'Vand', volume: 'Volumen', pressure: 'Tryk', battery: 'Batteri', signal_strength: 'Signal' };
+
+        function tileFor(s, big, dup) {
+            const dc = s.attributes.device_class, u = unitOf(s), v = num(s);
+            let value = fmt(v, u === 'W' || u === '%' ? 0 : 1), unit = u;
+            if (u === 'W' && v >= 1000) { value = fmt(v / 1000, 2); unit = 'kW'; }
+            if (!isOk(s)) value = '–';
+            const name = (s.attributes.friendly_name || s.entity_id).replace(/^.*? (power|energy|price|temperature|humidity)$/i, '$&');
+            const cls = ['t', big ? 'big' : '', isOk(s) ? '' : 'off'].filter(Boolean).join(' ');
+            return `<button class="${cls}" data-e="${esc(s.entity_id)}"><div class="l" title="${esc(name)}">${esc(TILE_LABEL[dc] ? (dup ? `${TILE_LABEL[dc]} · ${name}` : TILE_LABEL[dc]) : name)}</div><div class="v">${value}<small>${esc(unit)}</small></div></button>`;
+        }
+
+        function alertTile(s) {
+            const on = s.state === 'on', name = s.attributes.friendly_name || s.entity_id;
+            return `<button class="t ${on ? 'alert' : 'ok'}" data-e="${esc(s.entity_id)}"><div class="l" title="${esc(name)}">${esc(name)}</div><div class="v">${on ? 'ALARM' : 'OK'}</div></button>`;
+        }
+
+        // Colours: a room under MIN_TEMP is yellow, under ALERT_TEMP red; a frost-protection room (set temperature 6 or lower)
+        // is judged against FROST_* instead. Humidity above HUM_WARN is yellow, above HUM_ALERT red.
+        const MIN_TEMP = 11, ALERT_TEMP = 9, FROST_WARN = 4, FROST_ALERT = 3, HUM_WARN = 65, HUM_ALERT = 70;
+        function tempLevel(cur, tgt) {
+            if (Number.isNaN(cur)) return '';
+            const frost = !Number.isNaN(tgt) && tgt <= 6;
+            return cur < (frost ? FROST_ALERT : ALERT_TEMP) ? 'bad' : cur < (frost ? FROST_WARN : MIN_TEMP) ? 'warn' : '';
+        }
+        const humLevel = h => Number.isNaN(h) ? '' : h > HUM_ALERT ? 'bad' : h > HUM_WARN ? 'warn' : '';
+
+        // Example numbers shown for the Mill heaters until they are online (and the dialog draws an example curve for them).
+        const EXAMPLE = [[12.4, 11, 0, 52, 'idle'], [11.8, 11, 0, 55, 'idle'], [8.2, 5, 0, 61, 'idle'], [7.5, 5, 0, 58, 'idle'], [10.6, 11, 410, 67, 'heating'], [13.1, 11, 0, 53, 'idle']];
+        function roomRow(s, hum, sub, pow, ex, hidName) {
+            const a = s.attributes, ec = ex || null;
+            const cur = ec ? ec[0] : parseFloat(a.current_temperature), tgt = ec ? ec[1] : parseFloat(a.temperature);
+            const action = ec ? ec[4] : a.hvac_action, mode = ec ? 'heat' : s.state;
+            const off = !ec && !isOk(s);
+            const w = ec ? ec[2] : (pow && isOk(pow) ? num(pow) : NaN), h = ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
+            const state = off ? 'bad' : action === 'heating' ? 'heat' : action === 'cooling' ? 'cool' : mode === 'off' ? 'idle' : 'on';
+            const stateText = off ? 'Offline' : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Fra', auto: 'Auto', dry: 'Affugt', fan_only: 'Blæser' }[mode] || 'Hviler');
+            const tl = tempLevel(cur, tgt), hl = humLevel(h), worst = [tl, hl].includes('bad') ? 'bad' : [tl, hl].includes('warn') ? 'warn' : '';
+            const cell = (label, value, cls) => `<div class="cell"><div class="tile-label">${label}</div><div class="cell-value ${cls || ''}">${value}</div></div>`;
+            const nice = n => String(n).trim().replace(/^./, c => c.toLocaleUpperCase('da-DK'));   // Mill's room names come lower case, some with a trailing space
+            const name = hidName ? '' : esc(nice(a.friendly_name || s.entity_id));
+            return `<div class="zone zone-${state}${worst ? ' lvl-' + worst : ''}${ec ? ' example' : ''}" data-e="${esc(s.entity_id)}" data-dialog="1" data-name="${esc(nice(a.friendly_name || s.entity_id))}" data-sub="${esc(sub)}" data-hum="${esc(hum || '')}" ${ec ? 'data-example="1"' : ''} title="${stateText}">
+                ${hidName ? '' : `<div class="zone-name"><i></i><span>${name}</span></div>`}
+                ${cell('Read', `${fmt(cur)}<small>°</small>`, 'temp' + (tl ? ' ' + tl : ''))}
+                ${cell('Set', Number.isNaN(tgt) ? '–' : `${fmt(tgt)}<small>°</small>`)}
+                ${hidName ? cell('Status', stateText) : ''}
+                ${Number.isNaN(w) && !pow && !ec ? '' : cell('Effekt', Number.isNaN(w) ? '–' : `${fmt(w, 0)}<small>W</small>`, 'pow')}
+                ${hidName && Number.isNaN(h) ? '' : cell('Fugt', Number.isNaN(h) ? '–' : `${fmt(h, 0)}<small>%</small>`, 'hum' + (hl ? ' ' + hl : ''))}
+            </div>`;
+        }
+
+        // Water at the cottage (Grohe Sense Guard): the valve, today's use, the last 7 days (from the daily statistics of the
+        // total counter) and the temperature in the unit, then pressure and flow. The latest notification as a note.
+        let groheWeek = null, groheWeekAt = 0;
+        async function loadGroheWeek(entityId) {
+            if (DEMO) { groheWeek = [112, 240, 95, 410, 180, 150, 205].map((v, i) => ({ t: Date.now() - (7 - i) * 864e5, v })); return; }
+            if (Date.now() - groheWeekAt < 10 * 60e3) return;
+            const res = await callWS({ type: 'recorder/statistics_during_period', start_time: new Date(Date.now() - 8 * 864e5).toISOString(), end_time: new Date().toISOString(), statistic_ids: [entityId], period: 'day', types: ['change'] });
+            const rows = ((res && res[entityId]) || []).filter(r => r.change != null).map(r => ({ t: new Date(r.start).getTime(), v: r.change }));
+            groheWeek = rows.slice(-7); groheWeekAt = Date.now();
+        }
+        function renderGrohe(ents) {
+            const by = suffix => ents.find(s => s.entity_id.endsWith('_' + suffix));
+            const temp = by('temperature'), today = by('water_consumption'), press = by('actual_pressure'), flow = by('actual_flow_rate'), avg = by('average_daily_consumption');
+            const valve = ents.find(s => s.entity_id.startsWith('valve.')), online = ents.find(s => s.entity_id.endsWith('_online')), note = by('latest_notification');
+            const week = groheWeek ? groheWeek.reduce((a, r) => a + r.v, 0) : NaN;
+            const L = today ? num(today) : NaN, A = avg ? num(avg) : NaN;
+            const open = valve && valve.state === 'open', offline = online && online.state === 'off';
+            const pill = valve ? `<span class="gh-pill ${open ? 'ok' : 'bad'}" data-e="${esc(valve.entity_id)}"><i></i>${open ? 'Hovedventil åben' : valve.state === 'closed' ? 'Hovedventil LUKKET' : esc(valve.state)}</span>` : '';
+            const used = !Number.isNaN(L) && !Number.isNaN(A) && A > 0 ? Math.min(100, L / A * 100) : 0;
+            // the 7 days: the average as a dashed line, the newest bar brighter
+            const max = groheWeek && groheWeek.length ? Math.max(...groheWeek.map(r => r.v), A || 0, 1) : 1;
+            const bars = groheWeek && groheWeek.length ? `<div class="gh-wk">${Number.isNaN(A) ? '' : `<div class="gh-avg" style="bottom:${A / max * 100}%"><span>gns. ${fmt(A, 0)}</span></div>`}${groheWeek.map((r, i) => `<div class="gh-d${i === groheWeek.length - 1 ? ' last' : ''}" title="${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' })}: ${fmt(r.v, 0)} L"><b>${r.v >= 1 ? fmt(r.v, 0) : ''}</b><i style="height:${Math.max(3, r.v / max * 100)}%"></i><span>${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'short' }).replace('.', '').slice(0, 2)}</span></div>`).join('')}</div>` : '';
+            const mini = (label, s, v, unit, d) => s ? `<button class="gh-mini ${isOk(s) ? '' : 'off'}" data-e="${esc(s.entity_id)}"><div class="l">${label}</div><div class="v">${fmt(v, d)}<small>${unit}</small></div></button>` : '';
+            return `<div class="gh">
+                <div class="gh-top">${pill}${offline ? '<span class="gh-pill bad"><i></i>Offline</span>' : ''}${temp ? `<button class="gh-temp" data-e="${esc(temp.entity_id)}" title="Temperatur i enheden"><small>enheden</small>${fmt(num(temp), 1)}<em>°C</em></button>` : ''}</div>
+                <div class="gh-hero" ${today ? `data-e="${esc(today.entity_id)}"` : ''}>
+                    <div class="gh-big">${Number.isNaN(L) ? '–' : fmt(L, 0)}<small>liter i dag</small></div>
+                    ${Number.isNaN(A) ? '' : `<div class="gh-bar" title="I dag mod et gennemsnit på ${fmt(A, 0)} L"><i style="width:${used}%"></i></div><div class="gh-sub">${fmt(used, 0)} % af et gennemsnitligt døgn</div>`}
+                </div>
+                ${bars}
+                <div class="gh-mins">${mini('Sidste 7 dage', by('total_water_consumption'), week, 'L', 0)}${mini('Vandtryk', press, press ? num(press) : NaN, 'bar', 1)}${mini('Flow nu', flow, flow ? num(flow) : NaN, 'm³/h', 1)}</div>
+                ${note && isOk(note) && !/ingen|no actual/i.test(note.state) ? `<div class="gh-note">${esc(note.state)}</div>` : ''}
+            </div>`;
+        }
+
+        // The Mill socket on the heat pump's plug is not a room: it only measures the heat pump (power, energy) and its thermometer
+        // stands outdoors. Found by its name; its sensors are those of the same device.
+        function hpSocket() {
+            const reg = registry.find(r => r.platform === 'mill' && r.entity_id.startsWith('climate.') && /varmep/i.test(states0.get(r.entity_id)?.attributes.friendly_name || r.entity_id));
+            if (!reg) return null;
+            const sib = f => registry.find(x => x.device_id === reg.device_id && x.entity_id.startsWith('sensor.') && f(x.entity_id, states0.get(x.entity_id)));
+            const power = sib((id, st) => st?.attributes.device_class === 'power'), day = sib(id => /day_consumption$/.test(id)), hum = sib((id, st) => st?.attributes.device_class === 'humidity');
+            return { climate: states0.get(reg.entity_id), power: power && states0.get(power.entity_id), day: day && states0.get(day.entity_id), hum: hum && states0.get(hum.entity_id) };
+        }
+
+        function renderBlock(b, ents) {
+            if (b.key === 'grohe') return renderGrohe(ents);
+            let climates = ents.filter(s => s.entity_id.startsWith('climate.'));
+            const hp = hpSocket();
+            if (b.key === 'mill' && hp) climates = climates.filter(c => c.entity_id !== hp.climate.entity_id);
+            const rowPower = b.key === 'mill' || b.key === 'sensibo';   // the power is on each room's own line
+            const sensors = ents.filter(s => s.entity_id.startsWith('sensor.') && TILE_ORDER.includes(s.attributes.device_class) && !(rowPower && ['power', 'humidity', 'energy'].includes(s.attributes.device_class)));
+            sensors.sort((x, y) => TILE_ORDER.indexOf(x.attributes.device_class) - TILE_ORDER.indexOf(y.attributes.device_class));
+            const alerts = ents.filter(s => s.entity_id.startsWith('binary_sensor.') && ['moisture', 'problem', 'safety', 'smoke', 'gas'].includes(s.attributes.device_class));
+            const valves = ents.filter(s => s.entity_id.startsWith('valve.') || (s.entity_id.startsWith('switch.') && /valve|ventil|guard/i.test(s.entity_id)));
+            let html = '';
+            const sensClimate = b.key === 'sensibo' ? climates[0] : null;
+            if (b.key === 'sensibo') html += `<div class="product${climates.some(isOk) && climates.some(c => c.state !== 'off' && isOk(c)) ? ' on' : ''}"><img src="/local/sensibo.png?v=1" alt="Sensibo"></div>`;
+            if (climates.length) {
+                const example = b.key === 'mill' && !climates.some(isOk);
+                const rowOf = (c, i) => roomRow(c, humOf.get(c.entity_id), b.sub, states0.get(powOf.get(c.entity_id)), example ? EXAMPLE[i % EXAMPLE.length] : null, b.key === 'sensibo');
+                // The main house has its doors open (one zone, the radiators help each other); the guest cottage and the technical room stand apart.
+                const isSep = c => /g[äa]st|teknik/i.test(c.attributes.friendly_name || c.entity_id);
+                const indexed = climates.map((c, i) => [c, i]);
+                const group = (label, list) => list.length ? `<div class="grp">${label}</div>${list.map(([c, i]) => rowOf(c, i)).join('')}` : '';
+                const rows = b.key === 'mill'
+                    ? group('Huset · åbent', indexed.filter(([c]) => !isSep(c))) + group('Separat', indexed.filter(([c]) => isSep(c)))
+                    : indexed.map(([c, i]) => rowOf(c, i)).join('');
+                if (example) exampleFlag = true;
+                html += `<div class="rooms">${rows}</div>`;
+            }
+            if (b.key === 'sensibo') {
+                const t = (label, st, v, unit, d) => `<button class="t ${st && isOk(st) ? '' : 'off'}" ${st ? `data-e="${esc(st.entity_id)}"` : ''}><div class="l">${label}</div><div class="v">${v}<small>${unit}</small></div></button>`;
+                const outT = hp?.climate && isOk(hp.climate) ? parseFloat(hp.climate.attributes.current_temperature) : NaN;
+                html += `<div class="tiles hp3">
+                    ${t('Effekt nu', hp?.power, hp?.power && isOk(hp.power) ? fmt(num(hp.power), 0) : '–', 'W')}
+                    ${t('I dag', hp?.day, hp?.day && isOk(hp.day) ? fmt(num(hp.day), 1) : '–', 'kWh')}
+                    ${t('Ude', hp?.climate, Number.isNaN(outT) ? '–' : fmt(outT, 1), '°C')}
+                </div>`;
+            }
+            if (sensClimate) html += `<div class="sens-curve" data-e="${esc(sensClimate.entity_id)}" data-dialog="1" data-name="${esc(sensClimate.attributes.friendly_name || 'Sensibo')}" data-sub="Sensibo" data-hum="${esc(humOf.get(sensClimate.entity_id) || '')}" ${sensExample ? 'data-example="1"' : ''}><div class="sc-cap">Indetemperatur · seneste døgn${sensExample ? '<span>Eksempeldata</span>' : ''}</div><div class="sc-cv"><canvas id="sensChart"></canvas></div></div>`;
+            const tiles = [];
+            if (b.key === 'mill' && climates.length) {
+                const powers = climates.map(c => states0.get(powOf.get(c.entity_id))).filter(isOk);
+                if (powers.length) tiles.push(`<button class="t big" data-e="${esc(powers[0].entity_id)}"><div class="l">Samlet effekt</div><div class="v">${fmt(powers.reduce((a, p) => a + num(p), 0), 0)}<small>W</small></div></button>`);
+            }
+            const shown = sensors.slice(0, b.key === 'tibber' ? 6 : 8), seen = {};
+            shown.forEach(s => { seen[s.attributes.device_class] = (seen[s.attributes.device_class] || 0) + 1; });
+            shown.forEach((s, i) => tiles.push(tileFor(s, b.key === 'tibber' && i === 0 && s.attributes.device_class === 'power', seen[s.attributes.device_class] > 1)));
+            alerts.filter(s => s.state === 'on').forEach(s => tiles.push(alertTile(s)));   // only when something is wrong: no "OK" boxes
+            valves.forEach(s => tiles.push(`<button class="t ${s.state === 'closed' || s.state === 'off' ? 'hot' : 'ok'}" data-e="${esc(s.entity_id)}"><div class="l">${esc(s.attributes.friendly_name || 'Ventil')}</div><div class="v">${esc(s.state === 'open' || s.state === 'on' ? 'Åben' : s.state === 'closed' || s.state === 'off' ? 'Lukket' : s.state)}</div></button>`));
+            if (tiles.length) html += `<div class="tiles">${tiles.join('')}</div>`;
+            if (!html) html = `<div class="missing">Integrationen er sat op, men der er ingen målinger endnu.</div>`;
+            return html;
+        }
+
+        /* Demo data (?demo) to look at the layout before the integrations are added. */
+        function demo() {
+            const reg = [], st = [];
+            const add = (platform, id, state, attrs) => { reg.push({ entity_id: id, platform, disabled_by: null, hidden_by: null, entity_category: null }); st.push({ entity_id: id, state, attributes: attrs }); };
+            add('tibber', 'sensor.stugan_power', '1840', { friendly_name: 'Stugan Power', device_class: 'power', unit_of_measurement: 'W' });
+            add('tibber', 'sensor.stugan_accumulated_consumption', '12.4', { friendly_name: 'Stugan Accumulated consumption', device_class: 'energy', unit_of_measurement: 'kWh' });
+            add('tibber', 'sensor.electricity_price_stugan', '1.42', { friendly_name: 'Electricity price Stugan', device_class: 'monetary', unit_of_measurement: 'SEK/kWh' });
+            add('mill', 'sensor.stue_current_power', '450', { friendly_name: 'Stue Current power', device_class: 'power', unit_of_measurement: 'W' });
+            add('mill', 'sensor.sovevaerelse_current_power', '0', { friendly_name: 'Soveværelse Current power', device_class: 'power', unit_of_measurement: 'W' });
+            add('mill', 'climate.stue_mill', 'heat', { friendly_name: 'Stue', current_temperature: 17.5, temperature: 18, hvac_action: 'heating' });
+            add('mill', 'climate.sovevaerelse_mill', 'heat', { friendly_name: 'Soveværelse', current_temperature: 15.1, temperature: 15, hvac_action: 'idle' });
+            add('mill', 'climate.bad_mill', 'off', { friendly_name: 'Bad', current_temperature: 12.9, temperature: 5 });
+            add('sensibo', 'climate.varmepumpe_sensibo', 'heat', { friendly_name: 'Varmepumpe', current_temperature: 18.2, temperature: 20, hvac_action: 'heating' });
+            add('sensibo', 'sensor.varmepumpe_humidity', '52', { friendly_name: 'Varmepumpe Humidity', device_class: 'humidity', unit_of_measurement: '%' });
+            add('grohe_smarthome', 'sensor.basement_my_guard_temperature', '18.5', { friendly_name: 'Temperature', device_class: 'temperature', unit_of_measurement: '°C' });
+            add('grohe_smarthome', 'sensor.basement_my_guard_water_consumption', '212', { friendly_name: 'Water consumption', device_class: 'water', unit_of_measurement: 'L' });
+            add('grohe_smarthome', 'sensor.basement_my_guard_total_water_consumption', '114831', { friendly_name: 'Total', device_class: 'water', unit_of_measurement: 'L' });
+            add('grohe_smarthome', 'sensor.basement_my_guard_actual_pressure', '2.4', { friendly_name: 'Pressure', device_class: 'pressure', unit_of_measurement: 'bar' });
+            add('grohe_smarthome', 'sensor.basement_my_guard_actual_flow_rate', '0', { friendly_name: 'Flow', device_class: 'volume_flow_rate', unit_of_measurement: 'm³/h' });
+            add('grohe_smarthome', 'valve.basement_my_guard_valve', 'open', { friendly_name: 'Valve' });
+            return { reg, st };
+        }
+
+        // The Sensibo's room temperature over the last 24 hours (and the set temperature, stepped). Example data until there is a
+        // real history (the device offline / just added).
+        let sensChart = null, sensData = null, sensDataAt = 0, sensExample = false;
+        function exampleDay() {
+            const temp = [], target = [], step = 15 * 60e3, end = Date.now();
+            for (let t = end - 864e5; t <= end; t += step) {
+                const h = new Date(t).getHours() + new Date(t).getMinutes() / 60, set = h >= 8 && h < 22 ? 21 : 18;
+                temp.push({ x: t, y: Math.round((set - 0.9 + 1.1 * Math.sin((h - 10) / 24 * Math.PI * 2) + 0.25 * Math.sin(t / 3.1e6)) * 10) / 10 });
+                target.push({ x: t, y: set });
+            }
+            return { temp, target, example: true };
+        }
+        async function loadSensCurve(entityId) {
+            if (sensData && Date.now() - sensDataAt < 5 * 60e3) return;
+            let d = null;
+            if (!DEMO && entityId) {
+                try {
+                    const res = await callApi('GET', `history/period/${new Date(Date.now() - 864e5).toISOString()}?filter_entity_id=${entityId}&end_time=${encodeURIComponent(new Date().toISOString())}`);
+                    const rows = (res && res[0]) || [];
+                    const temp = rows.map(r => ({ x: new Date(r.last_updated || r.last_changed).getTime(), y: parseFloat(r.attributes?.current_temperature) })).filter(p => !Number.isNaN(p.y));
+                    const target = rows.map(r => ({ x: new Date(r.last_updated || r.last_changed).getTime(), y: parseFloat(r.attributes?.temperature) })).filter(p => !Number.isNaN(p.y));
+                    if (temp.length >= 3) d = { temp, target, example: false };
+                } catch (e) { /* fall back to the example */ }
+            }
+            sensData = d || exampleDay(); sensDataAt = Date.now(); sensExample = sensData.example;
+        }
+        function drawSensCurve() {
+            const canvas = document.getElementById('sensChart');
+            if (!canvas || !sensData) return;
+            if (sensChart) sensChart.destroy();
+            const end = Date.now(), start = end - 864e5;
+            sensChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { datasets: [
+                    { data: sensData.temp, borderColor: '#64d2ff', borderWidth: 2.2, pointRadius: 0, tension: 0.25, fill: true,
+                      backgroundColor: c => { const a = c.chart.chartArea; if (!a) return 'transparent'; const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, 'rgba(100,210,255,0.28)'); g.addColorStop(1, 'rgba(100,210,255,0)'); return g; } },
+                    { data: sensData.target, borderColor: '#ffb340', borderWidth: 1.4, borderDash: [5, 4], pointRadius: 0, stepped: 'before', fill: false },
+                ] },
+                options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                    scales: { x: { type: 'linear', min: start, max: end, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c', font: { size: 10 }, maxRotation: 0, stepSize: 6 * 3600e3, callback: v => new Date(v).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }) } },
+                              y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6d808c', font: { size: 10 }, callback: v => fmt(v, 0) + '°' } } },
+                    plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { title: i => new Date(i[0].parsed.x).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }), label: i => `${i.datasetIndex ? 'Mål' : 'Temp'}: ${fmt(i.parsed.y, 1)} °C` } } } },
+            });
+        }
+
+        let exampleFlag = false;   // a block showed example data: the header gets a small tag
+        let registry = [], lastRegistry = 0;
+        const humOf = new Map();   // climate entity -> the humidity sensor of the same device
+        const powOf = new Map();   // climate entity -> the power sensor of the same device
+        let states0 = new Map();   // all states, for the lookups above
+        async function load() {
+            const problems = [];
+            let states = new Map();
+            if (DEMO) {
+                const d = demo(); registry = d.reg; states = new Map(d.st.map(s => [s.entity_id, s]));
+            } else {
+                const all = await callApi('GET', 'states');
+                states = new Map(all.map(s => [s.entity_id, s]));
+                if (!registry.length || Date.now() - lastRegistry > 5 * 60e3) {
+                    const reg = await callWS({ type: 'config/entity_registry/list' });
+                    if (reg) { registry = reg; lastRegistry = Date.now(); }
+                    else problems.push('Kan ikke læse enhedsregistret (åbn kortet inde i dashboardet)');
+                }
+            }
+            states0 = states; humOf.clear(); powOf.clear();
+            for (const r of registry.filter(r => r.entity_id.startsWith('climate.') && r.device_id)) {
+                const sib = registry.find(x => x.device_id === r.device_id && x.entity_id.startsWith('sensor.') && states.get(x.entity_id)?.attributes.device_class === 'humidity');
+                if (sib) humOf.set(r.entity_id, sib.entity_id);
+                const pw = registry.find(x => x.device_id === r.device_id && x.entity_id.startsWith('sensor.') && states.get(x.entity_id)?.attributes.device_class === 'power');
+                if (pw) powOf.set(r.entity_id, pw.entity_id);
+            }
+            const groheTotal = registry.find(r => /grohe/.test(r.platform) && r.entity_id.endsWith('_total_water_consumption'));
+            if (groheTotal || DEMO) await loadGroheWeek(groheTotal ? groheTotal.entity_id : 'demo').catch(() => {});
+            const sensEnt = BLOCKS.some(b => b.key === 'sensibo') ? registry.find(r => r.platform === 'sensibo' && r.entity_id.startsWith('climate.')) : null;
+            if (new URLSearchParams(location.search).get('block') === 'sensibo' || !new URLSearchParams(location.search).get('block')) await loadSensCurve(sensEnt ? sensEnt.entity_id : null);
+            const grid = document.getElementById('grid');
+            const only = new URLSearchParams(location.search).get('block');
+            exampleFlag = false;
+            const cards = BLOCKS.filter(b => !only || b.key === only).map(b => {
+                const ents = registry.filter(r => b.platforms.includes(r.platform) && !r.disabled_by && !r.hidden_by && (r.entity_category !== 'diagnostic' || r.entity_id.endsWith('_online')) && r.entity_category !== 'config')
+                    .map(r => states.get(r.entity_id)).filter(Boolean);
+                const body = ents.length ? renderBlock(b, ents) : `<div class="missing"><b>Ikke tilføjet endnu.</b><br>${b.how}</div>`;
+                return `<div class="panel"><div class="panel-head"><span class="panel-title">${b.title}</span><span class="panel-sub">${b.sub}</span></div>${body}</div>`;
+            });
+            grid.innerHTML = cards.join('');
+            const headEl = document.querySelector('.head');
+            headEl.querySelector('.exp')?.remove();
+            if (exampleFlag && only) headEl.insertAdjacentHTML('beforeend', '<span class="exp" title="Vises, indtil enhederne er online">Eksempeldata</span>');
+            drawSensCurve();
+            const b = BLOCKS.find(x => x.key === only);
+            if (b) document.querySelector('.name').innerHTML = `${b.title} <span class="muted">${b.sub}</span>`;
+            if (b && b.key === 'grohe' && !document.querySelector('.head .brand')) document.querySelector('.head').insertAdjacentHTML('beforeend', '<img class="brand" src="/local/grohe-logo.png?v=1" alt="Grohe">');
+            showProblems(problems);
+            showError(null);
+        }
+
+        document.getElementById('grid').addEventListener('click', e => {
+            const el = e.target.closest('[data-e]');
+            if (!el) return;
+            if (el.dataset.dialog) {
+                const q = new URLSearchParams({ entity: el.dataset.e, name: el.dataset.name, sub: el.dataset.sub, theme: THEME });
+                if (el.dataset.hum) q.set('humidity', el.dataset.hum);
+                if (el.dataset.example) q.set('example', '1');
+                openPopup(`/local/temperatur-detail.html?${q}&v=` + Date.now());
+            } else openHistory(el.dataset.e);
+        });
+
+        const tick = () => load().catch(showError);
+        tick();
+        setInterval(tick, 10e3);
+    </script>
+</body>
+</html>

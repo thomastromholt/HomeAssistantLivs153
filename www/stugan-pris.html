@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elpris</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script>if (new URLSearchParams(location.search).get('theme') === 'summer') { document.documentElement.className = 'summer'; document.write('<link rel="stylesheet" href="/local/card-summer.css?v=1">'); }</script>
+    <style>
+        .head { position: relative; }
+        .info { color: #6d808c; font-size: 14px; font-weight: 400; cursor: help; outline: none; }
+        .info-box { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 200; margin-top: 6px; padding: 8px 10px; text-align: left; font-size: 12px; font-weight: 400; line-height: 1.5; color: #e5ecf0; background: #0b1218; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; }
+        .info:hover .info-box, .info:focus .info-box { display: block; }
+        .chart-wrap { position: relative; flex: 1; min-height: 0; }
+        .now { margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); text-align: center; }
+        .now-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: #8da0ad; }
+        .now-value { margin-top: 2px; font-size: 26px; font-weight: 600; color: #34c759; }
+        .now-value small { font-size: 13px; font-weight: 400; color: #8da0ad; margin-left: 3px; }
+        .now-value.mid { color: #ff9f0a; }
+        .now-value.dear { color: #ff453a; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head"><span class="name">Elpris <span class="info" tabindex="0">ⓘ<span class="info-box" id="infoBox"></span></span></span></div>
+        <div id="error" class="error" hidden></div>
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+        <div class="now"><div class="now-label">Nu</div><div class="now-value" id="nowValue">–</div></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        /* The cottage's total price per kWh from Tibber (tibber.get_prices): today, and tomorrow once it is published, every
+           15 minutes, drawn like the price card at home: a stepped curve, a red line for now, and the price now underneath.
+           No peak shaving and no charging plan here. */
+        const DEMO = new URLSearchParams(location.search).has('demo');
+        const SUMMER = new URLSearchParams(location.search).get('theme') === 'summer';
+        const GRIDC = SUMMER ? 'rgba(20,50,63,0.10)' : 'rgba(255,255,255,0.06)', TICKC = SUMMER ? '#5f7783' : '#8da0ad';
+        const ORE = v => Math.round(v * 100);   // SEK/kWh -> öre/kWh
+        const clock = t => new Date(t).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+        for (const line of ['Totalpris pr. kWh fra Tibber: spotpris, Tibbers tillæg, nettarif, afgifter og moms.', 'Morgendagens priser kommer, når de er offentliggjort.']) {
+            const row = document.createElement('div'); row.textContent = line; document.getElementById('infoBox').append(row);
+        }
+        let chart = null, past = [];
+
+        // Tibber's price service only gives today and tomorrow. For the earlier hours the meter's own statistics (cost / kWh)
+        // give the price you actually paid, in the hours that had a consumption.
+        async function pastHours() {
+            const list = (await callWS({ type: 'recorder/list_statistic_ids' })) || [];
+            const cons = list.find(s => s.statistic_id.startsWith('tibber:energy_consumption_'));
+            if (!cons) return [];
+            const cost = cons.statistic_id.replace('energy_consumption_', 'energy_totalcost_');
+            const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+            const res = await callWS({ type: 'recorder/statistics_during_period', start_time: new Date(Date.now() - 30 * 3600e3).toISOString(), end_time: day0.toISOString(), statistic_ids: [cons.statistic_id, cost], period: 'hour', types: ['change'] });
+            const k = new Map(((res && res[cost]) || []).map(r => [r.start, r.change]));
+            return ((res && res[cons.statistic_id]) || []).filter(r => r.change > 0.05 && k.get(r.start) != null).map(r => ({ t: new Date(r.start).getTime(), price: k.get(r.start) / r.change }));
+        }
+
+        async function prices() {
+            if (DEMO) {
+                const out = [], d0 = new Date(); d0.setHours(0, 0, 0, 0);
+                for (let i = 0; i < 192; i++) { const h = (i / 4) % 24; out.push({ t: +d0 + i * 900e3, price: 1.1 + 0.6 * Math.sin((h - 9) / 24 * Math.PI * 2) + (h > 16 && h < 21 ? 0.9 : 0) }); }
+                return out;
+            }
+            // Without start/end the service gives today only; with them it also gives tomorrow, once it is published.
+            const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+            const res = await callApi('POST', 'services/tibber/get_prices?return_response', { start: d0.toISOString(), end: new Date(+d0 + 3 * 864e5).toISOString() });
+            past = await pastHours().catch(() => []);
+            const sr = res.service_response?.prices || res.service_response || {};
+            const home = Object.values(sr)[0] || [];
+            const fresh = home.map(r => ({ t: new Date(r.start_time).getTime(), price: r.price })).sort((a, b) => a.t - b.t);
+            return [...past.filter(p => !fresh.length || p.t < fresh[0].t), ...fresh];
+        }
+
+        // The red line for now, as on the home card.
+        const nowLine = { id: 'nowLine', afterDatasetsDraw(c) {
+            const { ctx, chartArea: a, scales: { x } } = c, px = x.getPixelForValue(Date.now());
+            if (px < a.left || px > a.right) return;
+            ctx.save(); ctx.strokeStyle = '#ff453a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); ctx.restore();
+        } };
+
+        async function render() {
+            try {
+                const all = await prices();
+                const now = Date.now();
+                if (!all.length) { document.getElementById('nowValue').textContent = '–'; return; }
+                const from = now - 24 * 3600e3, to = now + 24 * 3600e3;
+                const pts = all.filter(p => p.t + 3600e3 > from && p.t < to).map(p => ({ x: p.t, y: ORE(p.price) }));
+                const end = Math.min(to, Math.max(...pts.map(p => p.x)) + 900e3);
+                const cur = all.find(p => p.t <= now && now < p.t + 900e3);
+                const sorted = pts.map(p => p.y).sort((a, b) => a - b), q = f => sorted[Math.floor((sorted.length - 1) * f)];
+                const el = document.getElementById('nowValue');
+                el.innerHTML = cur ? `${ORE(cur.price)}<small>öre</small>` : '–';
+                el.className = 'now-value' + (cur && ORE(cur.price) >= q(0.67) ? ' dear' : cur && ORE(cur.price) > q(0.33) ? ' mid' : '');
+                if (chart) chart.destroy();
+                chart = new Chart(document.getElementById('chart'), {
+                    type: 'line', plugins: [nowLine],
+                    data: { datasets: [{ data: [...pts, { x: end, y: pts[pts.length - 1].y }], borderColor: '#ff9500', borderWidth: 2.5, pointRadius: 0, stepped: 'before', fill: true, backgroundColor: 'rgba(255,149,0,0.16)' }] },
+                    options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                        scales: {
+                            x: { type: 'linear', min: from, max: to, grid: { color: GRIDC }, afterBuildTicks: axis => { const t = []; const d = new Date(from); d.setMinutes(0, 0, 0); d.setHours(Math.ceil(d.getHours() / 6) * 6); for (let v = +d; v <= to; v += 6 * 3600e3) t.push({ value: v }); axis.ticks = t; }, ticks: { color: TICKC, font: { size: 11 }, maxRotation: 0, callback: v => String(new Date(v).getHours()).padStart(2, '0') } },
+                            y: { grid: { color: GRIDC }, ticks: { color: TICKC, font: { size: 11 } } },
+                        },
+                        plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { title: i => `${new Date(i[0].parsed.x).toLocaleDateString('da-DK', { weekday: 'short' })} ${clock(i[0].parsed.x)}`, label: i => `${i.parsed.y} öre/kWh` } } },
+                    },
+                });
+                showError(null);
+            } catch (e) { showError(e); }
+        }
+        render();
+        setInterval(render, 60e3);
+    </script>
+</body>
+</html>

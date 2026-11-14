@@ -1,0 +1,64 @@
+/* Summer look for the cottage (Stugan) cards: sky over sand, white glass panels, deep teal ink. Loaded only with ?theme=summer,
+   on top of card-dark.css, so the home cards are untouched. */
+html.summer body {
+    color: #14323f;
+    background: radial-gradient(120% 80% at 0% 0%, rgba(150,196,212,0.55) 0%, rgba(150,196,212,0) 60%), linear-gradient(170deg, #b4cdd6 0%, #cbc9b8 55%, #d6c0a0 100%) !important;
+}
+html.summer :is(.panel, .t, .room, .tile, .stat, .kpi, .box, .chart-box, .where, .hum-box, .temp-box, .cell, .zone, .sp, .legend) {
+    background: rgba(255,255,255,0.52) !important;
+    box-shadow: 0 1px 2px rgba(20,50,63,0.08), 0 8px 22px rgba(20,50,63,0.10);
+}
+html.summer :is(.room:hover, .t:hover, .tile:hover, .cell:hover) { background: rgba(255,255,255,0.75) !important; }
+html.summer .missing { background: rgba(255,255,255,0.3) !important; border-color: rgba(20,50,63,0.22) !important; color: #5f7783 !important; }
+html.summer .missing b { color: #14323f !important; }
+
+/* ink */
+html.summer :is(.name, .panel-title, .t .v, .kpi .big, .stat .v, .room .n, .tile-value, .cap, .hum-box .value, .move .what, .where h3 + *, b) { color: #14323f !important; }
+html.summer :is(.muted, .l, .label, .sub, .s, .panel-sub, .tile-label, .foot, .footer, .hero-sub, .cap span, .note, .sp small, .kpi .label, .kpi .sub, .stat .l, .tile-hint, .where h3, .move .when, .move .what small, .chart-title, .strip-axis, .ranges, .unit) { color: #5f7783 !important; }
+html.summer :is(.t .v small, .kpi .big small, .now small, .hero-now small, .room .c small, .room .g small, .stat .v small, .tile-value small, .hum-box .value small) { color: #7c909a !important; }
+html.summer .room .g { color: #2c4a58 !important; }
+html.summer :is(.now, .hero-now, .room .c, .t.big .v, .soc, .cell-value.temp, .out-temp) { color: #0f7fa6 !important; }
+html.summer .now.hist { color: #2c4a58 !important; }
+html.summer .room .p { color: #c26f00 !important; }
+html.summer .room .p small { color: #b08a4a !important; }
+
+/* pills, chips, tags */
+html.summer .pill { background: rgba(20,50,63,0.07) !important; color: #2c4a58 !important; }
+html.summer .pill.good, html.summer .chip.on, html.summer .tag.cheap { background: rgba(58,168,86,0.18) !important; color: #1f7f3f !important; }
+html.summer .pill.fair, html.summer .chip.heat, html.summer .tag.mid { background: rgba(232,135,14,0.18) !important; color: #a9610a !important; }
+html.summer .pill.poor, html.summer .chip.bad, html.summer .tag.dear { background: rgba(229,83,61,0.16) !important; color: #c4361f !important; }
+html.summer .chip.cool { background: rgba(26,143,184,0.16) !important; color: #0f6f93 !important; }
+html.summer .chip { background: rgba(20,50,63,0.07); color: #5f7783; }
+html.summer .place-pill { background: rgba(20,50,63,0.07) !important; color: #14323f !important; }
+html.summer .t.alert { background: rgba(229,83,61,0.15) !important; }
+html.summer .t.alert .v { color: #c4361f !important; }
+html.summer .t.ok .v { color: #1f8f46 !important; }
+html.summer .t.hot .v { color: #b36100 !important; }
+html.summer .t.off .v { color: #8a9ca6 !important; }
+
+/* controls */
+html.summer .seg button, html.summer .month button, html.summer .chip.on-btn { background: rgba(20,50,63,0.07) !important; color: #5f7783 !important; }
+html.summer .seg button.on { background: rgba(26,143,184,0.2) !important; color: #0f6f93 !important; }
+html.summer .chip { border-color: transparent; }
+html.summer .chip.on { background: rgba(26,143,184,0.16) !important; border-color: rgba(26,143,184,0.4) !important; color: #14323f !important; }
+html.summer .chip .dot { background: #8a9ca6; }
+html.summer .chip.on .dot { background: #1a8fb8; box-shadow: 0 0 8px rgba(26,143,184,0.6); }
+html.summer .close { background: rgba(255,255,255,0.78) !important; color: #14323f !important; box-shadow: 0 2px 10px rgba(20,50,63,0.18) !important; }
+html.summer .btn-small { background: rgba(20,50,63,0.08) !important; color: #2c4a58 !important; }
+html.summer .btn-small.on, html.summer .btn-go { background: rgba(58,168,86,0.2) !important; color: #1f7f3f !important; }
+html.summer .btn-small.stop { background: rgba(232,135,14,0.2) !important; color: #a9610a !important; }
+
+/* bars, strips and lines that are drawn in CSS */
+html.summer .wk-d i { background: linear-gradient(180deg, #3aaee0, #a5dbf1) !important; }
+html.summer .wk-d span { color: #7c909a !important; }
+html.summer .strip { background: rgba(20,50,63,0.08) !important; }
+html.summer .strip .seg-b { color: rgba(10,30,40,0.88) !important; }
+html.summer .soc-bar { background: rgba(20,50,63,0.1) !important; }
+html.summer :is(.move) { border-top-color: rgba(20,50,63,0.08) !important; }
+html.summer .move .tag { background: rgba(232,135,14,0.18) !important; color: #a9610a !important; }
+html.summer .error { background: #e5533d; color: #fff; }
+html.summer .problems { background: rgba(232,135,14,0.16); color: #a9610a; }
+
+/* the car picture comes with a dark backdrop: fade it into the light background */
+html.summer .car img { -webkit-mask-image: radial-gradient(ellipse at center, #000 52%, transparent 76%); mask-image: radial-gradient(ellipse at center, #000 52%, transparent 76%); }
+html.summer .glow { opacity: 0.6; }
