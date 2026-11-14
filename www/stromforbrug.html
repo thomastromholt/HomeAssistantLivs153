@@ -309,6 +309,16 @@
             for (const r of rows) { const d = localDateString(new Date(r.last_updated || r.last_changed)); out.set(d, Math.max(out.get(d) ?? 0, parseFloat(r.state))); }
             return out;
         }
+        // The weather forecast's mean temperature for today and the next days (Open-Meteo gives 16 days): Map(date -> °C).
+        async function futureMeans() {
+            const config = await callApi('GET', 'config');
+            const lat = Math.round(config.latitude * 10) / 10, lon = Math.round(config.longitude * 10) / 10;
+            const json = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_mean&forecast_days=16&timezone=auto`)).json();
+            const out = new Map();
+            (json.daily?.time || []).forEach((d, i) => { if (json.daily.temperature_2m_mean[i] != null) out.set(d, json.daily.temperature_2m_mean[i]); });
+            return out;
+        }
+
         async function outdoorMeans(firstDate) {
             const config = await callApi('GET', 'config');
             const lat = Math.round(config.latitude * 10) / 10, lon = Math.round(config.longitude * 10) / 10;
@@ -497,7 +507,17 @@
                     for (const [d, t] of temps) if (d >= monthStartKey && d <= yesterdayKey) { coveredDays++; expectedToDate += PRIOR.a + PRIOR.b * Math.max(0, 17 - t) * (COLD_MONTHS.includes(curM) ? COLD_UPLIFT : 1); }
                 } catch (e) { coveredDays = 0; }
                 const remaining = Math.max(0, dimNow - (coveredDays || (+yesterdayKey.slice(8, 10))));
-                const hddLeft = NORMAL_HDD[curM] / dimNow * remaining;
+                // Degree-days for the rest of the month: the forecast for the days it covers, the normal year for the rest.
+                let hddLeft = NORMAL_HDD[curM] / dimNow * remaining, forecastDays = 0;
+                try {
+                    const fc = await futureMeans();
+                    let h = 0;
+                    for (const d = new Date(now.getFullYear(), curM, now.getDate()); d.getMonth() === curM; d.setDate(d.getDate() + 1)) {
+                        const t = fc.get(localDateString(d));
+                        if (t !== undefined) { h += Math.max(0, 17 - t); forecastDays++; } else h += NORMAL_HDD[curM] / dimNow;
+                    }
+                    hddLeft = h;
+                } catch (e) { forecastDays = 0; }
                 const current = { date: new Date(now.getFullYear(), curM, 1), m: curM, label: `${MONTH_NAMES[curM]} ${String(now.getFullYear()).slice(2)}`, partial: true, actual: actualToDate, expectedToDate,
                     exp: actualToDate + monthKwh(curM, remaining, hddLeft, par, COLD_UPLIFT) - par.a * 0 , low: actualToDate + monthKwh(curM, remaining, hddLeft * 0.85, par, 1.0), high: actualToDate + monthKwh(curM, remaining, hddLeft * 1.15, par, 2.0) };
                 current.exp = actualToDate + monthKwh(curM, remaining, hddLeft, par, COLD_UPLIFT);
@@ -517,6 +537,8 @@
                           `Until ${yesterdayKey.slice(8, 10)}/${yesterdayKey.slice(5, 7)}. The month is expected to end at ${hundreds(current.exp)} kWh (${hundreds(current.low)}–${hundreds(current.high)}). The forecast said ${hundreds(expectedToDate)} kWh for the days gone with the weather that was: ${expectedToDate > 0 ? `<span class="${actualToDate / expectedToDate - 1 > 0.1 ? 'warn-text' : 'good-text'}">${(actualToDate / expectedToDate - 1) * 100 > 0 ? '+' : ''}${((actualToDate / expectedToDate - 1) * 100).toFixed(0)} %</span>` : '–'}.`)
                     + kpi(`${MONTH_NAMES[curM]} price so far`, cost ? `${Math.round(cost.kr).toLocaleString('sv-SE')}<small> kr</small>` : '–',
                           cost ? `${Math.round(cost.kwh).toLocaleString('sv-SE')} kWh since the 1st, including today · ${formatNumber(cost.kr / cost.kwh * 100, 0)} öre/kWh on average${cost.unpriced ? ' (some hours without a price)' : ''}.` : 'No data yet.');
+                    + kpi(`${MONTH_NAMES[curM]} expected total`, cost ? `${(Math.round(current.exp * cost.kr / cost.kwh / 10) * 10).toLocaleString('sv-SE')}<small> kr</small>` : '–',
+                          cost ? `${(Math.round(Math.max(0, current.exp * cost.kr / cost.kwh - cost.kr) / 10) * 10).toLocaleString('sv-SE')} kr more for the rest of the month (about ${hundreds(Math.max(0, current.exp - cost.kwh))} kWh) · range ${(Math.round(current.low * cost.kr / cost.kwh / 10) * 10).toLocaleString('sv-SE')}–${(Math.round(current.high * cost.kr / cost.kwh / 10) * 10).toLocaleString('sv-SE')} kr. Uses what the month has cost per kWh so far and ${forecastDays ? `the weather forecast for ${forecastDays} day${forecastDays === 1 ? '' : 's'}${forecastDays < dimNow - now.getDate() + 1 ? ', a normal year after that' : ''}` : 'a normal year for the temperature'}.` : '')
 
                 if (fcChart) fcChart.destroy();
                 fcChart = new Chart(document.getElementById('fcChart'), {
