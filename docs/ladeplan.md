@@ -95,3 +95,7 @@ Bilen pauserer naturligt hver ~5–6 minutter (karakteristik for Kia Ceed PHEV).
 - Bilen får tid til at nå fuld strøm inden lastbalancering justerer ned
 
 **Status 30/10 efter kl. 21:** Stabil opladning observeret igen.
+
+## Ekstern styring (Greenely / Tibber)
+
+`input_boolean.ladeplan_ha` (defined in the box's `configuration.yaml`, `initial: false`) decides who controls the charger. Off (the default): an external app (Greenely at the villa, Tibber at the cottage, for grid rewards) controls it, and HA's plan does not start or stop anything. The plan is still computed and drawn on the price card. On: the plan starts and stops the charger as described above. The card's "HA-plan" button flips it; "Lad nu" / "Stop ladning" always work as a manual press. The load balancing only lowers the limit while the plan is off, and raises it back only after its own overload (within 3 hours), so it cannot undo an app's pause (an app pauses by setting `number.go2_charger_max_current` to 0 or 6 A).

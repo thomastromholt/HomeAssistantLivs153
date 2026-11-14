@@ -201,14 +201,23 @@
 
         // Example numbers shown for the Mill heaters until they are online (and the dialog draws an example curve for them).
         const EXAMPLE = [[12.4, 11, 0, 52, 'idle'], [11.8, 11, 0, 55, 'idle'], [8.2, 5, 0, 61, 'idle'], [7.5, 5, 0, 58, 'idle'], [10.6, 11, 410, 67, 'heating'], [13.1, 11, 0, 53, 'idle']];
-        function roomRow(s, hum, sub, pow, ex, hidName) {
+        // The Sensibo also reaches us through Tibber (Tibber lists it as a thermostat): its last known room and set temperature.
+        // Shown when the Sensibo's own integration has nothing (device offline), marked "Sidst kendt".
+        function tibberThermostat() {
+            const cur = registry.find(r => r.platform === 'tibber' && /_current_temperature$/.test(r.entity_id)), set = registry.find(r => r.platform === 'tibber' && /_setpoint_temperature$/.test(r.entity_id));
+            const c = cur && states0.get(cur.entity_id), t = set && states0.get(set.entity_id);
+            return c && isOk(c) ? { cur: num(c), tgt: t && isOk(t) ? num(t) : NaN } : null;
+        }
+
+        function roomRow(s, hum, sub, pow, ex, hidName, fb) {
             const a = s.attributes, ec = ex || null;
-            const cur = ec ? ec[0] : parseFloat(a.current_temperature), tgt = ec ? ec[1] : parseFloat(a.temperature);
+            const useFb = !ec && !isOk(s) && !!fb;
+            const cur = ec ? ec[0] : useFb ? fb.cur : parseFloat(a.current_temperature), tgt = ec ? ec[1] : useFb ? fb.tgt : parseFloat(a.temperature);
             const action = ec ? ec[4] : a.hvac_action, mode = ec ? 'heat' : s.state;
             const off = !ec && !isOk(s);
             const w = ec ? ec[2] : (pow && isOk(pow) ? num(pow) : NaN), h = ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
             const state = off ? 'bad' : action === 'heating' ? 'heat' : action === 'cooling' ? 'cool' : mode === 'off' ? 'idle' : 'on';
-            const stateText = off ? 'Offline' : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Fra', auto: 'Auto', dry: 'Affugt', fan_only: 'Blæser' }[mode] || 'Hviler');
+            const stateText = off ? (useFb ? 'Sidst kendt' : 'Offline') : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Fra', auto: 'Auto', dry: 'Affugt', fan_only: 'Blæser' }[mode] || 'Hviler');
             const tl = tempLevel(cur, tgt), hl = humLevel(h), worst = [tl, hl].includes('bad') ? 'bad' : [tl, hl].includes('warn') ? 'warn' : '';
             const cell = (label, value, cls) => `<div class="cell"><div class="tile-label">${label}</div><div class="cell-value ${cls || ''}">${value}</div></div>`;
             const nice = n => String(n).trim().replace(/^./, c => c.toLocaleUpperCase('da-DK'));   // Mill's room names come lower case, some with a trailing space
@@ -237,14 +246,15 @@
             const by = suffix => ents.find(s => s.entity_id.endsWith('_' + suffix));
             const temp = by('temperature'), today = by('water_consumption'), press = by('actual_pressure'), flow = by('actual_flow_rate'), avg = by('average_daily_consumption');
             const valve = ents.find(s => s.entity_id.startsWith('valve.')), online = ents.find(s => s.entity_id.endsWith('_online')), note = by('latest_notification');
-            const week = groheWeek ? groheWeek.reduce((a, r) => a + r.v, 0) : NaN;
+            const weekOk = !!groheWeek && groheWeek.length >= 3;   // a week of data, not the first hours after the integration was added
+            const week = weekOk ? groheWeek.reduce((a, r) => a + r.v, 0) : NaN;
             const L = today ? num(today) : NaN, A = avg ? num(avg) : NaN;
             const open = valve && valve.state === 'open', offline = online && online.state === 'off';
             const pill = valve ? `<span class="gh-pill ${open ? 'ok' : 'bad'}" data-e="${esc(valve.entity_id)}"><i></i>${open ? 'Hovedventil åben' : valve.state === 'closed' ? 'Hovedventil LUKKET' : esc(valve.state)}</span>` : '';
             const used = !Number.isNaN(L) && !Number.isNaN(A) && A > 0 ? Math.min(100, L / A * 100) : 0;
             // the 7 days: the average as a dashed line, the newest bar brighter
-            const max = groheWeek && groheWeek.length ? Math.max(...groheWeek.map(r => r.v), A || 0, 1) : 1;
-            const bars = groheWeek && groheWeek.length ? `<div class="gh-wk">${Number.isNaN(A) ? '' : `<div class="gh-avg" style="bottom:${A / max * 100}%"><span>gns. ${fmt(A, 0)}</span></div>`}${groheWeek.map((r, i) => `<div class="gh-d${i === groheWeek.length - 1 ? ' last' : ''}" title="${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' })}: ${fmt(r.v, 0)} L"><b>${r.v >= 1 ? fmt(r.v, 0) : ''}</b><i style="height:${Math.max(3, r.v / max * 100)}%"></i><span>${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'short' }).replace('.', '').slice(0, 2)}</span></div>`).join('')}</div>` : '';
+            const max = weekOk ? Math.max(...groheWeek.map(r => r.v), A || 0, 1) : 1;
+            const bars = weekOk ? `<div class="gh-wk">${Number.isNaN(A) ? '' : `<div class="gh-avg" style="bottom:${A / max * 100}%"><span>gns. ${fmt(A, 0)}</span></div>`}${groheWeek.map((r, i) => `<div class="gh-d${i === groheWeek.length - 1 ? ' last' : ''}" title="${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' })}: ${fmt(r.v, 0)} L"><b>${r.v >= 1 ? fmt(r.v, 0) : ''}</b><i style="height:${Math.max(3, r.v / max * 100)}%"></i><span>${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'short' }).replace('.', '').slice(0, 2)}</span></div>`).join('')}</div>` : '';
             const mini = (label, s, v, unit, d) => s ? `<button class="gh-mini ${isOk(s) ? '' : 'off'}" data-e="${esc(s.entity_id)}"><div class="l">${label}</div><div class="v">${fmt(v, d)}<small>${unit}</small></div></button>` : '';
             return `<div class="gh">
                 <div class="gh-top">${pill}${offline ? '<span class="gh-pill bad"><i></i>Offline</span>' : ''}${temp ? `<button class="gh-temp" data-e="${esc(temp.entity_id)}" title="Temperatur i enheden"><small>enheden</small>${fmt(num(temp), 1)}<em>°C</em></button>` : ''}</div>
@@ -283,7 +293,8 @@
             if (b.key === 'sensibo') html += `<div class="product${climates.some(isOk) && climates.some(c => c.state !== 'off' && isOk(c)) ? ' on' : ''}"><img src="/local/sensibo.png?v=1" alt="Sensibo"></div>`;
             if (climates.length) {
                 const example = b.key === 'mill' && !climates.some(isOk);
-                const rowOf = (c, i) => roomRow(c, humOf.get(c.entity_id), b.sub, states0.get(powOf.get(c.entity_id)), example ? EXAMPLE[i % EXAMPLE.length] : null, b.key === 'sensibo');
+                const fbT = b.key === 'sensibo' ? tibberThermostat() : null;
+                const rowOf = (c, i) => roomRow(c, humOf.get(c.entity_id), b.sub, states0.get(powOf.get(c.entity_id)), example ? EXAMPLE[i % EXAMPLE.length] : null, b.key === 'sensibo', fbT);
                 // The main house has its doors open (one zone, the radiators help each other); the guest cottage and the technical room stand apart.
                 const isSep = c => /g[äa]st|teknik/i.test(c.attributes.friendly_name || c.entity_id);
                 const indexed = climates.map((c, i) => [c, i]);
@@ -387,6 +398,25 @@
             });
         }
 
+        // Is the cottage online? The cloud integrations (Grohe, Sensibo, Tibber, Mill) keep showing their last values when the cottage
+        // loses its connection, and none of them says how old a value is. The Zaptec charger's own temperature normally changes several
+        // times an hour: if it has not changed for a few hours, the numbers on the Grohe and Sensibo cards are the last ones the clouds remember.
+        const LIVE_PROBE = 'sensor.stugan_temperature_internal', STALE_AFTER_H = 3;
+        let cottage = { at: 0, offline: false, since: null };
+        async function checkCottage() {
+            if (DEMO || Date.now() - cottage.at < 5 * 60e3) return;
+            cottage.at = Date.now();
+            try {
+                const res = await callApi('GET', `history/period/${new Date(Date.now() - 12 * 3600e3).toISOString()}?filter_entity_id=${LIVE_PROBE}&end_time=${encodeURIComponent(new Date().toISOString())}&minimal_response&no_attributes`);
+                const rows = ((res && res[0]) || []).filter(r => !['unavailable', 'unknown'].includes(r.state));
+                if (!rows.length) { cottage.offline = false; return; }
+                const last = rows[rows.length - 1].state;
+                let idx = -1; for (let i = rows.length - 1; i >= 0; i--) if (rows[i].state !== last) { idx = i; break; }
+                const since = idx >= 0 ? new Date(rows[idx + 1].last_changed || rows[idx + 1].last_updated).getTime() : Date.now() - 12 * 3600e3;
+                cottage.since = since; cottage.offline = Date.now() - since > STALE_AFTER_H * 3600e3;
+            } catch (e) { /* leave it as it was */ }
+        }
+
         let exampleFlag = false;   // a block showed example data: the header gets a small tag
         let registry = [], lastRegistry = 0;
         const humOf = new Map();   // climate entity -> the humidity sensor of the same device
@@ -420,6 +450,7 @@
             const grid = document.getElementById('grid');
             const only = new URLSearchParams(location.search).get('block');
             exampleFlag = false;
+            await checkCottage();
             const cards = BLOCKS.filter(b => !only || b.key === only).map(b => {
                 const ents = registry.filter(r => b.platforms.includes(r.platform) && !r.disabled_by && !r.hidden_by && (r.entity_category !== 'diagnostic' || r.entity_id.endsWith('_online')) && r.entity_category !== 'config')
                     .map(r => states.get(r.entity_id)).filter(Boolean);
@@ -428,7 +459,8 @@
             });
             grid.innerHTML = cards.join('');
             const headEl = document.querySelector('.head');
-            headEl.querySelector('.exp')?.remove();
+            headEl.querySelector('.exp')?.remove(); headEl.querySelector('.stale')?.remove();
+            if (cottage.offline && (only === 'grohe' || only === 'sensibo')) headEl.insertAdjacentHTML('beforeend', `<span class="stale exp" title="Ingen friske målinger fra sommerhuset siden ${new Date(cottage.since).toLocaleString('da-DK', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}. Tallene er skyens sidst kendte.">Sidst kendt · ${new Date(cottage.since).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}</span>`);
             if (exampleFlag && only) headEl.insertAdjacentHTML('beforeend', '<span class="exp" title="Vises, indtil enhederne er online">Eksempeldata</span>');
             drawSensCurve();
             const b = BLOCKS.find(x => x.key === only);

@@ -36,12 +36,18 @@
         .sp b { font-weight: 600; }
         .sp small { color: #8da0ad; font-size: 11px; }
         .note { font-size: 11px; color: #6d808c; padding: 0 4px; line-height: 1.5; }
+        .nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+        .seg { display: flex; gap: 4px; }
+        .seg button { padding: 6px 14px; border: 0; border-radius: 9px; background: rgba(255,255,255,0.07); color: #8da0ad; font: inherit; font-size: 12.5px; cursor: pointer; }
+        .seg button.on { background: rgba(100,210,255,0.2); color: #64d2ff; }
+        .kpis.fc { grid-template-columns: repeat(4, 1fr); margin-bottom: 10px; }
+        .kpis.fc .big { font-size: 19px; }
         .sig-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 4px 8px; font-size: 12px; color: #8da0ad; }
         .sig-controls input { padding: 5px 8px; border: 0; border-radius: 8px; background: rgba(255,255,255,0.08); color: inherit; font: inherit; }
         .sig-controls button { padding: 5px 12px; border: 0; border-radius: 8px; background: rgba(100,210,255,0.16); color: #64d2ff; font: inherit; cursor: pointer; }
         .sg { padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); font-size: 12px; line-height: 1.5; min-width: 200px; flex: 1; }
         .sg b { font-weight: 600; }
-        @media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, 1fr); } .hero-now { font-size: 44px; } }
+        @media (max-width: 700px) { .kpis, .kpis.fc { grid-template-columns: repeat(2, 1fr); } .hero-now { font-size: 44px; } }
     </style>
 </head>
 <body>
@@ -54,25 +60,37 @@
                 <div class="hero-now"><span id="power">–</span><small id="unit">kW</small></div>
                 <div class="hero-sub" id="heroSub"></div>
             </div>
-            <div class="month"><button id="prev" aria-label="Forrige måned">‹</button><b id="monthLabel"></b><button id="next" aria-label="Næste måned">›</button></div>
+            <div class="nav"><div class="seg" id="viewSeg"><button data-v="day">Dag</button><button data-v="month">Måned</button><button data-v="year">År</button></div>
+                <div class="month"><button id="prev" aria-label="Forrige">‹</button><b id="monthLabel"></b><button id="next" aria-label="Næste">›</button></div></div>
         </div>
 
         <div class="kpis">
-            <div class="kpi"><div class="label">Måned i alt</div><div class="big" id="kTotal">–</div><div class="sub" id="kTotalSub"></div></div>
-            <div class="kpi"><div class="label">Måned kost</div><div class="big" id="kCost">–</div><div class="sub" id="kCostSub"></div></div>
-            <div class="kpi"><div class="label">Gns. dag</div><div class="big" id="kAvg">–</div><div class="sub" id="kAvgSub"></div></div>
-            <div class="kpi"><div class="label">Højeste dag</div><div class="big" id="kMax">–</div><div class="sub" id="kMaxSub"></div></div>
-            <div class="kpi"><div class="label">Seneste dag</div><div class="big" id="kLast">–</div><div class="sub" id="kLastSub"></div></div>
+            <div class="kpi"><div class="label" id="kTotalL">Måned i alt</div><div class="big" id="kTotal">–</div><div class="sub" id="kTotalSub"></div></div>
+            <div class="kpi"><div class="label" id="kCostL">Måned kost</div><div class="big" id="kCost">–</div><div class="sub" id="kCostSub"></div></div>
+            <div class="kpi"><div class="label" id="kAvgL">Gns. dag</div><div class="big" id="kAvg">–</div><div class="sub" id="kAvgSub"></div></div>
+            <div class="kpi"><div class="label" id="kMaxL">Højeste dag</div><div class="big" id="kMax">–</div><div class="sub" id="kMaxSub"></div></div>
+            <div class="kpi"><div class="label" id="kLastL">Seneste dag</div><div class="big" id="kLast">–</div><div class="sub" id="kLastSub"></div></div>
         </div>
 
-        <div class="box">
+        <div class="box" id="dayBox">
             <div class="cap">Pr. dag <span>kWh · tryk på en dag for timerne</span></div>
             <div class="split" id="split"></div>
             <div class="chart"><canvas id="dayChart"></canvas></div>
         </div>
-        <div class="box">
+        <div class="box" id="hourBox">
             <div class="cap"><span id="hourTitle" style="font-size:12px;color:inherit"></span><span>kWh pr. time</span></div>
             <div class="chart short"><canvas id="hourChart"></canvas></div>
+        </div>
+        <div class="box" id="yearBox" hidden>
+            <div class="cap">Pr. måned <span>kWh · tryk på en måned for dagene</span></div>
+            <div class="split" id="ysplit"></div>
+            <div class="chart"><canvas id="yearChart"></canvas></div>
+        </div>
+        <div class="box" id="fcBox">
+            <div class="cap">Forventet forbrug <span>hele sommerhuset · kWh og kr</span></div>
+            <div class="kpis fc" id="fcKpis"></div>
+            <div class="chart short"><canvas id="fcChart"></canvas></div>
+            <div class="note" id="fcNote" style="margin-top:6px"></div>
         </div>
         <div class="box">
             <div class="cap">Energisignatur <span id="sigSub">kWh pr. dag mod udetemperatur · uden elbil · kun dage under 15 °C</span></div>
@@ -103,7 +121,10 @@
         const isOk = s => s && !['unavailable', 'unknown'].includes(s.state);
         const dayKey = t => new Date(t).toLocaleDateString('sv-SE');
         const thisMonth = new Date(); thisMonth.setDate(1); thisMonth.setHours(0, 0, 0, 0);
-        let month = new Date(thisMonth), selected = null, dayChart = null, hourChart = null, hours = [], days = [], sources = null;
+        const FIRST_DAY = '2025-10-10';   // the first day the Tibber meter has data for
+        let view = 'month', year = new Date().getFullYear();
+        try { const v = localStorage.getItem('ss_view'); if (['day', 'month', 'year'].includes(v)) view = v; } catch (e) {}
+        let month = new Date(thisMonth), selected = null, dayChart = null, hourChart = null, yearChart = null, hours = [], days = [], months = [], sources = null;
 
         async function discover() {
             if (sources) return sources;
@@ -130,8 +151,6 @@
 
         async function loadMonth() {
             const start = new Date(month), end = new Date(month); end.setMonth(end.getMonth() + 1);
-            document.getElementById('monthLabel').textContent = month.toLocaleDateString('da-DK', { month: 'long', year: 'numeric' });
-            document.getElementById('next').disabled = +month >= +thisMonth;
             if (DEMO) hours = demoHours(start, end);
             else {
                 const s = await discover();
@@ -162,24 +181,60 @@
         });
         const dataset = (c, rows) => ({ label: c.name, data: rows.map(r => r[c.key]), backgroundColor: c.color, borderRadius: 2, maxBarThickness: 26 });
 
+        // the label and the buttons: what the arrows move, and where the data begins and ends
+        function updateNav() {
+            const seg = document.getElementById('viewSeg'); seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
+            const lastDay = days.length ? days[days.length - 1].k : dayKey(new Date());
+            let label, prevOff, nextOff;
+            if (view === 'day') { label = selected ? new Date(selected + 'T12:00:00').toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : '–'; prevOff = !selected || selected <= FIRST_DAY; nextOff = !selected || selected >= lastDay; }
+            else if (view === 'year') { label = String(year); prevOff = year <= +FIRST_DAY.slice(0, 4); nextOff = year >= new Date().getFullYear(); }
+            else { label = month.toLocaleDateString('da-DK', { month: 'long', year: 'numeric' }); prevOff = dayKey(new Date(month.getFullYear(), month.getMonth() + 1, 0)) < FIRST_DAY; nextOff = +month >= +thisMonth; }
+            document.getElementById('monthLabel').textContent = label;
+            document.getElementById('prev').disabled = prevOff; document.getElementById('next').disabled = nextOff;
+        }
+
         function render() {
-            // KPIs
-            const total = days.reduce((a, d) => a + d.total, 0), cost = days.reduce((a, d) => a + d.cost, 0);
-            const set = (id, html, sub) => { document.getElementById(id).innerHTML = html; if (sub !== undefined) document.getElementById(id + 'Sub').textContent = sub; };
-            if (!days.length) { for (const id of ['kTotal', 'kCost', 'kAvg', 'kMax', 'kLast']) set(id, '–', ''); document.getElementById('note').textContent = 'Ingen forbrugsdata fra Tibber i denne måned endnu. Tibber henter måleren cirka et døgn forsinket.'; }
-            else {
-                const max = days.reduce((a, d) => d.total > a.total ? d : a), last = days[days.length - 1];
-                set('kTotal', `${f(total, 0)}<small>kWh</small>`, `${days.length} dage med data`);
-                set('kCost', `${f(cost, 0)}<small>kr</small>`, total ? `${f(cost / total, 2)} kr/kWh i snit` : '');
-                set('kAvg', `${f(total / days.length, 1)}<small>kWh</small>`, `${f(cost / days.length, 0)} kr pr. dag`);
-                set('kMax', `${f(max.total, 1)}<small>kWh</small>`, new Date(max.t).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' }));
-                set('kLast', `${f(last.total, 1)}<small>kWh</small>`, `${new Date(last.t).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' })} · ${f(last.cost, 0)} kr`);
-                document.getElementById('note').textContent = 'Total og kost er fra elmåleren via Tibber (kommer cirka et døgn forsinket). Elbil er Zaptec-laderen, Mill er varmerne, og Resten er alt andet. Sensibo vises, når den har en forbrugsmåling. Varmepumpens signatur kommer, når den er online.';
+            document.getElementById('dayBox').hidden = view !== 'month';
+            document.getElementById('hourBox').hidden = view !== 'day';
+            document.getElementById('yearBox').hidden = view !== 'year';
+            if (view === 'year') { renderYear(); updateNav(); return; }
+            const hs = hours.filter(h => dayKey(h.t) === selected);
+            const set = (id, html, sub) => { document.getElementById(id).innerHTML = html; document.getElementById(id + 'Sub').textContent = sub ?? ''; };
+            const lab = (id, text) => { document.getElementById(id + 'L').textContent = text; };
+            const none = () => { for (const id of ['kTotal', 'kCost', 'kAvg', 'kMax', 'kLast']) set(id, '–', ''); };
+            const NOTE = 'Total og kost er fra elmåleren via Tibber (kommer cirka et døgn forsinket). Elbil er Zaptec-laderen, Mill er varmerne, og Resten er alt andet. Sensibo vises, når den har en forbrugsmåling.';
+            if (view === 'day') {
+                lab('kTotal', 'Dagens forbrug'); lab('kCost', 'Dagens pris'); lab('kAvg', 'Gns. pr. time'); lab('kMax', 'Største time'); lab('kLast', 'Nat 00–06');
+                if (!hs.length) { none(); document.getElementById('note').textContent = 'Ingen timedata for denne dag endnu. Tibber henter måleren cirka et døgn forsinket.'; }
+                else {
+                    const t = hs.reduce((a, h) => a + h.total, 0), c = hs.reduce((a, h) => a + h.cost, 0), pk = hs.reduce((a, h) => h.total > a.total ? h : a);
+                    const night = hs.filter(h => new Date(h.t).getHours() < 6).reduce((a, h) => a + h.total, 0);
+                    set('kTotal', `${f(t, 1)}<small>kWh</small>`, new Date(hs[0].t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' }));
+                    set('kCost', `${f(c, 0)}<small>kr</small>`, t ? `${f(c / t, 2)} kr/kWh i snit` : '');
+                    set('kAvg', `${f(t / hs.length, 2)}<small>kWh</small>`, `${f(c / hs.length, 1)} kr pr. time`);
+                    set('kMax', `${f(pk.total, 2)}<small>kWh</small>`, `kl. ${String(new Date(pk.t).getHours()).padStart(2, '0')}–${String((new Date(pk.t).getHours() + 1) % 24).padStart(2, '0')} · ${f(pk.cost, 1)} kr`);
+                    set('kLast', `${f(night, 1)}<small>kWh</small>`, t ? `${f(night / t * 100, 0)} % af dagen` : '');
+                    document.getElementById('note').textContent = NOTE;
+                }
+            } else {
+                lab('kTotal', 'Måned i alt'); lab('kCost', 'Måned kost'); lab('kAvg', 'Gns. dag'); lab('kMax', 'Højeste dag'); lab('kLast', 'Seneste dag');
+                const total = days.reduce((a, d) => a + d.total, 0), cost = days.reduce((a, d) => a + d.cost, 0);
+                if (!days.length) { none(); document.getElementById('note').textContent = 'Ingen forbrugsdata fra Tibber i denne måned endnu. Tibber henter måleren cirka et døgn forsinket.'; }
+                else {
+                    const max = days.reduce((a, d) => d.total > a.total ? d : a), last = days[days.length - 1];
+                    set('kTotal', `${f(total, 0)}<small>kWh</small>`, `${days.length} dage med data`);
+                    set('kCost', `${f(cost, 0)}<small>kr</small>`, total ? `${f(cost / total, 2)} kr/kWh i snit` : '');
+                    set('kAvg', `${f(total / days.length, 1)}<small>kWh</small>`, `${f(cost / days.length, 0)} kr pr. dag`);
+                    set('kMax', `${f(max.total, 1)}<small>kWh</small>`, new Date(max.t).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' }));
+                    set('kLast', `${f(last.total, 1)}<small>kWh</small>`, `${new Date(last.t).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' })} · ${f(last.cost, 0)} kr`);
+                    document.getElementById('note').textContent = NOTE;
+                }
             }
-            // split chips
-            const hasSrc = c => DEMO ? days.some(d => d[c.key] > 0) : c.key === 'rest' || !!(sources && sources[c.key] && sources[c.key].length);
+            // split chips: the sum over what is on show (the day's hours or the month's days)
+            const shownRows = view === 'day' ? hs : days, sumRows = shownRows.reduce((a, r) => a + r.total, 0);
+            const hasSrc = c => DEMO ? shownRows.some(d => d[c.key] > 0) : c.key === 'rest' || !!(sources && sources[c.key] && sources[c.key].length);
             const shown = CATS.filter(hasSrc);
-            document.getElementById('split').innerHTML = CATS.map(c => { const v = days.reduce((a, d) => a + d[c.key], 0); const off = !shown.includes(c); return `<span class="sp" style="${off ? 'opacity:.45' : ''}"><i style="background:${c.color}"></i><b>${c.name}</b><small>${off ? 'ingen måling' : `${f(v, 0)} kWh · ${total ? Math.round(v / total * 100) : 0} %`}</small></span>`; }).join('');
+            document.getElementById('split').innerHTML = chips(shownRows, shown, sumRows);
             // days
             if (dayChart) dayChart.destroy();
             const wk = d => { const g = new Date(d.t).getDay(); return g === 0 || g === 6; };
@@ -191,10 +246,9 @@
                     label: i => `${i.dataset.label}: ${f(i.parsed.y, 2)} kWh`,
                     footer: i => { const d = days[i[0].dataIndex]; return `I alt ${f(d.total, 1)} kWh · ${f(d.cost, 0)} kr`; },
                 }, (v) => new Date(days[v]?.t).getDate()),
-                    onClick: (e, els) => { if (els.length) { selected = days[els[0].index].k; render(); } } },
+                    onClick: (e, els) => { if (els.length) { selected = days[els[0].index].k; setView('day'); } } },
             });
             // hours of the selected day
-            const hs = hours.filter(h => dayKey(h.t) === selected);
             document.getElementById('hourTitle').textContent = selected ? new Date(hs[0]?.t ?? selected).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Timer';
             if (hourChart) hourChart.destroy();
             hourChart = new Chart(document.getElementById('hourChart'), {
@@ -210,13 +264,140 @@
             hourChart.options.plugins.tooltip.callbacks.footer = hourChart.options.plugins.tooltip.callbacks.footer;
         }
 
+        const chips = (rows, shown, total) => CATS.map(c => { const v = rows.reduce((a, d) => a + d[c.key], 0), off = !shown.includes(c); return `<span class="sp" style="${off ? 'opacity:.45' : ''}"><i style="background:${c.color}"></i><b>${c.name}</b><small>${off ? 'ingen måling' : `${f(v, 0)} kWh · ${total ? Math.round(v / total * 100) : 0} %`}</small></span>`; }).join('');
+
+        // ---- the year: one bar a month (calendar year), the same groups
+        async function loadYear() {
+            const start = new Date(year, 0, 1), end = new Date(year + 1, 0, 1);
+            if (DEMO) months = Array.from({ length: 12 }, (_, i) => { const m = new Date(year, i, 1); if (+m > Date.now()) return null; const kwh = 120 + 380 * Math.abs(Math.cos(i / 12 * Math.PI)); return { k: dayKey(m).slice(0, 7), t: +m, total: kwh, cost: kwh * 2.1, mill: kwh * 0.05, ev: 3, sensibo: 0, rest: kwh * 0.9 }; }).filter(Boolean);
+            else {
+                const s = await discover();
+                if (!s.cons) { months = []; return; }
+                const res = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo], period: 'month', types: ['change'] });
+                const at = new Map(), row = t => { const k = dayKey(t).slice(0, 7); if (!at.has(k)) at.set(k, { k, t: +new Date(t), total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0 }); return at.get(k); };
+                const add = (id, key) => ((res && res[id]) || []).forEach(r => { if (r.change != null) row(r.start)[key] += r.change; });
+                add(s.cons, 'total'); add(s.cost, 'cost'); s.ev.forEach(i => add(i, 'ev')); s.mill.forEach(i => add(i, 'mill')); s.sensibo.forEach(i => add(i, 'sensibo'));
+                months = [...at.values()].filter(r => r.total > 0).sort((a, b) => a.t - b.t);
+            }
+            for (const m of months) m.rest = Math.max(0, m.total - m.mill - m.ev - m.sensibo);
+        }
+        function renderYear() {
+            const set = (id, html, sub) => { document.getElementById(id).innerHTML = html; document.getElementById(id + 'Sub').textContent = sub ?? ''; };
+            const lab = (id, text) => { document.getElementById(id + 'L').textContent = text; };
+            lab('kTotal', 'År i alt'); lab('kCost', 'År kost'); lab('kAvg', 'Gns. måned'); lab('kMax', 'Højeste måned'); lab('kLast', 'Seneste måned');
+            const mn = t => new Date(t).toLocaleDateString('da-DK', { month: 'long' });
+            if (!months.length) { for (const id of ['kTotal', 'kCost', 'kAvg', 'kMax', 'kLast']) set(id, '–', ''); document.getElementById('note').textContent = 'Ingen forbrugsdata fra Tibber for ' + year + '.'; }
+            else {
+                const total = months.reduce((a, m) => a + m.total, 0), cost = months.reduce((a, m) => a + m.cost, 0), max = months.reduce((a, m) => m.total > a.total ? m : a), last = months[months.length - 1];
+                set('kTotal', `${f(total, 0)}<small>kWh</small>`, `${months.length} måneder med data`);
+                set('kCost', `${f(cost, 0)}<small>kr</small>`, total ? `${f(cost / total, 2)} kr/kWh i snit` : '');
+                set('kAvg', `${f(total / months.length, 0)}<small>kWh</small>`, `${f(cost / months.length, 0)} kr pr. måned`);
+                set('kMax', `${f(max.total, 0)}<small>kWh</small>`, `${mn(max.t)} · ${f(max.cost, 0)} kr`);
+                set('kLast', `${f(last.total, 0)}<small>kWh</small>`, `${mn(last.t)} · ${f(last.cost, 0)} kr${last.k === dayKey(new Date()).slice(0, 7) ? ' (hidtil)' : ''}`);
+                document.getElementById('note').textContent = 'Total og kost er fra elmåleren via Tibber. Elbil er Zaptec-laderen, Mill er varmerne, og Resten er alt andet (varmepumpen ligger i Resten, indtil dens stik har data).';
+            }
+            const hasSrc = c => DEMO ? months.some(d => d[c.key] > 0) : c.key === 'rest' || !!(sources && sources[c.key] && sources[c.key].length);
+            const shown = CATS.filter(hasSrc), sum = months.reduce((a, m) => a + m.total, 0);
+            document.getElementById('ysplit').innerHTML = chips(months, shown, sum);
+            if (yearChart) yearChart.destroy();
+            yearChart = new Chart(document.getElementById('yearChart'), {
+                type: 'bar',
+                data: { labels: months.map(m => m.t), datasets: shown.map(c => dataset(c, months)) },
+                options: { ...stackOpts({
+                    title: i => new Date(months[i[0].dataIndex].t).toLocaleDateString('da-DK', { month: 'long', year: 'numeric' }),
+                    label: i => `${i.dataset.label}: ${f(i.parsed.y, 0)} kWh`,
+                    footer: i => { const m = months[i[0].dataIndex]; return `I alt ${f(m.total, 0)} kWh · ${f(m.cost, 0)} kr`; },
+                }, v => new Date(months[v]?.t).toLocaleDateString('da-DK', { month: 'short' })),
+                    onClick: (e, els) => { if (els.length) { month = new Date(months[els[0].index].t); month.setDate(1); month.setHours(0, 0, 0, 0); selected = null; setView('month'); } } },
+            });
+        }
+
+        // ---- the estimate for the rest of the year, like the one for the house at home
+        // Model (kWh a day): the base load + visitors and the car + heating from the energy signature (heat pump on 16 °C: 0.94 kWh per
+        // degree-day under 16.1 °C, measured 2026-10/11 on days without visitors). The 15-year normal for the cottage's area gives the months
+        // ahead; for the days the weather forecast reaches (16 days) the forecast is used. Mild / cold winter = 15 % fewer / more degree-days.
+        const FC = { baseDay: 1.8, visitMonth: 21.5, a: 15.2, b: 0.94, mild: 0.85, cold: 1.15,
+                     hdd: [541, 483, 454, 329, 179, 46, 11, 18, 93, 251, 367, 479] };   // degree-days (base 16.1), mean of 2011-2025
+        const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
+        let fcChart = null, fcCache = null, fcAt = 0;
+        async function forecast() {
+            if (fcCache && Date.now() - fcAt < 20 * 60e3) return draw(fcCache);
+            const now = new Date(), m0 = now.getMonth(), y0 = now.getFullYear(), dim = (y, m) => new Date(y, m + 1, 0).getDate();
+            let soFar = 0, soFarCost = 0, lastDay = null, price = 2.2;
+            if (DEMO) { soFar = 180; soFarCost = 380; lastDay = dayKey(new Date(Date.now() - 864e5)); }
+            else {
+                const s = await discover(); if (!s.cons) return;
+                const ms = new Date(y0, m0, 1), r = await callWS({ type: 'recorder/statistics_during_period', start_time: ms.toISOString(), end_time: new Date().toISOString(), statistic_ids: [s.cons, s.cost], period: 'day', types: ['change'] });
+                ((r && r[s.cons]) || []).forEach(x => { if (x.change > 0) { soFar += x.change; const k = dayKey(x.start); if (!lastDay || k > lastDay) lastDay = k; } });
+                ((r && r[s.cost]) || []).forEach(x => { if (x.change > 0) soFarCost += x.change; });
+                const y = await callWS({ type: 'recorder/statistics_during_period', start_time: new Date(y0 - 1, m0, 1).toISOString(), end_time: new Date().toISOString(), statistic_ids: [s.cons, s.cost], period: 'month', types: ['change'] });
+                const k = ((y && y[s.cons]) || []).reduce((a, x) => a + (x.change || 0), 0), c = ((y && y[s.cost]) || []).reduce((a, x) => a + (x.change || 0), 0);
+                if (k > 50) price = c / k;
+            }
+            const wx = new Map();
+            try { const j = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${COTTAGE.lat}&longitude=${COTTAGE.lon}&daily=temperature_2m_mean&past_days=7&forecast_days=16&timezone=auto`)).json(); (j.daily?.time || []).forEach((d, i) => { if (j.daily.temperature_2m_mean[i] != null) wx.set(d, j.daily.temperature_2m_mean[i]); }); } catch (e) {}
+            const visitDay = FC.visitMonth / dim(y0, m0);
+            // this month: the days after the last day the meter has, by forecast where there is one, else by the normal
+            let rest = 0, restMild = 0, restCold = 0;
+            for (let d = 1; d <= dim(y0, m0); d++) {
+                const key = dayKey(new Date(y0, m0, d)); if (lastDay && key <= lastDay) continue;
+                const T = wx.get(key), heat = T != null ? Math.max(FC.a - FC.b * T, 0) : FC.b * FC.hdd[m0] / dim(y0, m0);
+                rest += FC.baseDay + visitDay + heat; restMild += FC.baseDay + visitDay + heat * FC.mild; restCold += FC.baseDay + visitDay + heat * FC.cold;
+            }
+            const monthTotal = (y, m, k = 1) => dim(y, m) * FC.baseDay + FC.visitMonth + FC.b * FC.hdd[m] * k;
+            const list = [{ label: MON[m0], partial: true, actual: soFar, exp: soFar + rest, low: soFar + restMild, high: soFar + restCold }];
+            for (let i = 1; i <= 12; i++) { const m = (m0 + i) % 12, y = y0 + Math.floor((m0 + i) / 12); list.push({ label: MON[m] + (y !== y0 ? ' ' + String(y).slice(2) : ''), exp: monthTotal(y, m), low: monthTotal(y, m, FC.mild), high: monthTotal(y, m, FC.cold), calYear: y }); }
+            fcCache = { list, soFar, soFarCost, price, m0, y0, rest }; fcAt = Date.now();
+            draw(fcCache);
+            function draw(c) {
+                const { list, soFar, soFarCost, price, m0 } = c, kr = v => `${f(Math.round(v * price / 10) * 10, 0)} kr`, h = v => f(Math.round(v / 10) * 10, 0);
+                const restYear = list[0].exp - soFar + list.slice(1).filter(x => x.calYear === c.y0).reduce((a, x) => a + x.exp, 0);
+                const next6 = list.slice(1, 7).reduce((a, x) => a + x.exp, 0), y12 = list.slice(1).reduce((a, x) => a + x.exp, 0) + list[0].exp;
+                const box = (label, big, sub) => `<div class="kpi"><div class="label">${label}</div><div class="big">${big}</div><div class="sub">${sub}</div></div>`;
+                document.getElementById('fcKpis').innerHTML =
+                    box('Resten af året', `${h(restYear)}<small>kWh</small>`, `cirka ${kr(restYear)} · til og med dec.`) +
+                    box('Næste 6 måneder', `${h(next6)}<small>kWh</small>`, `cirka ${kr(next6)} · fra næste måned`) +
+                    box(`${MON[m0]} hidtil`, `${f(soFar, 0)}<small>kWh</small>`, `${f(soFarCost, 0)} kr · til og med ${lastDay ? new Date(lastDay + 'T12:00:00').toLocaleDateString('da-DK', { day: 'numeric', month: 'short' }) : '–'}`) +
+                    box(`${MON[m0]} forventet`, `${h(list[0].exp)}<small>kWh</small>`, `${kr(list[0].exp)} · ${h(list[0].low)}–${h(list[0].high)} kWh`);
+                if (fcChart) fcChart.destroy();
+                const rows = list.slice(0, 7);
+                fcChart = new Chart(document.getElementById('fcChart'), {
+                    data: { labels: rows.map(r => r.label + (r.partial ? ' (hidtil)' : '')), datasets: [
+                        { type: 'bar', label: 'Forventet', data: rows.map(r => Math.round(r.exp)), backgroundColor: 'rgba(100,210,255,0.55)', borderRadius: 4, maxBarThickness: 42, order: 2 },
+                        { type: 'bar', label: 'Faktisk', data: rows.map(r => r.partial ? Math.round(r.actual) : null), backgroundColor: 'rgba(95,224,133,0.85)', borderRadius: 4, maxBarThickness: 42, order: 2 },
+                    ] },
+                    options: { responsive: true, maintainAspectRatio: false, animation: false,
+                        scales: { x: { ticks: { color: INK.tick, font: { size: 10 } }, grid: { display: false } }, y: { beginAtZero: true, grid: { color: INK.grid }, ticks: { color: INK.tick, font: { size: 10 } } } },
+                        plugins: { legend: { labels: { color: SUMMER ? '#2c4a58' : '#c5d1d9', boxWidth: 10, font: { size: 10 } } }, tooltip: { callbacks: { label: i => `${i.dataset.label}: ${f(i.parsed.y, 0)} kWh${i.datasetIndex === 0 ? ` (${f(Math.round(rows[i.dataIndex].low), 0)}–${f(Math.round(rows[i.dataIndex].high), 0)}, mild–kold)` : ''}` } } } },
+                });
+                document.getElementById('fcNote').textContent = `Grundforbrug ${FC.baseDay} kWh pr. dag (køleskabet er slukket siden 14. nov.), besøg og elbil ${FC.visitMonth} kWh pr. måned, opvarmning med varmepumpen på 16 °C efter signaturen. Normalt vejr for området (15 år), vejrudsigten for de næste dage. Pris ${f(price, 2)} kr/kWh (seneste 12 måneder). Et estimat, ikke en måling: retter sig selv, når der kommer flere målinger.`;
+            }
+        }
+
+        // ---- the view and the arrows
+        function setView(v) {
+            view = v; try { localStorage.setItem('ss_view', v); } catch (e) {}
+            if (v === 'day' && selected) { month = new Date(new Date(selected + 'T12:00:00').getFullYear(), new Date(selected + 'T12:00:00').getMonth(), 1); }
+            if (v === 'year') year = month.getFullYear();
+            go();
+        }
+        const shiftDay = n => {
+            const i = days.findIndex(d => d.k === selected);
+            if (i >= 0 && days[i + n]) { selected = days[i + n].k; render(); return; }
+            // across the border of the month: step a calendar day and load that month
+            const d = new Date(new Date(selected + 'T12:00:00').getTime() + n * 864e5);
+            selected = dayKey(d); month = new Date(d.getFullYear(), d.getMonth(), 1); go();
+        };
+
         async function live() {
             if (DEMO) { document.getElementById('power').textContent = '2,14'; document.getElementById('heroSub').textContent = 'Pulse, lige nu'; return; }
             const states = new Map((await callApi('GET', 'states')).map(s => [s.entity_id, s]));
             const reg = (await callWS({ type: 'config/entity_registry/list' })) || [];
             const mine = reg.filter(r => r.platform === 'tibber' && !r.disabled_by);
             const price = mine.find(r => /\/kWh/.test(states.get(r.entity_id)?.attributes.unit_of_measurement || ''));
-            const power = mine.filter(r => r.device_id === price?.device_id).map(r => states.get(r.entity_id)).find(s => s && s.attributes.device_class === 'power');
+            // Tibber Pulse: the integration puts its real-time sensors under their own device ("Tibber Pulse <home>"), unique id <home>_rt_power
+            const rtPower = mine.find(r => /_rt_power$/.test(r.unique_id || '')) || mine.find(r => states.get(r.entity_id)?.attributes.device_class === 'power' && /power/i.test(r.entity_id) && !/average|production|min_|max_|factor/i.test(r.entity_id));
+            const power = rtPower && states.get(rtPower.entity_id);
             if (isOk(power)) {
                 document.getElementById('power').textContent = f(parseFloat(power.state) * (power.attributes.unit_of_measurement === 'kW' ? 1 : 1e-3), 2);
                 document.getElementById('unit').textContent = 'kW'; document.getElementById('heroSub').textContent = 'Pulse, lige nu';
@@ -328,9 +509,15 @@
         document.getElementById('sigSplit').addEventListener('change', e => { sigSplit = e.target.value; store.set('ss_split', sigSplit); signature(); });
         document.getElementById('sigReset').addEventListener('click', () => { sigSplit = SPLIT_DEFAULT; store.set('ss_split', sigSplit); document.getElementById('sigSplit').value = sigSplit; signature(); });
 
-        document.getElementById('prev').addEventListener('click', () => { month.setMonth(month.getMonth() - 1); selected = null; go(); });
-        document.getElementById('next').addEventListener('click', () => { month.setMonth(month.getMonth() + 1); selected = null; go(); });
-        const go = () => loadMonth().then(render).then(live).catch(showError);
+        const move = n => {
+            if (view === 'day') return shiftDay(n);
+            if (view === 'year') { year += n; return go(); }
+            month = new Date(month.getFullYear(), month.getMonth() + n, 1); selected = null; go();
+        };
+        document.getElementById('prev').addEventListener('click', () => move(-1));
+        document.getElementById('next').addEventListener('click', () => move(1));
+        document.getElementById('viewSeg').addEventListener('click', e => { const v = e.target.dataset?.v; if (v && v !== view) setView(v); });
+        const go = () => (view === 'year' ? loadYear() : loadMonth()).then(render).then(live).then(() => forecast()).catch(showError);
         go();
         signature().catch(showError);
         setInterval(() => live().catch(() => {}), 15e3);

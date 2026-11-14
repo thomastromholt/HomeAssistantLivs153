@@ -12,6 +12,8 @@
 #   Raised only when the last change is at least 15 minutes old (Zaptec asks for that; frequent changes can make the car
 #   stop the session) and the last overload is at least 30 minutes old. Exception: when the charger reports under 5.5 A
 #   (about 0 A after a session has ended) it is raised at once, so a short stop does not become a 15 minute pause.
+# When input_boolean.ladeplan_ha is off (an external app controls the charger) it only lowers, and raises back only after its own
+# overload (within 3 hours); it must not undo the app's pauses.
 # It never starts or stops the charger.
 - id: load_balance_car_current
   alias: Lastbalancering, bil under 20 A
@@ -41,6 +43,9 @@
         minutes_since_change: "{{ ((now() - states.number.go2_charger_max_current.last_changed).total_seconds() / 60) | round(1) }}"
         minutes_since_overload: >-
           {{ ((as_timestamp(now()) - as_timestamp(states('input_datetime.lad_overload'), 0)) / 60) | round(1) }}
+        # An external app (Greenely / Tibber) controls the charger when HA's plan is off: it pauses by setting the limit to 0 or 6 A,
+        # so there the limit is only lowered, and raised back only after an overload we caused ourselves.
+        external: "{{ not is_state('input_boolean.ladeplan_ha', 'on') }}"
         target: "{{ [ [ (20 - house_a - 2) | round(0, 'floor'), 12 ] | max, 15 ] | min | int }}"
     - choose:
         # Over 20 A on L1: down to 6 A and remember when.
@@ -93,7 +98,8 @@
         - conditions:
             - condition: template
               value_template: >-
-                {{ p1_ok and target > limit + 0.5 and (minutes_since_change | float >= 15 or limit < 5.5) and minutes_since_overload | float >= 30 }}
+                {{ p1_ok and target > limit + 0.5 and (minutes_since_change | float >= 15 or (limit < 5.5 and not external)) and minutes_since_overload | float >= 30
+                   and (not external or (limit >= 5.5 and minutes_since_overload | float < 180)) }}
           sequence:
             - action: number.set_value
               target:

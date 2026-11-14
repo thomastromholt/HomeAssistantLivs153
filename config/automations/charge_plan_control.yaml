@@ -85,6 +85,14 @@
   description: Starter laderen i de planlagte timer eller ved Lad nu, og stopper den ellers. Bruger Zaptecs resume- og stopknapper.
   mode: queued
   max: 3
+  # Only when HA's own plan is in charge (input_boolean.ladeplan_ha). Otherwise an external app (Greenely / Tibber, for grid
+  # rewards) controls the charger, and only a press on the card (Lad nu / Stop ladning) or an unplug is acted on.
+  conditions:
+    - condition: template
+      value_template: >-
+        {{ is_state('input_boolean.ladeplan_ha', 'on')
+           or states('sensor.go2_charger_mode') == 'disconnected'
+           or (trigger.platform == 'state' and trigger.entity_id in ['input_boolean.lad_nu', 'input_boolean.lad_stop']) }}
   triggers:
     - trigger: time_pattern
       minutes: "/1"

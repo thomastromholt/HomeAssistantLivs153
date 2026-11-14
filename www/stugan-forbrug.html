@@ -87,8 +87,9 @@
             const states = new Map((await callApi('GET', 'states')).map(s => [s.entity_id, s]));
             if (!reg.length || Date.now() - regAt > 5 * 60e3) { reg = (await callWS({ type: 'config/entity_registry/list' })) || reg; regAt = Date.now(); }
             const tib = reg.filter(r => r.platform === 'tibber' && !r.disabled_by);
-            const price = tib.find(r => /\/kWh/.test(states.get(r.entity_id)?.attributes.unit_of_measurement || ''));
-            const pulse = tib.filter(r => r.device_id === price?.device_id).map(r => states.get(r.entity_id)).find(s => s && s.attributes.device_class === 'power');
+            // Tibber Pulse: the integration puts its real-time sensors under their own device ("Tibber Pulse <home>"), unique id <home>_rt_power
+            const rtPower = tib.find(r => /_rt_power$/.test(r.unique_id || '')) || tib.find(r => states.get(r.entity_id)?.attributes.device_class === 'power' && /power/i.test(r.entity_id) && !/average|production|min_|max_|factor/i.test(r.entity_id));
+            const pulse = rtPower && states.get(rtPower.entity_id);
             const mill = reg.filter(r => r.platform === 'mill' && !r.disabled_by && r.entity_id.startsWith('sensor.') && states.get(r.entity_id)?.attributes.device_class === 'power').map(r => r.entity_id);
             return { states, pulse: pulse && isOk(pulse) ? pulse : null, pulseEntity: pulse, ev: states.get('sensor.stugan_charge_power') ? 'sensor.stugan_charge_power' : null, mill };
         }

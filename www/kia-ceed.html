@@ -104,6 +104,7 @@
             ladNu: 'input_boolean.lad_nu',
             ladStop: 'input_boolean.lad_stop',
             window: 'input_boolean.ladevindue',
+            plan: 'input_boolean.ladeplan_ha',   // on = HA's charging plan controls the charger; off = an external app (Greenely / Tibber) does
         };
 
         // The car and the charging power both open the car pop-up (battery, charging and history); the charge time opens the car's charging sensor.
@@ -127,7 +128,7 @@
         timeTile.className = 'tile';
         timeTile.innerHTML = '<div class="tile-label">Charge time</div><div class="tile-value"></div>'
             + '<div class="buttons"><button class="btn-small btn-go" id="ladNuBtn">Lad nu</button>'
-            + '<button class="btn-small btn-stop" id="folgPlanBtn">Følg plan</button></div>';
+            + '<button class="btn-small btn-stop" id="folgPlanBtn" title="Til: ladeplanen i HA styrer laderen. Fra: en ekstern app (Greenely / Tibber) styrer den.">HA-plan</button></div>';
         document.getElementById('tiles').append(timeTile);
 
         const tiles = {
@@ -193,7 +194,8 @@
                 // until the charger reports the new state. Starting can take minutes (Zaptec resume, or waking the
                 // car through Kia), so the hint says what we are waiting for.
                 const ladNuOn = s('ladNu') === 'on', ladStopOn = s('ladStop') === 'on';
-                const want = STUGAN ? false : (ladNuOn || s('window') === 'on') && !ladStopOn;
+                const planOn = !STUGAN && s('plan') === 'on';
+                const want = STUGAN ? false : planOn ? (ladNuOn || s('window') === 'on') && !ladStopOn : false;
                 const carFull = level >= 99;
                 const waitingForCar = want && plugged && !charging && !carFull;
                 // A press shows at once, before Home Assistant has answered.
@@ -202,7 +204,7 @@
                 // Spin for up to 2 minutes after a change; after that the car is simply pausing (the Ceed pauses
                 // for ~8 minutes by itself), and the automation wakes it through Kia after 10 minutes.
                 const pendingStart = (pressed?.start && !charging) || (waitingForCar && waited < 2);
-                const pendingStop = (pressed && !pressed.start && charging) || (!STUGAN && !want && charging);
+                const pendingStop = (pressed && !pressed.start && charging) || (planOn && !want && charging);
                 const active = (want && plugged && !carFull) || charging;   // the button now means "stop"
                 chargingNow = active;
 
@@ -215,7 +217,7 @@
                 first.classList.toggle('busy', busy);
                 first.classList.toggle('on', !busy && plugged && !active);   // green: you can charge
                 first.classList.toggle('stop', !busy && active);             // orange: charging
-                document.getElementById('folgPlanBtn').classList.toggle('on', !ladNuOn && !ladStopOn);
+                document.getElementById('folgPlanBtn').classList.toggle('on', planOn);
 
                 let hint = '';
                 if (pendingStart) {
@@ -227,6 +229,7 @@
                     statusText = 'Waiting for the car'; statusClass = 'warn';
                     hint = 'The car pauses by itself; woken after 10 min';
                 } else if (!plugged && isOnline) hint = 'Plug in to charge';
+                else if (!STUGAN && !planOn) hint = 'Styres af ekstern app (Greenely / Tibber)';
                 statusTile.textContent = statusText;
                 statusTile.className = `tile-value status ${statusClass}`;
                 statusHint.textContent = hint;
@@ -274,7 +277,7 @@
             document.getElementById('ladNuBtn').addEventListener('click', () => press(!chargingNow));
         } else {
             document.getElementById('ladNuBtn').addEventListener('click', () => chargingNow ? choose(false, true, false) : choose(true, false, true));
-            document.getElementById('folgPlanBtn').addEventListener('click', () => choose(false, false));
+            document.getElementById('folgPlanBtn').addEventListener('click', () => turn(s('plan') !== 'on', E.plan).then(() => choose(false, false)));
         }
 
         render();
