@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kia Ceed</title>
     <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script>if (new URLSearchParams(location.search).get('theme') === 'summer') { document.documentElement.className = 'summer'; document.write('<link rel="stylesheet" href="/local/card-summer.css?v=1">'); }</script>
     <style>
         .hero { text-align: center; }
         .soc { font-size: 58px; font-weight: 300; line-height: 1; color: #ffb340; transition: color 0.4s; }
@@ -84,6 +85,10 @@
 
     <script src="/local/card-common.js?v=1"></script>
     <script>
+        // ?charger=stugan shows the same view for the cottage's Zaptec (no plan there: Lad nu / Stop press Zaptec's own buttons).
+        const CH = new URLSearchParams(location.search).get('charger') || 'go2';
+        const STUGAN = CH === 'stugan';
+        const THEME = new URLSearchParams(location.search).get('theme') || '';
         const E = {
             battery: 'sensor.ceed_ev_battery_level',
             totalRange: 'sensor.ceed_total_driving_range',
@@ -93,16 +98,16 @@
             chargeMinutes: 'sensor.ceed_estimated_charge_duration',
             updatedAt: 'sensor.ceed_last_updated_at',
             // Zaptec Go2 (the home charger).
-            mode: 'sensor.go2_charger_mode',
-            power: 'sensor.go2_charge_power',
-            online: 'binary_sensor.go2_online',
+            mode: `sensor.${CH}_charger_mode`,
+            power: `sensor.${CH}_charge_power`,
+            online: `binary_sensor.${CH}_online`,
             ladNu: 'input_boolean.lad_nu',
             ladStop: 'input_boolean.lad_stop',
             window: 'input_boolean.ladevindue',
         };
 
         // The car and the charging power both open the car pop-up (battery, charging and history); the charge time opens the car's charging sensor.
-        const openCar = () => openPopup('/local/car.html?v=' + Date.now());
+        const openCar = () => openPopup(`/local/car.html?charger=${CH}&theme=${THEME}&v=` + Date.now());
         document.querySelector('.car').addEventListener('click', openCar);
         // The charger's own state (Zaptec), first in the row.
         const statusTile = createTile(document.getElementById('tiles'), 'Charger', E.mode);
@@ -188,7 +193,7 @@
                 // until the charger reports the new state. Starting can take minutes (Zaptec resume, or waking the
                 // car through Kia), so the hint says what we are waiting for.
                 const ladNuOn = s('ladNu') === 'on', ladStopOn = s('ladStop') === 'on';
-                const want = (ladNuOn || s('window') === 'on') && !ladStopOn;
+                const want = STUGAN ? false : (ladNuOn || s('window') === 'on') && !ladStopOn;
                 const carFull = level >= 99;
                 const waitingForCar = want && plugged && !charging && !carFull;
                 // A press shows at once, before Home Assistant has answered.
@@ -197,7 +202,7 @@
                 // Spin for up to 2 minutes after a change; after that the car is simply pausing (the Ceed pauses
                 // for ~8 minutes by itself), and the automation wakes it through Kia after 10 minutes.
                 const pendingStart = (pressed?.start && !charging) || (waitingForCar && waited < 2);
-                const pendingStop = (pressed && !pressed.start && charging) || (!want && charging);
+                const pendingStop = (pressed && !pressed.start && charging) || (!STUGAN && !want && charging);
                 const active = (want && plugged && !carFull) || charging;   // the button now means "stop"
                 chargingNow = active;
 
@@ -257,8 +262,20 @@
                 .then(render)
                 .catch(error => { pressed = null; showError(error); render(); });
         };
-        document.getElementById('ladNuBtn').addEventListener('click', () => chargingNow ? choose(false, true, false) : choose(true, false, true));
-        document.getElementById('folgPlanBtn').addEventListener('click', () => choose(false, false));
+        // The cottage has no plan: the button presses Zaptec's resume / stop button, and there is no "Følg plan".
+        const press = start => {
+            pressed = { start, at: Date.now() };
+            render();
+            return callApi('POST', 'services/button/press', { entity_id: `button.${CH}_${start ? 'resume' : 'stop'}_charging` })
+                .then(render).catch(error => { pressed = null; showError(error); render(); });
+        };
+        if (STUGAN) {
+            document.getElementById('folgPlanBtn').style.display = 'none';
+            document.getElementById('ladNuBtn').addEventListener('click', () => press(!chargingNow));
+        } else {
+            document.getElementById('ladNuBtn').addEventListener('click', () => chargingNow ? choose(false, true, false) : choose(true, false, true));
+            document.getElementById('folgPlanBtn').addEventListener('click', () => choose(false, false));
+        }
 
         render();
         setInterval(render, 15e3);

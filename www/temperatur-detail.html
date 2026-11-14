@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Temperatur</title>
     <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script>if (new URLSearchParams(location.search).get('theme') === 'summer') { document.documentElement.className = 'summer'; document.write('<link rel="stylesheet" href="/local/card-summer.css?v=1">'); }</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         .container { overflow-y: auto; gap: 10px; padding: 18px 20px 16px; }
@@ -31,6 +32,7 @@
         .hum-box .value small { font-size: 13px; color: #8da0ad; margin-left: 2px; }
         .hum-box .value.good { color: #5fe085; } .hum-box .value.fair { color: #ffb340; } .hum-box .value.poor { color: #ff6b61; }
 
+        .banner { padding: 8px 12px; border-radius: 10px; background: rgba(255,179,64,0.14); border: 1px solid rgba(255,179,64,0.3); color: #ffb340; font-size: 12px; }
         .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
         .kpi { padding: 11px 12px; border-radius: 12px; background: rgba(255,255,255,0.05); }
         .kpi .label { font-size: 11px; color: #8da0ad; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -94,6 +96,8 @@
                 <div class="value" id="humNow">–<small>%</small></div>
             </div>
         </div>
+
+        <div class="banner" id="exampleNote" hidden>Eksempeldata, indtil enheden er online.</div>
 
         <div class="kpis">
             <div class="kpi"><div class="label">Min</div><div class="big" id="kMin">–</div><div class="sub" id="kMinSub"></div></div>
@@ -167,6 +171,16 @@
 
         const params = new URLSearchParams(location.search);
         let sensorKey = SENSORS[params.get('sensor')] ? params.get('sensor') : 'timmerflotte';
+        // ?entity=climate.x (or any temperature sensor) [&name=..&sub=..&humidity=sensor.y]: any other meter or radiator, e.g. the
+        // cottage's Mill heaters. A climate entity gets its current temperature and its set temperature drawn; with no `moves` the
+        // "where has it been" part is left out.
+        const CUSTOM = params.get('entity');
+        const EXAMPLE = params.has('example');   // example data until the device is online (set by the Stugan card)
+        if (CUSTOM) {
+            SENSORS.custom = { label: params.get('name') || CUSTOM, device: params.get('sub') || '', temperature: CUSTOM, humidity: params.get('humidity') || (EXAMPLE ? 'example' : null),
+                               climate: CUSTOM.startsWith('climate.'), moves: [], example: EXAMPLE };
+            sensorKey = 'custom';
+        }
         const sensor = () => SENSORS[sensorKey];
 
         /* Segments [{key, from, to, temp}] with the last one open-ended (to = null). */
@@ -188,7 +202,9 @@
         let range = '24h';
         try { const saved = localStorage.getItem('tp_range'); if (RANGES[saved]) range = saved; } catch (e) {}
 
-        const GRID = { color: 'rgba(255,255,255,0.05)' };
+        const SUMMER = new URLSearchParams(location.search).get('theme') === 'summer';
+        const GRID = { color: SUMMER ? 'rgba(20,50,63,0.10)' : 'rgba(255,255,255,0.05)' };
+        const LINE = SUMMER ? '#1a8fb8' : '#64d2ff', HUMLINE = SUMMER ? '#5b7fd0' : '#8ab4ff', TICK = SUMMER ? '#5f7783' : '#6d808c';
         const clock = v => new Date(v).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
         const dayLabel = v => new Date(v).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' });
         const fullLabel = v => `${dayLabel(v)} ${clock(v)}`;
@@ -207,13 +223,14 @@
             return [...m].sort((x, y) => x[0] - y[0]).map(([x, [sum, n]]) => ({ x, y: sum / n }));
         };
 
-        async function historyRows(ids, startMs) {
-            const res = await callApi('GET', `history/period/${new Date(startMs).toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${encodeURIComponent(new Date().toISOString())}&minimal_response&no_attributes`);
+        async function historyRows(ids, startMs, withAttributes) {
+            const res = await callApi('GET', `history/period/${new Date(startMs).toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${encodeURIComponent(new Date().toISOString())}${withAttributes ? '' : '&minimal_response&no_attributes'}`);
             const out = {};
             for (const series of res || []) if (series[0]) out[series[0].entity_id] = series;
             return out;
         }
         const numericRows = rows => (rows || []).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: parseFloat(r.state) }));
+        const attrRows = (rows, attr) => (rows || []).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: parseFloat(r.attributes?.[attr]) }));
         async function statsRows(ids, startMs, period) {
             const res = await callWS({ type: 'recorder/statistics_during_period', start_time: new Date(startMs).toISOString(), end_time: new Date().toISOString(), statistic_ids: ids, period, types: ['mean'] });
             if (!res) return null;
@@ -272,7 +289,7 @@
         };
 
         const charts = {};
-        const timeAxis = (r, start, end) => ({ type: 'linear', min: start, max: end, grid: GRID, ticks: { color: '#6d808c', font: { size: 10 }, maxTicksLimit: 7, maxRotation: 0, callback: tickLabel(r) } });
+        const timeAxis = (r, start, end) => ({ type: 'linear', min: start, max: end, grid: GRID, ticks: { color: TICK, font: { size: 10 }, maxTicksLimit: 7, maxRotation: 0, callback: tickLabel(r) } });
         const gradient = (color, top, bottom) => c => {
             const a = c.chart.chartArea;
             if (!a) return 'transparent';
@@ -284,7 +301,7 @@
         function renderChart(id, r, start, end, data, opts) {
             if (charts[id]) charts[id].destroy();
             const segs = segmentsOf(sensor());
-            const ys = data.map(p => p.y);
+            const ys = [...data, ...((opts.extra || []).flatMap(d => d.data))].map(p => p.y);
             const lo = Math.min(...ys), hi = Math.max(...ys);
             const span = Math.max(hi - lo, opts.minSpan), mid = (hi + lo) / 2;
             const yMin = ys.length ? mid - span / 2 - span * 0.08 : undefined;
@@ -295,13 +312,13 @@
                 data: { datasets: [{
                     data, borderColor: opts.color, borderWidth: 2.4, pointRadius: 0, tension: 0.25, fill: true,
                     backgroundColor: gradient(opts.color, 0.28, 0.0),
-                }] },
+                }, ...(opts.extra || [])] },
                 options: {
                     responsive: true, maintainAspectRatio: false, animation: false,
                     interaction: { mode: 'nearest', axis: 'x', intersect: false },
                     scales: {
                         x: timeAxis(r, start, end),
-                        y: { min: yMin, max: yMax, grid: GRID, ticks: { color: '#6d808c', font: { size: 10 }, callback: v => opts.unit === '%' ? Math.round(v) + ' %' : f1(v) + '°' } },
+                        y: { min: yMin, max: yMax, grid: GRID, ticks: { color: TICK, font: { size: 10 }, callback: v => opts.unit === '%' ? Math.round(v) + ' %' : f1(v) + '°' } },
                     },
                     plugins: {
                         legend: { display: false },
@@ -311,7 +328,7 @@
                             displayColors: false,
                             callbacks: {
                                 title: items => fullLabel(items[0].parsed.x),
-                                label: item => opts.unit === '%' ? `${Math.round(item.parsed.y)} %` : `${f1(item.parsed.y)} °C`,
+                                label: item => `${item.dataset.label ? item.dataset.label + ': ' : ''}${opts.unit === '%' ? Math.round(item.parsed.y) + ' %' : f1(item.parsed.y) + ' °C'}`,
                                 afterLabel: item => { const g = placeAt(sensor(), item.parsed.x); return g ? `📍 ${PLACES[g.key].name}${g.temp ? ' (midlertidigt)' : ''}` : ''; },
                             },
                         },
@@ -320,24 +337,56 @@
             });
         }
 
+        // A believable day-and-night curve for a heater: warm in the day, set temperature stepping down at night.
+        function exampleData(cfg, start, end) {
+            const step = Math.max(cfg.bucket, 300e3), temp = [], target = [], hum = [];
+            for (let t = start; t <= end; t += step) {
+                const h = new Date(t).getHours() + new Date(t).getMinutes() / 60, d = t / DAY;
+                const set = h >= 7 && h < 22 ? 19 : 16;
+                temp.push({ x: t, y: Math.round((set - 0.8 + 1.4 * Math.sin((h - 9) / 24 * Math.PI * 2) + 0.5 * Math.sin(d * 2.3)) * 10) / 10 });
+                target.push({ x: t, y: set });
+                hum.push({ x: t, y: Math.round(47 + 6 * Math.sin((h - 3) / 24 * Math.PI * 2) + 3 * Math.sin(d * 1.7)) });
+            }
+            return { temp, target, hum };
+        }
+        const exampleNow = () => { const e = exampleData({ bucket: 300e3 }, Date.now() - 3600e3, Date.now()); return { t: e.temp[e.temp.length - 1].y, set: e.target[e.target.length - 1].y, h: e.hum[e.hum.length - 1].y }; };
+
         let chartToken = 0, lastTemp = [], lastHum = [];
         async function loadCharts() {
             const s = sensor(), r = range, cfg = RANGES[r], token = ++chartToken;
             const end = Date.now(), start = end - cfg.ms;
             document.getElementById('tempCap').textContent = cfg.label;
             try {
-                const ids = [s.temperature, s.humidity];
-                let rows = cfg.stats ? await statsRows(ids, start, cfg.period).catch(() => null) : null;
-                if (!rows || !(rows[s.temperature] || []).length) {
-                    const h = await historyRows(ids, start);
-                    rows = { [s.temperature]: numericRows(h[s.temperature]), [s.humidity]: numericRows(h[s.humidity]) };
+                if (s.example) {
+                    const ex = exampleData(cfg, start, end);
+                    const extraEx = [{ label: 'Mål', data: ex.target, borderColor: '#ffb340', borderWidth: 1.6, borderDash: [5, 4], pointRadius: 0, stepped: 'before', fill: false }];
+                    renderChart('tempChart', r, start, end, ex.temp, { color: LINE, unit: '°', minSpan: 3, labels: true, extra: extraEx });
+                    renderChart('humChart', r, start, end, ex.hum, { color: HUMLINE, unit: '%', minSpan: 20, labels: false, zone: { from: 25, to: 60 } });
+                    renderKpis(ex.temp, ex.hum, start, end);
+                    return;
+                }
+                const ids = [s.temperature, ...(s.humidity ? [s.humidity] : [])];
+                let rows, target = [];
+                if (s.climate) {
+                    // No statistics for a thermostat's attributes: the recorder's history (about 10 days) with attributes.
+                    const h = await historyRows(ids, start, true);
+                    rows = { [s.temperature]: attrRows(h[s.temperature], 'current_temperature'), [s.humidity]: s.humidity ? numericRows(h[s.humidity]) : [] };
+                    target = bucketize(attrRows(h[s.temperature], 'temperature'), cfg.bucket);
+                } else {
+                    rows = cfg.stats ? await statsRows(ids, start, cfg.period).catch(() => null) : null;
+                    if (!rows || !(rows[s.temperature] || []).length) {
+                        const h = await historyRows(ids, start);
+                        rows = { [s.temperature]: numericRows(h[s.temperature]), [s.humidity]: s.humidity ? numericRows(h[s.humidity]) : [] };
+                    }
                 }
                 if (token !== chartToken) return;
                 const temp = bucketize(rows[s.temperature] || [], cfg.bucket);
-                const hum = bucketize(rows[s.humidity] || [], cfg.bucket);
+                const hum = s.humidity ? bucketize(rows[s.humidity] || [], cfg.bucket) : [];
                 lastTemp = temp; lastHum = hum;
-                renderChart('tempChart', r, start, end, temp, { color: '#64d2ff', unit: '°', minSpan: 3, labels: true });
-                renderChart('humChart', r, start, end, hum, { color: '#8ab4ff', unit: '%', minSpan: 20, labels: false, zone: { from: 25, to: 60 } });
+                const extra = target.length ? [{ label: 'Mål', data: target, borderColor: '#ffb340', borderWidth: 1.6, borderDash: [5, 4], pointRadius: 0, stepped: 'before', fill: false }] : [];
+                if (extra.length) extra[0].label = 'Mål';
+                renderChart('tempChart', r, start, end, temp, { color: LINE, unit: '°', minSpan: 3, labels: true, extra });
+                if (s.humidity) renderChart('humChart', r, start, end, hum, { color: HUMLINE, unit: '%', minSpan: 20, labels: false, zone: { from: 25, to: 60 } });
                 renderKpis(temp, hum, start, end);
                 renderStrip(start, end);
             } catch (e) { console.warn('Charts:', e); }
@@ -405,14 +454,14 @@
         function renderChips() {
             document.getElementById('chips').innerHTML = Object.entries(SENSORS).map(([k, s]) =>
                 `<button class="chip${k === sensorKey ? ' on' : ''}" data-k="${k}"><span class="dot"></span>${s.label} <small>${s.device}</small></button>`).join('');
-            document.getElementById('subtitle').textContent = sensor().device;
+            document.getElementById('subtitle').textContent = CUSTOM ? sensor().label + (sensor().device ? ' · ' + sensor().device : '') : sensor().device;
         }
 
         document.getElementById('chips').addEventListener('click', e => {
             const k = e.target.closest('.chip')?.dataset.k;
             if (!k || k === sensorKey) return;
             sensorKey = k;
-            renderChips(); renderMoves(); load(); loadCharts();
+            renderChips(); renderMoves(); layout(); load(); loadCharts();
         });
 
         const rangeBar = document.getElementById('range');
@@ -427,26 +476,60 @@
         });
         markRange();
 
+        // What belongs to which kind of meter: the humidity box and chart, the chips and the "where" log come and go.
+        function layout() {
+            const s = sensor();
+            document.getElementById('chips').hidden = !!CUSTOM;
+            document.querySelector('.hum-box').hidden = !s.humidity;
+            document.getElementById('humChart').closest('.chart-box').hidden = !s.humidity;
+            document.getElementById('kHum').closest('.kpi').hidden = !s.humidity;
+            document.querySelector('.where').hidden = !s.moves.length;
+            document.getElementById('exampleNote').hidden = !s.example;
+        }
+
         async function load() {
             const s = sensor();
             try {
-                const states = await statesOf([s.temperature, s.humidity]);
-                const t = parseFloat(states[s.temperature]), h = parseFloat(states[s.humidity]);
+                if (s.example) {
+                    const e = exampleNow();
+                    document.getElementById('tempNow').textContent = f1(e.t);
+                    const hv = document.getElementById('humNow'); hv.innerHTML = `${Math.round(e.h)}<small>%</small>`; hv.className = 'value ' + humClass(e.h);
+                    document.getElementById('placePill').innerHTML = '<i style="background:#ffb340"></i>Eksempel';
+                    document.getElementById('placeSince').textContent = `Mål ${f1(e.set)} °C`;
+                    showError(null); return;
+                }
+                const ents = [s.temperature, ...(s.humidity ? [s.humidity] : [])];
+                const obj = Object.fromEntries(await Promise.all(ents.map(async id => [id, await callApi('GET', `states/${id}`).catch(() => null)])));
+                const main = obj[s.temperature];
+                const t = s.climate ? parseFloat(main?.attributes?.current_temperature) : parseFloat(main?.state);
+                const h = s.humidity ? parseFloat(obj[s.humidity]?.state) : NaN;
                 document.getElementById('tempNow').textContent = Number.isNaN(t) ? '–' : f1(t);
                 const hv = document.getElementById('humNow');
                 hv.innerHTML = Number.isNaN(h) ? '–' : `${Math.round(h)}<small>%</small>`;
                 hv.className = 'value' + (Number.isNaN(h) ? '' : ' ' + humClass(h));
-                const g = placeAt(s, Date.now());
                 const pill = document.getElementById('placePill');
-                if (g) {
-                    pill.innerHTML = `<i style="background:${PLACES[g.key].color}"></i>${PLACES[g.key].name}${g.temp ? ' · midlertidigt' : ''}`;
-                    document.getElementById('placeSince').textContent = `siden ${fullLabel(g.from)}`;
-                } else { pill.textContent = 'Placering ukendt'; document.getElementById('placeSince').textContent = ''; }
+                if (s.climate) {
+                    const a = main?.attributes || {}, offline = !main || ['unavailable', 'unknown'].includes(main.state);
+                    const act = offline ? 'Offline' : a.hvac_action === 'heating' ? 'Varmer' : a.hvac_action === 'cooling' ? 'Køler' : main.state === 'off' ? 'Fra' : 'Hviler';
+                    const color = offline ? '#ff6b61' : act === 'Varmer' ? '#ffb340' : act === 'Køler' ? '#64d2ff' : '#8da0ad';
+                    pill.innerHTML = `<i style="background:${color}"></i>${act}`;
+                    document.getElementById('placeSince').textContent = Number.isNaN(parseFloat(a.temperature)) ? '' : `Mål ${f1(parseFloat(a.temperature))} °C`;
+                } else if (CUSTOM) {
+                    const offline = !main || ['unavailable', 'unknown'].includes(main.state);
+                    pill.innerHTML = `<i style="background:${offline ? '#ff6b61' : '#5fe085'}"></i>${offline ? 'Offline' : 'Online'}`;
+                    document.getElementById('placeSince').textContent = '';
+                } else {
+                    const g = placeAt(s, Date.now());
+                    if (g) {
+                        pill.innerHTML = `<i style="background:${PLACES[g.key].color}"></i>${PLACES[g.key].name}${g.temp ? ' · midlertidigt' : ''}`;
+                        document.getElementById('placeSince').textContent = `siden ${fullLabel(g.from)}`;
+                    } else { pill.textContent = 'Placering ukendt'; document.getElementById('placeSince').textContent = ''; }
+                }
                 showError(null);
             } catch (e) { showError(e); }
         }
 
-        renderChips(); renderMoves();
+        renderChips(); renderMoves(); layout();
         load(); setInterval(load, 10e3);
         loadCharts(); setInterval(loadCharts, 60e3);
     </script>

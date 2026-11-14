@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ceed</title>
     <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script>if (new URLSearchParams(location.search).get('theme') === 'summer') { document.documentElement.className = 'summer'; document.write('<link rel="stylesheet" href="/local/card-summer.css?v=1">'); }</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         .container { overflow-y: auto; }
@@ -68,6 +69,11 @@
 
     <script src="/local/card-common.js?v=1"></script>
     <script>
+        // ?charger=stugan: the cottage's charger instead of the home one (Go2).
+        const CH = new URLSearchParams(location.search).get('charger') || 'go2';
+        const STUGAN = CH === 'stugan';
+        const SUMMER = new URLSearchParams(location.search).get('theme') === 'summer';
+        const TICKC = SUMMER ? '#5f7783' : '#8da0ad', GRIDC = SUMMER ? 'rgba(20,50,63,0.10)' : 'rgba(255,255,255,0.05)';
         const E = {
             soc: 'sensor.ceed_ev_battery_level',
             evRange: 'sensor.ceed_ev_range',
@@ -77,14 +83,14 @@
             plug: 'binary_sensor.ceed_ev_battery_plug',
             carCharging: 'binary_sensor.ceed_ev_battery_charge',
             minutes: 'sensor.ceed_estimated_charge_duration',
-            mode: 'sensor.go2_charger_mode',
-            power: 'sensor.go2_charge_power',
-            current: 'sensor.go2_allocated_charge_current',
-            session: 'sensor.go2_session_total_charge',
-            lastSession: 'sensor.go2_completed_session_energy',
-            lifetime: 'sensor.go2_energy_meter',
-            maxCurrent: 'number.go2_charger_max_current',
-            online: 'binary_sensor.go2_online',
+            mode: `sensor.${CH}_charger_mode`,
+            power: `sensor.${CH}_charge_power`,
+            current: `sensor.${CH}_allocated_charge_current`,
+            session: `sensor.${CH}_session_total_charge`,
+            lastSession: `sensor.${CH}_completed_session_energy`,
+            lifetime: `sensor.${CH}_energy_meter`,
+            maxCurrent: `number.${CH}_charger_max_current`,
+            online: `binary_sensor.${CH}_online`,
         };
         const MODES = {
             disconnected: 'Car disconnected',
@@ -92,7 +98,7 @@
             connected_charging: 'Charging',
             connected_finished: 'Paused',
         };
-        const MAX_AMPS = 16;   // the fixed installation limit
+        const MAX_AMPS = STUGAN ? 32 : 16;   // the fixed installation limit
         // Forecast: the car's battery is about 9 kWh gross (Kia Ceed SW PHEV, to be checked), and the charger loses about 10 % on the way in.
         const BATTERY_KWH = 9, CHARGE_EFFICIENCY = 0.9;
 
@@ -108,6 +114,7 @@
         const batteryColor = level => level > 50 ? '#34c759' : level > 20 ? '#ffd60a' : '#ffb340';
 
         document.getElementById('close').addEventListener('click', () => closePopup());
+        if (STUGAN) document.getElementById('ladStop').textContent = 'Stop';
 
         // Lad nu / Stop. Starting is only allowed when the house is quiet on phase 1 and the P1 reading is fresh;
         // load_balance.yaml stops the charger by itself above 14 A.
@@ -115,13 +122,14 @@
         const ladMsg = text => { document.getElementById('ladMsg').textContent = text; };
         async function houseAmps() {
             const p1 = await callApi('GET', 'states/sensor.p1_meter_power_phase_1');
-            const car = await callApi('GET', 'states/sensor.go2_current_phase_1');
+            const car = await callApi('GET', `states/sensor.${CH}_current_phase_1`);
             const fresh = (Date.now() - new Date(p1.last_updated).getTime()) / 1000 < 30;
             if (!fresh) return null;
             return Math.max(0, parseFloat(p1.state) / 230 - parseFloat(car.state));
         }
         document.getElementById('ladNu').addEventListener('click', async () => {
             try {
+                if (STUGAN) { await callApi('POST', 'services/button/press', { entity_id: 'button.stugan_resume_charging' }); return; }
                 const house = await houseAmps();
                 if (house === null || house > LAD_MAX_HOUSE_A) return; // Silent fail
                 await callApi('POST', 'services/input_boolean/turn_on', { entity_id: 'input_boolean.lad_nu' });
@@ -129,6 +137,7 @@
         });
         document.getElementById('ladStop').addEventListener('click', async () => {
             try {
+                if (STUGAN) { await callApi('POST', 'services/button/press', { entity_id: 'button.stugan_stop_charging' }); return; }
                 await callApi('POST', 'services/input_boolean/turn_off', { entity_id: 'input_boolean.lad_nu' });
             } catch (error) { console.error('Lad stop:', error); }
         });
@@ -163,12 +172,12 @@
                     responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
                     interaction: { mode: 'nearest', axis: 'x', intersect: false },
                     scales: {
-                        x: { type: 'linear', min: start.getTime(), max: axisEnd.getTime(), ticks: { color: '#8da0ad', maxTicksLimit: 6, callback: v => new Date(v).toLocaleString('sv-SE', hours > 24 ? { weekday: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' }) }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                        y: { beginAtZero: true, position: 'left', title: { display: true, text: 'kW', color: '#8da0ad' }, ticks: { color: '#8da0ad' }, grid: { color: 'rgba(255,255,255,0.07)' } },
-                        y2: { min: 0, max: 100, position: 'right', title: { display: true, text: '%', color: '#8da0ad' }, ticks: { color: '#8da0ad' }, grid: { display: false } },
+                        x: { type: 'linear', min: start.getTime(), max: axisEnd.getTime(), ticks: { color: TICKC, maxTicksLimit: 6, callback: v => new Date(v).toLocaleString('sv-SE', hours > 24 ? { weekday: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' }) }, grid: { color: GRIDC } },
+                        y: { beginAtZero: true, position: 'left', title: { display: true, text: 'kW', color: TICKC }, ticks: { color: TICKC }, grid: { color: GRIDC } },
+                        y2: { min: 0, max: 100, position: 'right', title: { display: true, text: '%', color: TICKC }, ticks: { color: TICKC }, grid: { display: false } },
                     },
                     plugins: {
-                        legend: { labels: { color: '#c5d1d9', boxWidth: 12 } },
+                        legend: { labels: { color: SUMMER ? '#2c4a58' : '#c5d1d9', boxWidth: 12 } },
                         // The default title is the raw time in milliseconds, so format it as a time.
                         tooltip: { callbacks: { title: items => new Date(items[0].parsed.x).toLocaleString('sv-SE', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) } },
                     },
