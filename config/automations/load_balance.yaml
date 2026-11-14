@@ -10,7 +10,8 @@
 #   Lowered at once if L1 is over 19 A, otherwise when the last change is at least 2 minutes old (the car's own current
 #   reading lags behind the P1 meter, so the house looks too high right after a raise).
 #   Raised only when the last change is at least 15 minutes old (Zaptec asks for that; frequent changes can make the car
-#   stop the session) and the last overload is at least 30 minutes old.
+#   stop the session) and the last overload is at least 30 minutes old. Exception: when the charger reports under 5.5 A
+#   (about 0 A after a session has ended) it is raised at once, so a short stop does not become a 15 minute pause.
 # It never starts or stops the charger.
 - id: load_balance_car_current
   alias: Lastbalancering, bil under 20 A
@@ -86,11 +87,13 @@
                 entity_id: number.go2_charger_max_current
               data:
                 value: "{{ target }}"
-        # Raise: at most every 15 minutes, and not within 30 minutes of an overload.
+        # Raise: at most every 15 minutes, and not within 30 minutes of an overload. Not when the charger reports less than
+        # 5.5 A: it shows about 0 A (0.0 or 0.061) when a session has ended, and the Ceed ends the first few sessions after a
+        # start by itself (about 5 minutes each). Waiting 15 minutes there made every short stop a 15 minute pause.
         - conditions:
             - condition: template
               value_template: >-
-                {{ p1_ok and target > limit + 0.5 and minutes_since_change | float >= 15 and minutes_since_overload | float >= 30 }}
+                {{ p1_ok and target > limit + 0.5 and (minutes_since_change | float >= 15 or limit < 5.5) and minutes_since_overload | float >= 30 }}
           sequence:
             - action: number.set_value
               target:
