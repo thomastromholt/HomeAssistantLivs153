@@ -531,12 +531,12 @@
                 const diff = n >= 3 && expected > 0 ? (actual / expected - 1) * 100 : null;
                 const kpi = (label, big, sub) => `<div class="fc-kpi"><div class="tile-label">${label}</div><div class="big">${big}</div><div class="sub">${sub || ''}</div></div>`;
                 document.getElementById('fcKpis').innerHTML =
-                    kpi('Expected for a year (next 12 months)', `${hundreds(year.exp)}<small> kWh</small>`, `about ${kr(year.exp)} at ${KR_PER_KWH} kr/kWh · range ${hundreds(year.low)}–${hundreds(year.high)} kWh (mild to cold winter). The previous owner used 23,074 kWh in 2025 (energy declaration).`)
-                    + kpi('Next 6 months', `${hundreds(sum('exp'))}<small> kWh</small>`, `about ${kr(sum('exp'))} · range ${hundreds(sum('low'))}–${hundreds(sum('high'))} kWh`)
+                    kpi('Expected for a year (next 12 months)', `${hundreds(year.exp)}<small> kWh</small>`, '')
+                    + kpi('Next 6 months', `${hundreds(sum('exp'))}<small> kWh</small>`, '')
                     + kpi(`${MONTH_NAMES[curM]} so far`, cost ? `${Math.round(cost.kwh).toLocaleString('sv-SE')}<small> kWh</small> / ${Math.round(cost.kr).toLocaleString('sv-SE')}<small> kr</small>` : `${Math.round(actualToDate).toLocaleString('sv-SE')}<small> kWh</small>`,
-                          `${cost ? `Including today · ${formatNumber(cost.kr / cost.kwh * 100, 0)} öre/kWh on average${cost.unpriced ? ' (some hours without a price)' : ''}. ` : ''}Until ${yesterdayKey.slice(8, 10)}/${yesterdayKey.slice(5, 7)} the forecast said ${hundreds(expectedToDate)} kWh with the weather that was (${Math.round(actualToDate).toLocaleString('sv-SE')} kWh): ${expectedToDate > 0 ? `<span class="${actualToDate / expectedToDate - 1 > 0.1 ? 'warn-text' : 'good-text'}">${(actualToDate / expectedToDate - 1) * 100 > 0 ? '+' : ''}${((actualToDate / expectedToDate - 1) * 100).toFixed(0)} %</span>` : '–'}.`)
+                          '')
                     + kpi(`${MONTH_NAMES[curM]} expected`, cost ? `${hundreds(current.exp)}<small> kWh</small> / ${(Math.round(current.exp * cost.kr / cost.kwh / 10) * 10).toLocaleString('sv-SE')}<small> kr</small>` : `${hundreds(current.exp)}<small> kWh</small>`,
-                          `Range ${hundreds(current.low)}–${hundreds(current.high)} kWh${cost ? ` / ${(Math.round(current.low * cost.kr / cost.kwh / 10) * 10).toLocaleString('sv-SE')}–${(Math.round(current.high * cost.kr / cost.kwh / 10) * 10).toLocaleString('sv-SE')} kr` : ''}. ${cost ? `${(Math.round(Math.max(0, current.exp * cost.kr / cost.kwh - cost.kr) / 10) * 10).toLocaleString('sv-SE')} kr more for the rest of the month (about ${hundreds(Math.max(0, current.exp - cost.kwh))} kWh), at what the month has cost per kWh so far. ` : ''}Temperature: ${forecastDays ? `the weather forecast for ${forecastDays} day${forecastDays === 1 ? '' : 's'}${forecastDays < dimNow - now.getDate() + 1 ? ', a normal year after that' : ''}` : 'a normal year'}.`);
+                          '');
 
                 if (fcChart) fcChart.destroy();
                 fcChart = new Chart(document.getElementById('fcChart'), {
