@@ -61,3 +61,11 @@ Flash the Zigbee firmware above, add the Zigbee integration again and restore th
 
 Peak shaving through a Zigbee relay on the NIBE was removed together with the Zigbee devices. Its last working state, including
 the rules and the automations, is in git commit `e75cb80`.
+
+## The radio hangs (and the software reset)
+
+The Thread radio (Sonoff ZBDongle-E in the NUC) has hung twice: **2026-11-11 about 16:44** and **2026-11-14 about 12:00**. The OpenThread Border Router add-on logs `RCP failure detected` and then `Too many rcp failures, exiting`, ends in state `error` and does not start again by itself. All Matter devices (thermostats, Timmerflotte, bulbs) go unavailable. A restart of the add-on does not help, because the radio firmware does not answer. Before 2026-11-14 only unplugging the dongle helped. Warnings of `ChannelAccessFailure` in the log shortly before suggest 2.4 GHz interference or USB 3 noise right at the NUC's port; a short USB extension cable to move the dongle away is the likely cure for the cause.
+
+**Software reset:** the dongle's USB-serial chip drives the radio's reset pin from RTS. With DTR low, RTS asserted for 0.3 s and released resets the radio (log: `Extended Reset info: 0x301 (PIN)`). `config/scripts/reset_thread_dongle.py` does that, run by `shell_command.reset_thread_dongle` (in `configuration.yaml` on the box, backup `configuration.yaml.pre-threadreset`). The add-on must be stopped while it runs. A USB port reset from the SSH container is not allowed, and sysfs is read-only there, so the serial lines are the way.
+
+**Automatic:** `config/automations/thread_recover.yaml` stops the add-on, sends the pulse and starts it again when at least 3 of the 4 thermostats and Timmerflotte have been unavailable for 5 minutes (at most once every 30 minutes). If they are still gone after 4 minutes a notification says the dongle needs a physical replug. By hand: `hassio.app_stop`, `shell_command.reset_thread_dongle`, `hassio.app_start` (app `core_openthread_border_router`).

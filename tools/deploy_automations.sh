@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 HOST=${HA_SSH_HOST:-root@192.168.1.77}
-FILES="room_plans firmware_updates load_balance charge_plan_control thread_snapshot"
+FILES="room_plans firmware_updates load_balance charge_plan_control thread_snapshot thread_recover"
 
 for f in $FILES; do cat "config/automations/$f.yaml"; echo; done \
   | ssh "$HOST" "cat > /tmp/automations.new.yaml"

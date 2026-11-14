@@ -1,0 +1,55 @@
+# Thread recovery: when the Thread radio hangs, the Matter devices (radiator thermostats, Timmerflotte, bulbs) all go
+# unavailable. The OpenThread Border Router add-on then gives up ("Too many rcp failures") and stays in "error". This
+# stops the add-on, resets the radio with a software pulse (config/scripts/reset_thread_dongle.py through
+# shell_command.reset_thread_dongle in configuration.yaml on the box) and starts the add-on again. Before 2026-11-14 only
+# unplugging the dongle helped (it hung on 2026-11-11 and 2026-11-14). At most once every 30 minutes. If the devices are
+# still gone after 4 minutes, a notification says the dongle needs a physical replug.
+- id: thread_recover
+  alias: Thread, nulstil radioen hvis Matter er nede
+  mode: single
+  triggers:
+    - trigger: template
+      value_template: >-
+        {{ ['climate.liljebagge_radiator_thermostat', 'climate.liljebagge_radiator_thermostat_2',
+            'climate.liljebagge_radiator_thermostat_3', 'climate.liljebagge_radiator_thermostat_4',
+            'sensor.timmerflotte_temp_hmd_sensor_temperatur'] | select('is_state', 'unavailable') | list | length >= 3 }}
+      for: "00:05:00"
+  conditions:
+    - condition: template
+      value_template: >-
+        {{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds() > 1800 }}
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: thread_recover
+        title: Thread nulstilles
+        message: "Matter-enhederne har været væk i 5 minutter. Radioen nulstilles i software ({{ now().strftime('%H:%M') }})."
+    - action: hassio.app_stop
+      data:
+        app: core_openthread_border_router
+      continue_on_error: true
+    - delay: "00:00:05"
+    - action: shell_command.reset_thread_dongle
+      continue_on_error: true
+    - delay: "00:00:03"
+    - action: hassio.app_start
+      data:
+        app: core_openthread_border_router
+      continue_on_error: true
+    - delay: "00:04:00"
+    - if:
+        - condition: template
+          value_template: >-
+            {{ ['climate.liljebagge_radiator_thermostat', 'climate.liljebagge_radiator_thermostat_2',
+                'climate.liljebagge_radiator_thermostat_3', 'climate.liljebagge_radiator_thermostat_4',
+                'sensor.timmerflotte_temp_hmd_sensor_temperatur'] | select('is_state', 'unavailable') | list | length >= 3 }}
+      then:
+        - action: persistent_notification.create
+          data:
+            notification_id: thread_recover
+            title: Thread er stadig nede
+            message: "Softwarenulstillingen hjalp ikke. Træk Thread-dongle'en ud af NUC'en og sæt den i igen."
+      else:
+        - action: persistent_notification.dismiss
+          data:
+            notification_id: thread_recover
