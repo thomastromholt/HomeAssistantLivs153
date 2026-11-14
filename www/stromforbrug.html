@@ -428,6 +428,22 @@
         let fcChart = null;
         const monthKwh = (m, days, hdd, par, uplift) => par.a * days + par.b * hdd * (COLD_MONTHS.includes(m) ? uplift : 1);
 
+        // kWh and kr between two moments, from the hourly statistics (topped up with 5-minute ones) and the hourly total prices.
+        async function costBetween(start, end) {
+            const hourly = await stats('hour', start, end);
+            const lastHour = hourly.length ? +hourly[hourly.length - 1].start + 3600e3 : +start;
+            const five = lastHour < +end ? await stats('5minute', new Date(lastHour), end) : [];
+            const extra = new Map();
+            for (const f of five) { if (f.change == null) continue; const h = Math.floor(+f.start / 3600e3) * 3600e3; extra.set(h, (extra.get(h) || 0) + f.change); }
+            const hours = [...hourly, ...[...extra].map(([h, change]) => ({ start: new Date(h), change }))].filter(h => h.change != null);
+            if (!hours.length) return null;
+            const priceMaps = await Promise.all([...new Set(hours.map(h => localDateString(h.start)))].map(hourlyTotalPrices));
+            const priceAt = new Map(); priceMaps.forEach(m => m.forEach((v, k) => priceAt.set(k, v)));
+            let kr = 0, kwh = 0, unpriced = false;
+            for (const h of hours) { kwh += h.change; if (priceAt.has(+h.start)) kr += h.change * priceAt.get(+h.start) / 100; else unpriced = true; }
+            return { kr, kwh, unpriced };
+        }
+
         async function forecast() {
             try {
                 const now = new Date(), todayKey = localDateString(now);
@@ -487,15 +503,20 @@
                 current.exp = actualToDate + monthKwh(curM, remaining, hddLeft, par, COLD_UPLIFT);
                 const chartRows = [current, ...rows];
                 const sum = k => rows.reduce((s, r) => s + r[k], 0);
+                // What the month has cost so far: the P1 meter's kWh per hour times the total price of that hour (as in the month view).
+                let cost = null;
+                try { cost = await costBetween(monthStart, now); } catch (e) { cost = null; }
+                const hundreds = v => (Math.round(v / 100) * 100).toLocaleString('sv-SE');   // forecasts are estimates: whole hundreds
                 const kr = v => `${Math.round(v * KR_PER_KWH / 1000).toLocaleString('sv-SE')} k kr`;
                 const diff = n >= 3 && expected > 0 ? (actual / expected - 1) * 100 : null;
                 const kpi = (label, big, sub) => `<div class="fc-kpi"><div class="tile-label">${label}</div><div class="big">${big}</div><div class="sub">${sub || ''}</div></div>`;
                 document.getElementById('fcKpis').innerHTML =
-                    kpi('Expected for a year (next 12 months)', `${Math.round(year.exp).toLocaleString('sv-SE')}<small> kWh</small>`, `about ${kr(year.exp)} at ${KR_PER_KWH} kr/kWh · range ${Math.round(year.low).toLocaleString('sv-SE')}–${Math.round(year.high).toLocaleString('sv-SE')} kWh (mild to cold winter). The previous owner used 23,074 kWh in 2025 (energy declaration).`)
-                    + kpi('Next 6 months', `${Math.round(sum('exp')).toLocaleString('sv-SE')}<small> kWh</small>`, `about ${kr(sum('exp'))} · range ${Math.round(sum('low')).toLocaleString('sv-SE')}–${Math.round(sum('high')).toLocaleString('sv-SE')} kWh`)
+                    kpi('Expected for a year (next 12 months)', `${hundreds(year.exp)}<small> kWh</small>`, `about ${kr(year.exp)} at ${KR_PER_KWH} kr/kWh · range ${hundreds(year.low)}–${hundreds(year.high)} kWh (mild to cold winter). The previous owner used 23,074 kWh in 2025 (energy declaration).`)
+                    + kpi('Next 6 months', `${hundreds(sum('exp'))}<small> kWh</small>`, `about ${kr(sum('exp'))} · range ${hundreds(sum('low'))}–${hundreds(sum('high'))} kWh`)
                     + kpi(`${MONTH_NAMES[curM]} so far`, `${Math.round(actualToDate).toLocaleString('sv-SE')}<small> kWh</small>`,
-                          `Until ${yesterdayKey.slice(8, 10)}/${yesterdayKey.slice(5, 7)}. The month is expected to end at ${Math.round(current.exp).toLocaleString('sv-SE')} kWh (${Math.round(current.low).toLocaleString('sv-SE')}–${Math.round(current.high).toLocaleString('sv-SE')}). The forecast said ${Math.round(expectedToDate).toLocaleString('sv-SE')} kWh for the days gone with the weather that was: ${expectedToDate > 0 ? `<span class="${actualToDate / expectedToDate - 1 > 0.1 ? 'warn-text' : 'good-text'}">${(actualToDate / expectedToDate - 1) * 100 > 0 ? '+' : ''}${((actualToDate / expectedToDate - 1) * 100).toFixed(0)} %</span>` : '–'}.`)
-                    + kpi('Model', `${par.a.toFixed(1)} + ${par.b.toFixed(2)}<small> kWh/day per degree-day</small>`, weight ? `Updated from your measurements (${Math.round(weight * 100)} % weight): ${fitText}.` : 'Starting values from May–October 2026. It learns as measured days arrive.');
+                          `Until ${yesterdayKey.slice(8, 10)}/${yesterdayKey.slice(5, 7)}. The month is expected to end at ${hundreds(current.exp)} kWh (${hundreds(current.low)}–${hundreds(current.high)}). The forecast said ${hundreds(expectedToDate)} kWh for the days gone with the weather that was: ${expectedToDate > 0 ? `<span class="${actualToDate / expectedToDate - 1 > 0.1 ? 'warn-text' : 'good-text'}">${(actualToDate / expectedToDate - 1) * 100 > 0 ? '+' : ''}${((actualToDate / expectedToDate - 1) * 100).toFixed(0)} %</span>` : '–'}.`)
+                    + kpi(`${MONTH_NAMES[curM]} price so far`, cost ? `${Math.round(cost.kr).toLocaleString('sv-SE')}<small> kr</small>` : '–',
+                          cost ? `${Math.round(cost.kwh).toLocaleString('sv-SE')} kWh since the 1st, including today · ${formatNumber(cost.kr / cost.kwh * 100, 0)} öre/kWh on average${cost.unpriced ? ' (some hours without a price)' : ''}.` : 'No data yet.');
 
                 if (fcChart) fcChart.destroy();
                 fcChart = new Chart(document.getElementById('fcChart'), {
