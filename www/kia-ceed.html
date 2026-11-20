@@ -217,7 +217,7 @@
                 first.classList.toggle('busy', busy);
                 first.classList.toggle('on', !busy && plugged && !active);   // green: you can charge
                 first.classList.toggle('stop', !busy && active);             // orange: charging
-                document.getElementById('folgPlanBtn').classList.toggle('on', planOn);
+                document.getElementById('folgPlanBtn').classList.toggle('on', STUGAN || planOn);
 
                 let hint = '';
                 if (pendingStart) {
@@ -229,7 +229,8 @@
                     statusText = 'Waiting for the car'; statusClass = 'warn';
                     hint = 'The car pauses by itself; woken after 10 min';
                 } else if (!plugged && isOnline) hint = 'Plug in to charge';
-                else if (!STUGAN && !planOn) hint = 'Styres af ekstern app (Greenely / Tibber)';
+                else if (STUGAN) hint = 'Styres af Tibber (Grid Rewards)';
+                else if (!planOn) hint = 'Styres af ekstern app (Greenely / Tibber)';
                 statusTile.textContent = statusText;
                 statusTile.className = `tile-value status ${statusClass}`;
                 statusHint.textContent = hint;
@@ -273,7 +274,10 @@
                 .then(render).catch(error => { pressed = null; showError(error); render(); });
         };
         if (STUGAN) {
-            document.getElementById('folgPlanBtn').style.display = 'none';
+            // At the cottage Tibber (Grid Rewards) steers the charger: the plan button just hands it over, nothing is sent to the charger.
+            const planBtn = document.getElementById('folgPlanBtn');
+            planBtn.textContent = 'Tibber'; planBtn.title = 'Tibber Grid Rewards styrer ladningen. Prisgrafen viser, hvornår man bør lade.';
+            planBtn.addEventListener('click', () => { pressed = null; render(); });
             document.getElementById('ladNuBtn').addEventListener('click', () => press(!chargingNow));
         } else {
             document.getElementById('ladNuBtn').addEventListener('click', () => chargingNow ? choose(false, true, false) : choose(true, false, true));

@@ -16,7 +16,7 @@
               "cards": [
                 {
                   "type": "iframe",
-                  "url": "/local/stugan-pris.html?v=1794696519",
+                  "url": "/local/stugan-pris.html?v=1795172116",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -24,7 +24,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/stugan-forbrug.html?v=1794696519",
+                  "url": "/local/stugan-forbrug.html?v=1795172116",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -32,7 +32,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/kia-ceed.html?charger=stugan&v=1794696519",
+                  "url": "/local/kia-ceed.html?charger=stugan&v=1795172116",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -40,7 +40,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/stugan.html?block=mill&v=1794696519",
+                  "url": "/local/stugan.html?block=mill&v=1795172116",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -48,7 +48,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/stugan.html?block=sensibo&v=1794696519",
+                  "url": "/local/stugan.html?block=sensibo&v=1795172116",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -56,7 +56,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/stugan.html?block=grohe&v=1794696519",
+                  "url": "/local/stugan.html?block=grohe&v=1795172116",
                   "grid_options": {
                     "columns": 12,
                     "rows": 7
@@ -64,7 +64,7 @@
                 },
                 {
                   "type": "iframe",
-                  "url": "/local/stugan-forsoeg.html?v=1794696519",
+                  "url": "/local/stugan-forsoeg.html?v=1795172116",
                   "grid_options": {
                     "columns": 12,
                     "rows": 9

@@ -74,6 +74,18 @@
             .kpis { grid-template-columns: repeat(2, 1fr); }
             .hero-now { font-size: 46px; }
         }
+        .setter { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 14px; background: rgba(255,255,255,0.06); }
+        .setter .sl { flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #8da0ad; }
+        .setter .sv { min-width: 64px; text-align: center; font-size: 26px; font-weight: 300; }
+        .setter .sv small { font-size: 13px; color: #8da0ad; }
+        .setter .sv.wait { color: #ffb340; }
+        .setter .sb { width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(100,210,255,0.16); color: #64d2ff; font: inherit; font-size: 24px; line-height: 1; cursor: pointer; }
+        .setter .pw { height: 36px; padding: 0 14px; border: 0; border-radius: 18px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: rgba(95,224,133,0.18); color: #5fe085; }
+        .setter .pw.off { background: rgba(255,255,255,0.08); color: #8da0ad; }
+        .setter .sl small { text-transform: none; letter-spacing: 0; font-size: 11px; color: #6d808c; }
+        .setter input { width: 72px; height: 36px; padding: 0 10px; border: 0; border-radius: 10px; background: rgba(255,255,255,0.08); color: #f2f5f7; font: inherit; font-size: 18px; text-align: center; }
+        .setter .pw:disabled { opacity: .5; cursor: default; }
+        .setter .sb:active { background: rgba(100,210,255,0.32); }
     </style>
 </head>
 <body>
@@ -95,6 +107,18 @@
                 <div class="label">Luftfugtighed</div>
                 <div class="value" id="humNow">–<small>%</small></div>
             </div>
+        </div>
+
+        <div class="setter" id="setter" hidden>
+            <button class="pw" id="setPower" hidden></button>
+            <span class="sl" id="setLabel">Sæt temperatur</span>
+            <button class="sb" id="setDown" aria-label="Lavere">−</button><span class="sv" id="setVal">–</span><button class="sb" id="setUp" aria-label="Højere">+</button>
+        </div>
+
+        <div class="setter" id="awayRow" hidden>
+            <span class="sl">Away-temperatur<br><small id="awayHint">Mill: HA kan sætte den, men ikke læse den. Tjek i Mill-appen.</small></span>
+            <input id="awayVal" type="number" inputmode="decimal" min="5" max="30" step="1" placeholder="–" aria-label="Away-temperatur">
+            <button class="pw" id="awaySet">Sæt away</button>
         </div>
 
         <div class="banner" id="exampleNote" hidden>Eksempeldata, indtil enheden er online.</div>
@@ -384,7 +408,7 @@
                 const hum = s.humidity ? bucketize(rows[s.humidity] || [], cfg.bucket) : [];
                 lastTemp = temp; lastHum = hum;
                 const extra = target.length ? [{ label: 'Mål', data: target, borderColor: '#ffb340', borderWidth: 1.6, borderDash: [5, 4], pointRadius: 0, stepped: 'before', fill: false }] : [];
-                if (extra.length) extra[0].label = 'Mål';
+                if (extra.length) extra[0].label = /^climate\.thomas_s_device/.test(s.temperature) ? 'Mål' : 'Dagtemp.';
                 renderChart('tempChart', r, start, end, temp, { color: LINE, unit: '°', minSpan: 3, labels: true, extra });
                 if (s.humidity) renderChart('humChart', r, start, end, hum, { color: HUMLINE, unit: '%', minSpan: 20, labels: false, zone: { from: 25, to: 60 } });
                 renderKpis(temp, hum, start, end);
@@ -487,6 +511,83 @@
             document.getElementById('exampleNote').hidden = !s.example;
         }
 
+        // Set temperature (only when the Stugan card opens a Mill heater that may be changed: ?settable=1). Stepped, sent once the
+        // presses stop. NEVER the technical room and the guest cottage (Teknikrum, Gæststuga): frost and water damage.
+        const NEVER_SET = /teknik|g[äa]st/i;
+        let wish = null, wishRange = {}, powerBusy = false;
+        document.getElementById('setPower').addEventListener('click', async e => {
+            const s = sensor(), pw = e.currentTarget;
+            if (!/^climate\.thomas_s_device/.test(s.temperature) || powerBusy) return;
+            const turnOn = pw.classList.contains('off');
+            powerBusy = true; pw.disabled = true; pw.textContent = turnOn ? 'Tænder…' : 'Slukker…';
+            try { await callApi('POST', `services/climate/turn_${turnOn ? 'on' : 'off'}`, { entity_id: s.temperature }); } catch (err) { showError(err); }
+            setTimeout(() => { powerBusy = false; pw.disabled = false; load(); }, 4000);
+        });
+        function updateSetter(s, main) {
+            const box = document.getElementById('setter');
+            const ok = params.has('settable') && s.climate && /^climate\./.test(s.temperature) && main && main.state !== 'unavailable'
+                && !NEVER_SET.test([s.temperature, s.label, main.attributes?.friendly_name, main.attributes?.room].join(' '));
+            const sensiboNow = /^climate\.thomas_s_device/.test(s.temperature);
+            box.hidden = !ok || !sensiboNow;
+            document.getElementById('awayRow').hidden = !ok || sensiboNow;
+            if (!ok || wish || !sensiboNow) return;
+            wishRange = { lo: main.attributes.min_temp, hi: main.attributes.max_temp };
+            // On / off: only the Sensibo heat pump (the Mill heaters are not switched here).
+            const pw = document.getElementById('setPower'), sensibo = /^climate\.thomas_s_device/.test(s.temperature);
+            // A Mill heater has a day, a night and an away temperature; HA only reads and sets the day one.
+            pw.hidden = !sensibo;
+            if (sensibo && !powerBusy) { const on = main.state !== 'off'; pw.textContent = on ? 'Tændt' : 'Slukket'; pw.classList.toggle('off', !on); }
+            const v = parseFloat(main.attributes.temperature);
+            document.getElementById('setVal').innerHTML = Number.isNaN(v) ? '–' : `${f1(v)}<small>°C</small>`;
+        }
+        function stepWish(d) {
+            const s = sensor(), val = document.getElementById('setVal');
+            // climate.set_temperature goes to the DEVICE and takes a Mill heater out of its room's program ("room settings are not followed").
+            // So it is only ever sent to the Sensibo; the Mill heaters are set per room (mill.set_room_temperature, see the away row).
+            if (!/^climate\.thomas_s_device/.test(s.temperature) || NEVER_SET.test([s.temperature, s.label].join(' '))) return;
+            const base = wish ? wish.v : parseFloat(val.textContent.replace(',', '.'));
+            const lo = parseFloat(wishRange.lo) || 5, hi = parseFloat(wishRange.hi) || 35;
+            const v = Math.min(hi, Math.max(lo, Math.round((Number.isNaN(base) ? 20 : base) + d)));
+            clearTimeout(wish?.timer);
+            wish = { v, timer: setTimeout(async () => {
+                try { await callApi('POST', 'services/climate/set_temperature', { entity_id: s.temperature, temperature: v }); } catch (err) { showError(err); }
+                setTimeout(() => { wish = null; load(); }, 8000);
+            }, 3000) };   // only the last value is sent, 3 s after the last press (the Mill cloud is slow, and each call changes the device)
+            val.classList.add('wait'); val.innerHTML = `${f1(v)}<small>°C</small>`;
+        }
+        // Mill: set the AWAY temperature of the room (mill.set_room_temperature, by the room's name in Mill). One call per press.
+        // Never the technical room and the guest cottage. HA cannot read the away temperature, so the field stays empty.
+        // HA cannot read the away temperature, so the last value set from here is kept in this browser and shown as "Away".
+        const awayKey = room => 'mill_away_' + String(room || '').toLowerCase();
+        const awayStored = room => { try { const v = parseFloat(localStorage.getItem(awayKey(room))); return Number.isNaN(v) ? null : v; } catch (e) { return null; } };
+        // Debounced: every press, every new number and Enter restarts a 3 s wait, and only the last value is sent (one call).
+        let awayTimer = null, awayBusy = false;
+        async function sendAway() {
+            const s = sensor(), btn = document.getElementById('awaySet'), hint = document.getElementById('awayHint');
+            let st = null; try { st = await callApi('GET', `states/${s.temperature}`); } catch (err) { /* below */ }
+            const room = st?.attributes?.room;
+            const v = parseFloat(document.getElementById('awayVal').value.replace(',', '.'));
+            if (!room || NEVER_SET.test([s.temperature, s.label, st.attributes.friendly_name, room].join(' '))) { hint.textContent = 'Dette rum kan ikke sættes her.'; return; }
+            if (Number.isNaN(v) || v < 5 || v > 30) { hint.textContent = 'Skriv en away-temperatur mellem 5 og 30 °C.'; return; }
+            awayBusy = true; btn.disabled = true; hint.textContent = `Sender ${f1(v)} °C til ${room}…`;
+            try { await callApi('POST', 'services/mill/set_room_temperature', { room_name: room, away_temp: v }); hint.textContent = `Sendt: away ${f1(v)} °C for ${room}. Tjek i Mill-appen.`; try { localStorage.setItem(awayKey(room), String(v)); } catch (e) { /* no storage */ } document.getElementById('placeSince').textContent = `Away ${f1(v)} °C (sidst sat her)`; }
+            catch (err) { hint.textContent = 'Mislykkedes: ' + (err?.message || err); showError(err); }
+            setTimeout(() => { awayBusy = false; btn.disabled = false; }, 8000);
+        }
+        function queueAway() {
+            if (awayBusy) return;
+            const hint = document.getElementById('awayHint'), v = parseFloat(document.getElementById('awayVal').value.replace(',', '.'));
+            clearTimeout(awayTimer);
+            if (Number.isNaN(v)) { hint.textContent = 'Skriv en away-temperatur mellem 5 og 30 °C.'; return; }
+            hint.textContent = `Sender ${f1(v)} °C om 3 sekunder… (ret tallet eller tryk igen for at vente)`;
+            awayTimer = setTimeout(sendAway, 3000);
+        }
+        document.getElementById('awaySet').addEventListener('click', queueAway);
+        document.getElementById('awayVal').addEventListener('keydown', e => { if (e.key === 'Enter') queueAway(); });
+        document.getElementById('awayVal').addEventListener('input', () => { if (awayTimer) { clearTimeout(awayTimer); awayTimer = null; document.getElementById('awayHint').textContent = 'Tryk "Sæt away" for at sende.'; } });
+        document.getElementById('setDown').addEventListener('click', () => stepWish(-1));
+        document.getElementById('setUp').addEventListener('click', () => stepWish(1));
+
         async function load() {
             const s = sensor();
             try {
@@ -501,6 +602,7 @@
                 const ents = [s.temperature, ...(s.humidity ? [s.humidity] : [])];
                 const obj = Object.fromEntries(await Promise.all(ents.map(async id => [id, await callApi('GET', `states/${id}`).catch(() => null)])));
                 const main = obj[s.temperature];
+                updateSetter(s, main);
                 const t = s.climate ? parseFloat(main?.attributes?.current_temperature) : parseFloat(main?.state);
                 const h = s.humidity ? parseFloat(obj[s.humidity]?.state) : NaN;
                 document.getElementById('tempNow').textContent = Number.isNaN(t) ? '–' : f1(t);
@@ -513,7 +615,8 @@
                     const act = offline ? 'Offline' : a.hvac_action === 'heating' ? 'Varmer' : a.hvac_action === 'cooling' ? 'Køler' : main.state === 'off' ? 'Fra' : 'Hviler';
                     const color = offline ? '#ff6b61' : act === 'Varmer' ? '#ffb340' : act === 'Køler' ? '#64d2ff' : '#8da0ad';
                     pill.innerHTML = `<i style="background:${color}"></i>${act}`;
-                    document.getElementById('placeSince').textContent = Number.isNaN(parseFloat(a.temperature)) ? '' : `Mål ${f1(parseFloat(a.temperature))} °C`;
+                    if (/^climate\.thomas_s_device/.test(s.temperature)) document.getElementById('placeSince').textContent = Number.isNaN(parseFloat(a.temperature)) ? '' : `Mål ${f1(parseFloat(a.temperature))} °C`;
+                    else { const aw = awayStored(a.room); document.getElementById('placeSince').textContent = aw == null ? 'Away: ukendt (sæt nedenfor)' : `Away ${f1(aw)} °C (sidst sat her)`; if (aw != null && !document.getElementById('awayVal').value) document.getElementById('awayVal').value = aw; }
                 } else if (CUSTOM) {
                     const offline = !main || ['unavailable', 'unknown'].includes(main.state);
                     pill.innerHTML = `<i style="background:${offline ? '#ff6b61' : '#5fe085'}"></i>${offline ? 'Offline' : 'Online'}`;

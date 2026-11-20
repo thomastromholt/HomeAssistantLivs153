@@ -19,12 +19,16 @@
         .now-value small { font-size: 13px; font-weight: 400; color: #8da0ad; margin-left: 3px; }
         .now-value.mid { color: #ff9f0a; }
         .now-value.dear { color: #ff453a; }
+        .legend { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin-bottom: 8px; padding: 7px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); color: #c5d1d9; font-size: 13px; }
+        .legend-box { flex-shrink: 0; width: 24px; height: 4px; border-radius: 2px; background: #64d2ff; }
+        .legend .muted { color: #8da0ad; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="head"><span class="name">Elpris <span class="info" tabindex="0">ⓘ<span class="info-box" id="infoBox"></span></span></span></div>
         <div id="error" class="error" hidden></div>
+        <div class="legend" id="legend" hidden><span class="legend-box"></span><span><strong>Bør lade</strong></span><span class="muted" id="chargeInfo"></span></div>
         <div class="chart-wrap"><canvas id="chart"></canvas></div>
         <div class="now"><div class="now-label">Nu</div><div class="now-value" id="nowValue">–</div></div>
     </div>
@@ -39,7 +43,7 @@
         const GRIDC = SUMMER ? 'rgba(20,50,63,0.10)' : 'rgba(255,255,255,0.06)', TICKC = SUMMER ? '#5f7783' : '#8da0ad';
         const ORE = v => Math.round(v * 100);   // SEK/kWh -> öre/kWh
         const clock = t => new Date(t).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
-        for (const line of ['Totalpris pr. kWh fra Tibber: spotpris, Tibbers tillæg, nettarif, afgifter og moms.', 'Morgendagens priser kommer, når de er offentliggjort.']) {
+        for (const line of ['Totalpris pr. kWh fra Tibber: spotpris, Tibbers tillæg, nettarif, afgifter og moms.', 'Morgendagens priser kommer, når de er offentliggjort.', 'Blå: de billigste timer til kl. 07, som bilen har brug for (mindst 3). Kun en vejledning: Tibber Grid Rewards styrer selve ladningen.']) {
             const row = document.createElement('div'); row.textContent = line; document.getElementById('infoBox').append(row);
         }
         let chart = null, past = [];
@@ -73,6 +77,42 @@
             return [...past.filter(p => !fresh.length || p.t < fresh[0].t), ...fresh];
         }
 
+        // When the car should charge, as on the home card: the cheapest hours from now until 07:00 that give the energy the
+        // car needs (at least 3). Only shown: Tibber (Grid Rewards) decides what the charger really does at the cottage.
+        const HOUR = 3600e3, DEADLINE_HOUR = 7, MIN_HOURS = 3, BATTERY_KWH = 8.9, EFF = 0.9, CHARGER_KW = 3.7, CHARGE_COLOR = '#64d2ff', NORMAL_COLOR = '#ff9500';
+        let chargeHours = new Set();
+        async function planHours(all, now) {
+            const info = document.getElementById('chargeInfo'), legend = document.getElementById('legend');
+            legend.hidden = true;
+            let soc = NaN, full = false;
+            try {
+                full = (await callApi('GET', 'states/sensor.stugan_charger_mode')).state === 'connected_finished';
+                soc = parseFloat((await callApi('GET', 'states/sensor.ceed_ev_battery_level')).state);
+            } catch (e) { /* no car data: plan for an empty car */ }
+            if (full || soc >= 99) return new Set();
+            const need = Math.max(MIN_HOURS, Math.ceil((100 - (Number.isNaN(soc) ? 0 : soc)) / 100 * BATTERY_KWH / EFF / CHARGER_KW));
+            const deadline = new Date(now); deadline.setHours(DEADLINE_HOUR, 0, 0, 0);
+            if (deadline.getTime() <= now) deadline.setDate(deadline.getDate() + 1);
+            const first = Math.floor(now / HOUR) * HOUR, sums = new Map();
+            for (const p of all) {
+                const h = Math.floor(p.t / HOUR) * HOUR;
+                if (h < first || h >= deadline.getTime()) continue;
+                const e = sums.get(h) || [0, 0]; e[0] += p.price; e[1]++; sums.set(h, e);
+            }
+            const hourly = new Map([...sums].map(([h, [sum, n]]) => [h, ORE(sum / n)]));
+            const picked = new Set([...hourly.keys()].sort((a, b) => hourly.get(a) - hourly.get(b)).slice(0, need));
+            if (!picked.size) return picked;
+            const hh = t => String(new Date(t).getHours()).padStart(2, '0'), runs = [];
+            for (const t of [...picked].sort((a, b) => a - b)) { const l = runs[runs.length - 1]; if (l && l.end === t) l.end = t + HOUR; else runs.push({ start: t, end: t + HOUR }); }
+            const avg = [...picked].reduce((a, t) => a + hourly.get(t), 0) / picked.size;
+            info.textContent = `${runs.map(r => `${hh(r.start)}–${hh(r.end)}`).join(', ')} · ${avg.toFixed(0)} öre`;
+            legend.hidden = false;
+            return picked;
+        }
+        const isChargeHour = t => chargeHours.has(Math.floor(t / HOUR) * HOUR);
+        // A flat piece takes its own hour's colour; a vertical step is blue if the hour before or after it is planned.
+        const pieceCharging = ctx => ctx.p0.parsed.x !== ctx.p1.parsed.x ? isChargeHour(ctx.p0.parsed.x + 1000) : isChargeHour(ctx.p0.parsed.x - 1000) || isChargeHour(ctx.p1.parsed.x + 1000);
+
         // The red line for now, as on the home card.
         const nowLine = { id: 'nowLine', afterDatasetsDraw(c) {
             const { ctx, chartArea: a, scales: { x } } = c, px = x.getPixelForValue(Date.now());
@@ -85,7 +125,9 @@
                 const all = await prices();
                 const now = Date.now();
                 if (!all.length) { document.getElementById('nowValue').textContent = '–'; return; }
-                const from = now - 24 * 3600e3, to = now + 24 * 3600e3;
+                // The same time axis as the home card: from midnight today, two days wide (06 12 18 00 06 12 18, no label at the very start).
+                const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
+                const from = +day0, to = from + 2 * 864e5;
                 const pts = all.filter(p => p.t + 3600e3 > from && p.t < to).map(p => ({ x: p.t, y: ORE(p.price) }));
                 const end = Math.min(to, Math.max(...pts.map(p => p.x)) + 900e3);
                 const cur = all.find(p => p.t <= now && now < p.t + 900e3);
@@ -93,13 +135,15 @@
                 const el = document.getElementById('nowValue');
                 el.innerHTML = cur ? `${ORE(cur.price)}<small>öre</small>` : '–';
                 el.className = 'now-value' + (cur && ORE(cur.price) >= q(0.67) ? ' dear' : cur && ORE(cur.price) > q(0.33) ? ' mid' : '');
+                chargeHours = await planHours(all, now);
                 if (chart) chart.destroy();
                 chart = new Chart(document.getElementById('chart'), {
                     type: 'line', plugins: [nowLine],
-                    data: { datasets: [{ data: [...pts, { x: end, y: pts[pts.length - 1].y }], borderColor: '#ff9500', borderWidth: 2.5, pointRadius: 0, stepped: 'before', fill: true, backgroundColor: 'rgba(255,149,0,0.16)' }] },
+                    data: { datasets: [{ data: [...pts, { x: end, y: pts[pts.length - 1].y }], borderColor: '#ff9500', borderWidth: 2.5, pointRadius: 0, stepped: 'before', fill: true, backgroundColor: 'rgba(255,149,0,0.16)',
+                        segment: { borderColor: ctx => pieceCharging(ctx) ? CHARGE_COLOR : NORMAL_COLOR, backgroundColor: ctx => pieceCharging(ctx) ? 'rgba(100,210,255,0.18)' : 'rgba(255,149,0,0.16)' } }] },
                     options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
                         scales: {
-                            x: { type: 'linear', min: from, max: to, grid: { color: GRIDC }, afterBuildTicks: axis => { const t = []; const d = new Date(from); d.setMinutes(0, 0, 0); d.setHours(Math.ceil(d.getHours() / 6) * 6); for (let v = +d; v <= to; v += 6 * 3600e3) t.push({ value: v }); axis.ticks = t; }, ticks: { color: TICKC, font: { size: 11 }, maxRotation: 0, callback: v => String(new Date(v).getHours()).padStart(2, '0') } },
+                            x: { type: 'linear', min: from, max: to, grid: { color: GRIDC }, afterBuildTicks: axis => { const t = []; const d = new Date(from); d.setTime(from + 3600e3); d.setMinutes(0, 0, 0); d.setHours(Math.ceil(d.getHours() / 6) * 6); for (let v = +d; v <= to; v += 6 * 3600e3) t.push({ value: v }); axis.ticks = t; }, ticks: { color: TICKC, font: { size: 11 }, maxRotation: 0, callback: v => String(new Date(v).getHours()).padStart(2, '0') } },
                             y: { grid: { color: GRIDC }, ticks: { color: TICKC, font: { size: 11 } } },
                         },
                         plugins: { legend: { display: false }, tooltip: { displayColors: false, callbacks: { title: i => `${new Date(i[0].parsed.x).toLocaleDateString('da-DK', { weekday: 'short' })} ${clock(i[0].parsed.x)}`, label: i => `${i.parsed.y} öre/kWh` } } },

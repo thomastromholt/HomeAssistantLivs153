@@ -60,21 +60,26 @@
         .chip.on { background: rgba(95,224,133,0.18); color: #5fe085; }
         .chip.bad { background: rgba(255,69,58,0.2); color: #ff6b61; }
         .sep { height: 8px; }
-        .tiles.hp3 { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
-        .hp3 .t { padding: 6px 9px; }
-        .hp3 .t .v { font-size: 17px; margin-top: 1px; }
-        .hp3 .t .l { font-size: 9px; }
+        .tiles.hp3, .tiles.hp2 { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+        .tiles.hp2 { grid-template-columns: repeat(2, 1fr); }
+        .tiles.hp1 { grid-template-columns: 1fr; margin-top: 8px; }
+        .hp1 .t { padding: 6px 9px; }
+        .hp1 .t .v { font-size: 17px; margin-top: 1px; }
+        .hp1 .t .l { font-size: 9px; }
+        .hp3 .t, .hp2 .t { padding: 6px 9px; }
+        .hp3 .t .v, .hp2 .t .v { font-size: 17px; margin-top: 1px; }
+        .hp3 .t .l, .hp2 .t .l { font-size: 9px; }
         /* a single block fills the card: the Grohe card's three numbers sit at the bottom and are a size larger */
         body.single #grid { flex: 1; min-height: 0; display: flex; align-items: stretch; }
         body.single .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
         body.single .panel > .gh { flex: 1; }
         .gh-mins { margin-top: auto; }
         .brand { width: 32px; height: 32px; border-radius: 9px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
-        .sens-curve { margin-top: 8px; padding: 10px 10px 6px; border-radius: 14px; background: rgba(255,255,255,0.04); cursor: pointer; }
+        .sens-curve { margin-top: 6px; padding: 8px 10px 4px; border-radius: 14px; background: rgba(255,255,255,0.04); cursor: pointer; }
         .sens-curve:hover { background: rgba(255,255,255,0.07); }
         .sc-cap { display: flex; justify-content: space-between; margin: 0 2px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8da0ad; }
         .sc-cap span { color: #ffb340; text-transform: none; letter-spacing: 0; }
-        .sc-cv { position: relative; height: 140px; }
+        .sc-cv { position: relative; height: 96px; }
         .zone { display: flex; align-items: center; gap: 6px; height: 42px; padding: 3px 8px; border-radius: 14px; border: 1px solid rgba(100,210,255,0.28); background: rgba(100,210,255,0.05); cursor: pointer; }
         .zone:hover { background: rgba(100,210,255,0.1); }
         .zone.example { opacity: 0.85; }
@@ -108,13 +113,13 @@
         .gh-temp { border: 0; background: none; color: #c5d1d9; font: inherit; font-size: 18px; font-weight: 300; cursor: pointer; display: flex; align-items: baseline; gap: 3px; }
         .gh-temp small { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6d808c; margin-right: 4px; }
         .gh-temp em { font-style: normal; font-size: 11px; color: #8da0ad; }
-        .gh-hero { cursor: pointer; }
+        .gh-hero { cursor: pointer; padding-bottom: 2px; }
         .gh-big { font-size: 46px; font-weight: 200; line-height: 1; letter-spacing: -1.5px; color: #64d2ff; display: flex; align-items: baseline; gap: 8px; }
         .gh-big small { font-size: 13px; letter-spacing: 0; font-weight: 400; color: #8da0ad; }
         .gh-bar { height: 6px; margin-top: 10px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
         .gh-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #2a8fd6, #64d2ff); }
-        .gh-sub { margin-top: 5px; font-size: 11px; color: #8da0ad; }
-        .gh-wk { position: relative; display: flex; align-items: flex-end; gap: 7px; height: 76px; padding-top: 14px; }
+        .gh-sub { margin-top: 6px; font-size: 11px; color: #8da0ad; }
+        .gh-wk { position: relative; display: flex; align-items: flex-end; gap: 7px; flex: 1; min-height: 84px; margin-top: 6px; padding-top: 18px; }
         .gh-d { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; min-width: 0; }
         .gh-d b { font-size: 9px; font-weight: 500; color: #8da0ad; height: 11px; }
         .gh-d i { display: block; width: 100%; border-radius: 5px 5px 2px 2px; background: linear-gradient(180deg, rgba(100,210,255,0.55), rgba(100,210,255,0.16)); }
@@ -131,8 +136,8 @@
         .gh-mini .v small { font-size: 10px; color: #8da0ad; margin-left: 2px; }
         .gh-mini.off .v { color: #6d808c; }
         .gh-note { padding: 8px 12px; border-radius: 10px; background: rgba(255,179,64,0.12); color: #ffb340; font-size: 12px; }
-        .product { display: flex; justify-content: center; margin: 0 0 8px; }
-        .product img { height: 82px; filter: drop-shadow(0 10px 16px rgba(0,0,0,0.5)); opacity: 0.92; }
+        .product { display: flex; justify-content: center; margin: 0 0 4px; }
+        .product img { height: 58px; filter: drop-shadow(0 10px 16px rgba(0,0,0,0.5)); opacity: 0.92; }
         .product.on img { opacity: 1; filter: drop-shadow(0 0 16px rgba(100,210,255,0.28)) drop-shadow(0 10px 16px rgba(0,0,0,0.5)); }
         .wk { display: flex; align-items: flex-end; gap: 6px; height: 64px; margin-top: 12px; }
         .wk-d { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; }
@@ -199,8 +204,6 @@
         }
         const humLevel = h => Number.isNaN(h) ? '' : h > HUM_ALERT ? 'bad' : h > HUM_WARN ? 'warn' : '';
 
-        // Example numbers shown for the Mill heaters until they are online (and the dialog draws an example curve for them).
-        const EXAMPLE = [[12.4, 11, 0, 52, 'idle'], [11.8, 11, 0, 55, 'idle'], [8.2, 5, 0, 61, 'idle'], [7.5, 5, 0, 58, 'idle'], [10.6, 11, 410, 67, 'heating'], [13.1, 11, 0, 53, 'idle']];
         // The Sensibo also reaches us through Tibber (Tibber lists it as a thermostat): its last known room and set temperature.
         // Shown when the Sensibo's own integration has nothing (device offline), marked "Sidst kendt".
         function tibberThermostat() {
@@ -218,17 +221,19 @@
             const w = ec ? ec[2] : (pow && isOk(pow) ? num(pow) : NaN), h = ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
             const state = off ? 'bad' : action === 'heating' ? 'heat' : action === 'cooling' ? 'cool' : mode === 'off' ? 'idle' : 'on';
             const stateText = off ? (useFb ? 'Sidst kendt' : 'Offline') : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Fra', auto: 'Auto', dry: 'Affugt', fan_only: 'Blæser' }[mode] || 'Hviler');
-            const tl = tempLevel(cur, tgt), hl = humLevel(h), worst = [tl, hl].includes('bad') ? 'bad' : [tl, hl].includes('warn') ? 'warn' : '';
+            // The technical room and the guest cottage are kept cool on purpose: orange below MIN_TEMP, red only when frost is near (FROST_WARN).
+            const sepRoom = /teknik|g[äa]st/i.test([s.entity_id, a.friendly_name, a.room].join(' '));
+            const tl = sepRoom ? (Number.isNaN(cur) ? '' : cur < FROST_WARN ? 'bad' : cur < MIN_TEMP ? 'warn' : '') : tempLevel(cur, tgt), hl = humLevel(h), worst = [tl, hl].includes('bad') ? 'bad' : [tl, hl].includes('warn') ? 'warn' : '';
             const cell = (label, value, cls) => `<div class="cell"><div class="tile-label">${label}</div><div class="cell-value ${cls || ''}">${value}</div></div>`;
             const nice = n => String(n).trim().replace(/^./, c => c.toLocaleUpperCase('da-DK'));   // Mill's room names come lower case, some with a trailing space
             const name = hidName ? '' : esc(nice(a.friendly_name || s.entity_id));
-            return `<div class="zone zone-${state}${worst ? ' lvl-' + worst : ''}${ec ? ' example' : ''}" data-e="${esc(s.entity_id)}" data-dialog="1" data-name="${esc(nice(a.friendly_name || s.entity_id))}" data-sub="${esc(sub)}" data-hum="${esc(hum || '')}" ${ec ? 'data-example="1"' : ''} title="${stateText}">
+            return `<div class="zone zone-${state}${worst ? ' lvl-' + worst : ''}${ec ? ' example' : ''}" data-e="${esc(s.entity_id)}"${canSet(s) && isOk(s) ? ' data-settable="1"' : ''} data-dialog="1" data-name="${esc(nice(a.friendly_name || s.entity_id))}" data-sub="${esc(sub)}" data-hum="${esc(hum || '')}" ${ec ? 'data-example="1"' : ''} title="${stateText}">
                 ${hidName ? '' : `<div class="zone-name"><i></i><span>${name}</span></div>`}
                 ${cell('Read', `${fmt(cur)}<small>°</small>`, 'temp' + (tl ? ' ' + tl : ''))}
                 ${cell('Set', Number.isNaN(tgt) ? '–' : `${fmt(tgt)}<small>°</small>`)}
                 ${hidName ? cell('Status', stateText) : ''}
                 ${Number.isNaN(w) && !pow && !ec ? '' : cell('Effekt', Number.isNaN(w) ? '–' : `${fmt(w, 0)}<small>W</small>`, 'pow')}
-                ${hidName && Number.isNaN(h) ? '' : cell('Fugt', Number.isNaN(h) ? '–' : `${fmt(h, 0)}<small>%</small>`, 'hum' + (hl ? ' ' + hl : ''))}
+                ${!hum && !ec || (hidName && Number.isNaN(h)) ? '' : cell('Fugt', Number.isNaN(h) ? '–' : `${fmt(h, 0)}<small>%</small>`, 'hum' + (hl ? ' ' + hl : ''))}
             </div>`;
         }
 
@@ -254,13 +259,13 @@
             const used = !Number.isNaN(L) && !Number.isNaN(A) && A > 0 ? Math.min(100, L / A * 100) : 0;
             // the 7 days: the average as a dashed line, the newest bar brighter
             const max = weekOk ? Math.max(...groheWeek.map(r => r.v), A || 0, 1) : 1;
-            const bars = weekOk ? `<div class="gh-wk">${Number.isNaN(A) ? '' : `<div class="gh-avg" style="bottom:${A / max * 100}%"><span>gns. ${fmt(A, 0)}</span></div>`}${groheWeek.map((r, i) => `<div class="gh-d${i === groheWeek.length - 1 ? ' last' : ''}" title="${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' })}: ${fmt(r.v, 0)} L"><b>${r.v >= 1 ? fmt(r.v, 0) : ''}</b><i style="height:${Math.max(3, r.v / max * 100)}%"></i><span>${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'short' }).replace('.', '').slice(0, 2)}</span></div>`).join('')}</div>` : '';
+            const bars = weekOk ? `<div class="gh-wk">${groheWeek.map((r, i) => `<div class="gh-d${i === groheWeek.length - 1 ? ' last' : ''}" title="${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' })}: ${fmt(r.v, 0)} L"><b>${r.v >= 1 ? fmt(r.v, 0) : ''}</b><i style="height:${Math.max(3, r.v / max * 100)}%"></i><span>${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'short' }).replace('.', '').slice(0, 2)}</span></div>`).join('')}</div>` : '';
             const mini = (label, s, v, unit, d) => s ? `<button class="gh-mini ${isOk(s) ? '' : 'off'}" data-e="${esc(s.entity_id)}"><div class="l">${label}</div><div class="v">${fmt(v, d)}<small>${unit}</small></div></button>` : '';
             return `<div class="gh">
                 <div class="gh-top">${pill}${offline ? '<span class="gh-pill bad"><i></i>Offline</span>' : ''}${temp ? `<button class="gh-temp" data-e="${esc(temp.entity_id)}" title="Temperatur i enheden"><small>enheden</small>${fmt(num(temp), 1)}<em>°C</em></button>` : ''}</div>
                 <div class="gh-hero" ${today ? `data-e="${esc(today.entity_id)}"` : ''}>
                     <div class="gh-big">${Number.isNaN(L) ? '–' : fmt(L, 0)}<small>liter i dag</small></div>
-                    ${Number.isNaN(A) ? '' : `<div class="gh-bar" title="I dag mod et gennemsnit på ${fmt(A, 0)} L"><i style="width:${used}%"></i></div><div class="gh-sub">${fmt(used, 0)} % af et gennemsnitligt døgn</div>`}
+                    ${Number.isNaN(A) ? '' : `<div class="gh-bar" title="I dag mod et gennemsnit på ${fmt(A, 0)} L"><i style="width:${used}%"></i></div><div class="gh-sub">${fmt(used, 0)} % af et gennemsnitligt døgn (${fmt(A, 0)} L)</div>`}
                 </div>
                 ${bars}
                 <div class="gh-mins">${mini('Sidste 7 dage', by('total_water_consumption'), week, 'L', 0)}${mini('Vandtryk', press, press ? num(press) : NaN, 'bar', 1)}${mini('Flow nu', flow, flow ? num(flow) : NaN, 'm³/h', 1)}</div>
@@ -286,15 +291,14 @@
             const rowPower = b.key === 'mill' || b.key === 'sensibo';   // the power is on each room's own line
             const sensors = ents.filter(s => s.entity_id.startsWith('sensor.') && TILE_ORDER.includes(s.attributes.device_class) && !(rowPower && ['power', 'humidity', 'energy'].includes(s.attributes.device_class)));
             sensors.sort((x, y) => TILE_ORDER.indexOf(x.attributes.device_class) - TILE_ORDER.indexOf(y.attributes.device_class));
-            const alerts = ents.filter(s => s.entity_id.startsWith('binary_sensor.') && ['moisture', 'problem', 'safety', 'smoke', 'gas'].includes(s.attributes.device_class));
+            const alerts = ents.filter(s => s.entity_id.startsWith('binary_sensor.') && ['moisture', 'problem', 'safety', 'smoke', 'gas'].includes(s.attributes.device_class) && !/filter/i.test(s.entity_id));   // the heat pump's filter reminder is left out on purpose
             const valves = ents.filter(s => s.entity_id.startsWith('valve.') || (s.entity_id.startsWith('switch.') && /valve|ventil|guard/i.test(s.entity_id)));
             let html = '';
             const sensClimate = b.key === 'sensibo' ? climates[0] : null;
             if (b.key === 'sensibo') html += `<div class="product${climates.some(isOk) && climates.some(c => c.state !== 'off' && isOk(c)) ? ' on' : ''}"><img src="/local/sensibo.png?v=1" alt="Sensibo"></div>`;
             if (climates.length) {
-                const example = b.key === 'mill' && !climates.some(isOk);
                 const fbT = b.key === 'sensibo' ? tibberThermostat() : null;
-                const rowOf = (c, i) => roomRow(c, humOf.get(c.entity_id), b.sub, states0.get(powOf.get(c.entity_id)), example ? EXAMPLE[i % EXAMPLE.length] : null, b.key === 'sensibo', fbT);
+                const rowOf = (c, i) => roomRow(c, humOf.get(c.entity_id), b.sub, states0.get(powOf.get(c.entity_id)), null, b.key === 'sensibo', fbT);
                 // The main house has its doors open (one zone, the radiators help each other); the guest cottage and the technical room stand apart.
                 const isSep = c => /g[äa]st|teknik/i.test(c.attributes.friendly_name || c.entity_id);
                 const indexed = climates.map((c, i) => [c, i]);
@@ -302,24 +306,21 @@
                 const rows = b.key === 'mill'
                     ? group('Huset · åbent', indexed.filter(([c]) => !isSep(c))) + group('Separat', indexed.filter(([c]) => isSep(c)))
                     : indexed.map(([c, i]) => rowOf(c, i)).join('');
-                if (example) exampleFlag = true;
                 html += `<div class="rooms">${rows}</div>`;
+            }
+            if (b.key === 'mill' && hp?.climate) {
+                const outT = isOk(hp.climate) ? parseFloat(hp.climate.attributes.current_temperature) : NaN;
+                html += `<div class="tiles hp1"><button class="t ${isOk(hp.climate) ? '' : 'off'}" data-e="${esc(hp.climate.entity_id)}"><div class="l">Ude</div><div class="v">${Number.isNaN(outT) ? '–' : fmt(outT, 1)}<small>°C</small></div></button></div>`;
             }
             if (b.key === 'sensibo') {
                 const t = (label, st, v, unit, d) => `<button class="t ${st && isOk(st) ? '' : 'off'}" ${st ? `data-e="${esc(st.entity_id)}"` : ''}><div class="l">${label}</div><div class="v">${v}<small>${unit}</small></div></button>`;
-                const outT = hp?.climate && isOk(hp.climate) ? parseFloat(hp.climate.attributes.current_temperature) : NaN;
-                html += `<div class="tiles hp3">
+                html += `<div class="tiles hp2">
                     ${t('Effekt nu', hp?.power, hp?.power && isOk(hp.power) ? fmt(num(hp.power), 0) : '–', 'W')}
                     ${t('I dag', hp?.day, hp?.day && isOk(hp.day) ? fmt(num(hp.day), 1) : '–', 'kWh')}
-                    ${t('Ude', hp?.climate, Number.isNaN(outT) ? '–' : fmt(outT, 1), '°C')}
                 </div>`;
             }
-            if (sensClimate) html += `<div class="sens-curve" data-e="${esc(sensClimate.entity_id)}" data-dialog="1" data-name="${esc(sensClimate.attributes.friendly_name || 'Sensibo')}" data-sub="Sensibo" data-hum="${esc(humOf.get(sensClimate.entity_id) || '')}" ${sensExample ? 'data-example="1"' : ''}><div class="sc-cap">Indetemperatur · seneste døgn${sensExample ? '<span>Eksempeldata</span>' : ''}</div><div class="sc-cv"><canvas id="sensChart"></canvas></div></div>`;
+            if (sensClimate) html += `<div class="sens-curve" data-e="${esc(sensClimate.entity_id)}"${canSet(sensClimate) ? ' data-settable="1"' : ''} data-dialog="1" data-name="${esc(sensClimate.attributes.friendly_name || 'Sensibo')}" data-sub="Sensibo" data-hum="${esc(humOf.get(sensClimate.entity_id) || '')}" ${sensExample ? 'data-example="1"' : ''}><div class="sc-cap">Indetemperatur · seneste døgn${sensExample ? '<span>Eksempeldata</span>' : ''}</div><div class="sc-cv"><canvas id="sensChart"></canvas></div></div>`;
             const tiles = [];
-            if (b.key === 'mill' && climates.length) {
-                const powers = climates.map(c => states0.get(powOf.get(c.entity_id))).filter(isOk);
-                if (powers.length) tiles.push(`<button class="t big" data-e="${esc(powers[0].entity_id)}"><div class="l">Samlet effekt</div><div class="v">${fmt(powers.reduce((a, p) => a + num(p), 0), 0)}<small>W</small></div></button>`);
-            }
             const shown = sensors.slice(0, b.key === 'tibber' ? 6 : 8), seen = {};
             shown.forEach(s => { seen[s.attributes.device_class] = (seen[s.attributes.device_class] || 0) + 1; });
             shown.forEach((s, i) => tiles.push(tileFor(s, b.key === 'tibber' && i === 0 && s.attributes.device_class === 'power', seen[s.attributes.device_class] > 1)));
@@ -356,15 +357,6 @@
         // The Sensibo's room temperature over the last 24 hours (and the set temperature, stepped). Example data until there is a
         // real history (the device offline / just added).
         let sensChart = null, sensData = null, sensDataAt = 0, sensExample = false;
-        function exampleDay() {
-            const temp = [], target = [], step = 15 * 60e3, end = Date.now();
-            for (let t = end - 864e5; t <= end; t += step) {
-                const h = new Date(t).getHours() + new Date(t).getMinutes() / 60, set = h >= 8 && h < 22 ? 21 : 18;
-                temp.push({ x: t, y: Math.round((set - 0.9 + 1.1 * Math.sin((h - 10) / 24 * Math.PI * 2) + 0.25 * Math.sin(t / 3.1e6)) * 10) / 10 });
-                target.push({ x: t, y: set });
-            }
-            return { temp, target, example: true };
-        }
         async function loadSensCurve(entityId) {
             if (sensData && Date.now() - sensDataAt < 5 * 60e3) return;
             let d = null;
@@ -377,7 +369,7 @@
                     if (temp.length >= 3) d = { temp, target, example: false };
                 } catch (e) { /* fall back to the example */ }
             }
-            sensData = d || exampleDay(); sensDataAt = Date.now(); sensExample = sensData.example;
+            sensData = d || { temp: [], target: [], example: false }; sensDataAt = Date.now(); sensExample = sensData.example;
         }
         function drawSensCurve() {
             const canvas = document.getElementById('sensChart');
@@ -417,7 +409,6 @@
             } catch (e) { /* leave it as it was */ }
         }
 
-        let exampleFlag = false;   // a block showed example data: the header gets a small tag
         let registry = [], lastRegistry = 0;
         const humOf = new Map();   // climate entity -> the humidity sensor of the same device
         const powOf = new Map();   // climate entity -> the power sensor of the same device
@@ -449,7 +440,6 @@
             if (new URLSearchParams(location.search).get('block') === 'sensibo' || !new URLSearchParams(location.search).get('block')) await loadSensCurve(sensEnt ? sensEnt.entity_id : null);
             const grid = document.getElementById('grid');
             const only = new URLSearchParams(location.search).get('block');
-            exampleFlag = false;
             await checkCottage();
             const cards = BLOCKS.filter(b => !only || b.key === only).map(b => {
                 const ents = registry.filter(r => b.platforms.includes(r.platform) && !r.disabled_by && !r.hidden_by && (r.entity_category !== 'diagnostic' || r.entity_id.endsWith('_online')) && r.entity_category !== 'config')
@@ -461,13 +451,26 @@
             const headEl = document.querySelector('.head');
             headEl.querySelector('.exp')?.remove(); headEl.querySelector('.stale')?.remove();
             if (cottage.offline && (only === 'grohe' || only === 'sensibo')) headEl.insertAdjacentHTML('beforeend', `<span class="stale exp" title="Ingen friske målinger fra sommerhuset siden ${new Date(cottage.since).toLocaleString('da-DK', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}. Tallene er skyens sidst kendte.">Sidst kendt · ${new Date(cottage.since).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}</span>`);
-            if (exampleFlag && only) headEl.insertAdjacentHTML('beforeend', '<span class="exp" title="Vises, indtil enhederne er online">Eksempeldata</span>');
             drawSensCurve();
             const b = BLOCKS.find(x => x.key === only);
             if (b) document.querySelector('.name').innerHTML = `${b.title} <span class="muted">${b.sub}</span>`;
             if (b && b.key === 'grohe' && !document.querySelector('.head .brand')) document.querySelector('.head').insertAdjacentHTML('beforeend', '<img class="brand" src="/local/grohe-logo.png?v=1" alt="Grohe">');
             showProblems(problems);
             showError(null);
+        }
+
+        // Set a temperature through climate.set_temperature: the Sensibo heat pump and the Mill heaters that may be changed. The
+        // buttons step the wish; the call goes out once the presses have stopped (the clouds are slow and dislike a burst of calls),
+        // and the display keeps the wish until the integration reports it.
+        // NEVER the technical room and the guest cottage (Teknikrum, Gæststuga): they must stay as they are (frost, water damage).
+        // The heat pump's own Mill socket is a meter, not a heater, and is not set either.
+        const NEVER_SET = /teknik|g[äa]st/i;
+        function canSet(c) {
+            if (!c || NEVER_SET.test([c.entity_id, c.attributes.friendly_name, c.attributes.room].join(' '))) return false;
+            if (/^climate\.thomas_s_device/.test(c.entity_id)) return true;                       // Sensibo
+            const hp = hpSocket();
+            if (hp?.climate && c.entity_id === hp.climate.entity_id) return false;
+            return registry.some(r => r.entity_id === c.entity_id && r.platform === 'mill');       // Mill room heater
         }
 
         document.getElementById('grid').addEventListener('click', e => {
@@ -477,6 +480,7 @@
                 const q = new URLSearchParams({ entity: el.dataset.e, name: el.dataset.name, sub: el.dataset.sub, theme: THEME });
                 if (el.dataset.hum) q.set('humidity', el.dataset.hum);
                 if (el.dataset.example) q.set('example', '1');
+                if (el.dataset.settable) q.set('settable', '1');
                 openPopup(`/local/temperatur-detail.html?${q}&v=` + Date.now());
             } else openHistory(el.dataset.e);
         });

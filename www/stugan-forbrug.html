@@ -23,7 +23,7 @@
         .mix-head small { font-size: 12px; font-weight: 400; color: #8da0ad; text-transform: none; letter-spacing: 0; }
         .bar { display: flex; height: 10px; margin: 7px 0 6px; border-radius: 5px; overflow: hidden; background: rgba(255,255,255,.08); }
         .bar i { display: block; height: 100%; transition: width .4s; }
-        .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 4px; font-size: 11px; color: #8da0ad; }
+        .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 4px; font-size: 11px; color: #8da0ad; }
         .legend > span { display: flex; flex-direction: column; }
         .legend > span > span { display: flex; align-items: center; }
         .legend b { color: #f2f5f7; font-size: 13px; font-weight: 600; }
@@ -52,14 +52,14 @@
     <script src="/local/card-common.js?v=1"></script>
     <script>
         /* Strømforbrug at the cottage, built like the card at home (hus.html).
-           Live (Tibber Pulse online): the power now, and the last 1 h / 6 h / 24 h as stacked areas: Mill heaters, the EV charger and
+           Live (Tibber Pulse online): the power now, and the last 1 h / 6 h / 24 h as stacked areas: El-varme (Mill without the heat pump's socket), Varmepumpe (its socket), the EV charger and
            everything else (= the Pulse total minus those). "I dag" underneath is today's kWh and what it cost, split the same way.
            Pulse offline: the meter's own history through Tibber (hourly statistics, about a day late) takes its place, so the card
            shows the last 24 hours it has, split into the same groups. Pressing the card opens the dialog (stugan-strom.html).
            The sensors are found by themselves (entity registry, statistic ids). */
         const DEMO = new URLSearchParams(location.search).has('demo');
-        const COLORS = { mill: '#ffb340', sensibo: '#34d1b8', ev: '#5fe085', rest: '#64d2ff' };
-        const NAMES = { mill: 'Mill', sensibo: 'Sensibo', ev: 'Elbil', rest: 'Resten' };
+        const COLORS = { mill: '#ffb340', vp: '#c792ea', sensibo: '#34d1b8', ev: '#5fe085', rest: '#64d2ff' };
+        const NAMES = { mill: 'El-varme', vp: 'Varmepumpe', sensibo: 'Sensibo', ev: 'Elbil', rest: 'Resten' };
         const f = (v, d) => v.toLocaleString('da-DK', { minimumFractionDigits: d, maximumFractionDigits: d });
         const isOk = s => s && !['unavailable', 'unknown'].includes(s.state);
         const HOURS = { 1: { bucket: 30e3 }, 6: { bucket: 120e3 }, 24: { bucket: 600e3 } };
@@ -69,14 +69,21 @@
         const openDialog = () => openPopup('/local/stugan-strom.html?v=' + Date.now());
         for (const id of ['nowButton', 'mix', 'chartBox']) document.getElementById(id).addEventListener('click', openDialog);
 
+        // The heat pump's Mill socket is its own group ("Varmepumpe"); "El-varme" is every other Mill device.
+        async function vpUnique() {
+            if (!reg.length || Date.now() - regAt > 5 * 60e3) { reg = (await callWS({ type: 'config/entity_registry/list' })) || reg; regAt = Date.now(); }
+            return reg.find(r => r.platform === 'mill' && r.entity_id.startsWith('climate.') && /varmepump/i.test(r.entity_id))?.unique_id || null;
+        }
         async function statIds() {
             if (ids) return ids;
             const list = (await callWS({ type: 'recorder/list_statistic_ids' })) || [];
+            const vpU = await vpUnique(), vpStat = vpU ? 'mill:energy_' + vpU.replace(/-/g, '_') : null;
             const cons = list.find(s => s.statistic_id.startsWith('tibber:energy_consumption_'));
             return (ids = {
+                vp: vpStat && list.some(x => x.statistic_id === vpStat) ? [vpStat] : [],
                 cons: cons?.statistic_id, cost: cons?.statistic_id.replace('energy_consumption_', 'energy_totalcost_'),
                 ev: list.filter(s => s.statistic_id === 'sensor.stugan_energy_meter').map(s => s.statistic_id),
-                mill: list.filter(s => s.source === 'mill' && s.statistic_id.startsWith('mill:energy_')).map(s => s.statistic_id),
+                mill: list.filter(s => s.source === 'mill' && s.statistic_id.startsWith('mill:energy_') && s.statistic_id !== vpStat).map(s => s.statistic_id),
                 sensibo: list.filter(s => /sensibo|thomas_s_device/.test(s.statistic_id) && s.has_sum && /kWh/.test(s.statistics_unit_of_measurement || s.unit_of_measurement || '')).map(s => s.statistic_id),
             });
         }
@@ -90,8 +97,11 @@
             // Tibber Pulse: the integration puts its real-time sensors under their own device ("Tibber Pulse <home>"), unique id <home>_rt_power
             const rtPower = tib.find(r => /_rt_power$/.test(r.unique_id || '')) || tib.find(r => states.get(r.entity_id)?.attributes.device_class === 'power' && /power/i.test(r.entity_id) && !/average|production|min_|max_|factor/i.test(r.entity_id));
             const pulse = rtPower && states.get(rtPower.entity_id);
-            const mill = reg.filter(r => r.platform === 'mill' && !r.disabled_by && r.entity_id.startsWith('sensor.') && states.get(r.entity_id)?.attributes.device_class === 'power').map(r => r.entity_id);
-            return { states, pulse: pulse && isOk(pulse) ? pulse : null, pulseEntity: pulse, ev: states.get('sensor.stugan_charge_power') ? 'sensor.stugan_charge_power' : null, mill };
+            const vpU = await vpUnique();
+            const millPower = reg.filter(r => r.platform === 'mill' && !r.disabled_by && r.entity_id.startsWith('sensor.') && states.get(r.entity_id)?.attributes.device_class === 'power');
+            const isVp = r => vpU && (r.unique_id || '').startsWith(vpU);
+            const mill = millPower.filter(r => !isVp(r)).map(r => r.entity_id), vp = millPower.filter(isVp).map(r => r.entity_id);
+            return { states, pulse: pulse && isOk(pulse) ? pulse : null, pulseEntity: pulse, ev: states.get('sensor.stugan_charge_power') ? 'sensor.stugan_charge_power' : null, mill, vp };
         }
 
         const kw = (state, unit) => parseFloat(state) * (unit === 'kW' ? 1 : 1e-3);
@@ -103,7 +113,7 @@
                 for (let i = 0; i < n; i++) { const t = since + i * bucket, total = 1.1 + 0.5 * Math.sin(i / 14) + (i % 40 < 6 ? 1.8 : 0), mill = Math.max(0, 0.7 * Math.sin(i / 25) + 0.6), ev = i % 90 < 20 ? 2.3 : 0; out.push({ t, total: total + mill + ev, mill, ev, rest: total }); }
                 return out;
             }
-            const all = [sn.pulseEntity.entity_id, ...(sn.ev ? [sn.ev] : []), ...sn.mill];
+            const all = [sn.pulseEntity.entity_id, ...(sn.ev ? [sn.ev] : []), ...sn.mill, ...sn.vp];
             const res = await callApi('GET', `history/period/${new Date(since).toISOString()}?filter_entity_id=${all.join(',')}&end_time=${encodeURIComponent(new Date().toISOString())}&minimal_response&no_attributes`);
             const by = new Map((res || []).map(rows => [rows[0]?.entity_id, rows]));
             const unit = id => sn.states.get(id)?.attributes.unit_of_measurement;
@@ -112,11 +122,11 @@
                 for (const r of by.get(id) || []) { const v = kw(r.state, unit(id)); if (Number.isNaN(v)) continue; const t = Math.floor(new Date(r.last_updated || r.last_changed).getTime() / bucket) * bucket; const a = m.get(t) || [0, 0]; a[0] += v; a[1]++; m.set(t, a); }
                 return m;
             };
-            const tot = bucketed(sn.pulseEntity.entity_id), ev = sn.ev ? bucketed(sn.ev) : new Map(), mills = sn.mill.map(bucketed);
+            const tot = bucketed(sn.pulseEntity.entity_id), ev = sn.ev ? bucketed(sn.ev) : new Map(), mills = sn.mill.map(bucketed), vps = sn.vp.map(bucketed);
             const avg = (m, t) => { const a = m.get(t); return a ? a[0] / a[1] : 0; };
             return [...tot.keys()].sort((a, b) => a - b).map(t => {
-                const total = avg(tot, t), e = avg(ev, t), m = mills.reduce((s, mm) => s + avg(mm, t), 0);
-                return { t, total, mill: Math.min(m, total), ev: Math.min(e, Math.max(0, total - m)), rest: Math.max(0, total - m - e) };
+                const total = avg(tot, t), e = avg(ev, t), m = Math.min(mills.reduce((s, mm) => s + avg(mm, t), 0), total), v = Math.min(vps.reduce((s, mm) => s + avg(mm, t), 0), Math.max(0, total - m));
+                return { t, total, mill: m, vp: v, ev: Math.min(e, Math.max(0, total - m - v)), rest: Math.max(0, total - m - v - e) };
             });
         }
 
@@ -128,10 +138,10 @@
             const set = (key, label) => ({ label, data: pts.map(p => ({ x: p.t, y: p[key] })), borderColor: COLORS[key], borderWidth: 1.6, pointRadius: 0, tension: 0.2, fill: true, backgroundColor: gradient(COLORS[key]) });
             chart = new Chart(document.getElementById('chart'), {
                 type: 'line',
-                data: { datasets: [set('rest', NAMES.rest), set('ev', NAMES.ev), set('mill', NAMES.mill)] },
+                data: { datasets: [set('rest', NAMES.rest), set('ev', NAMES.ev), set('vp', NAMES.vp), set('mill', NAMES.mill)] },
                 options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false, interaction: { mode: 'index', intersect: false },
-                    scales: { x: { type: 'linear', min: since, max: Date.now(), grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8da0ad', font: { size: 11 }, maxRotation: 0, maxTicksLimit: 2, callback: v => clock(v) } },
-                              y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8da0ad', font: { size: 11 }, callback: v => `${f(v, 0)} kW` } } },
+                    scales: { x: { type: 'linear', min: since, max: Date.now(), grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8da0ad', font: { size: 11 }, maxRotation: 0, maxTicksLimit: 5, callback: v => clock(v) } },
+                              y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8da0ad', font: { size: 11 }, maxTicksLimit: 4, callback: v => `${f(v, v % 1 ? 1 : 0)} kW` } } },
                     plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => clock(i[0].parsed.x), label: i => `${i.dataset.label}: ${f(i.parsed.y, 2)} kW` } } } },
             });
             chart.options.scales.y.stacked = true; chart.update();
@@ -143,21 +153,21 @@
             if (DEMO) rows = Array.from({ length: 48 }, (_, i) => ({ t: Date.now() - (48 - i) * 3600e3, total: 0.5 + 0.4 * Math.abs(Math.sin(i / 3)), cost: 1.2, mill: 0.1, ev: i % 20 < 3 ? 2 : 0, sensibo: 0 }));
             else {
                 const s = await statIds(); if (!s.cons) return { rows: [], src: s };
-                const res = await callWS({ type: 'recorder/statistics_during_period', start_time: new Date(Date.now() - 4 * 864e5).toISOString(), end_time: new Date().toISOString(), statistic_ids: [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo], period: 'hour', types: ['change'] });
-                const at = new Map(), row = t => { if (!at.has(t)) at.set(t, { t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0 }); return at.get(t); };
+                const res = await callWS({ type: 'recorder/statistics_during_period', start_time: new Date(Date.now() - 4 * 864e5).toISOString(), end_time: new Date().toISOString(), statistic_ids: [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo, ...s.vp], period: 'hour', types: ['change'] });
+                const at = new Map(), row = t => { if (!at.has(t)) at.set(t, { t, total: 0, cost: 0, mill: 0, vp: 0, ev: 0, sensibo: 0 }); return at.get(t); };
                 const add = (id, key) => ((res && res[id]) || []).forEach(r => { if (r.change != null) row(new Date(r.start).getTime())[key] += r.change; });
-                add(s.cons, 'total'); add(s.cost, 'cost'); s.ev.forEach(i => add(i, 'ev')); s.mill.forEach(i => add(i, 'mill')); s.sensibo.forEach(i => add(i, 'sensibo'));
+                add(s.cons, 'total'); add(s.cost, 'cost'); s.ev.forEach(i => add(i, 'ev')); s.mill.forEach(i => add(i, 'mill')); s.sensibo.forEach(i => add(i, 'sensibo')); s.vp.forEach(i => add(i, 'vp'));
                 rows = [...at.values()].filter(r => r.total > 0).sort((a, b) => a.t - b.t);
-                for (const r of rows) r.rest = Math.max(0, r.total - r.mill - r.ev - r.sensibo);
+                for (const r of rows) r.rest = Math.max(0, r.total - r.mill - r.ev - r.sensibo - r.vp);
                 return { rows: rows.slice(-48), src: s };
             }
-            for (const r of rows) r.rest = Math.max(0, r.total - r.mill - r.ev - r.sensibo);
+            for (const r of rows) r.rest = Math.max(0, r.total - r.mill - r.ev - r.sensibo - r.vp);
             return { rows, src: {} };
         }
 
         function drawMeter(rows) {
             if (chart) chart.destroy();
-            const keys = ['mill', 'ev', 'rest'];
+            const keys = ['mill', 'vp', 'ev', 'rest'];
             chart = new Chart(document.getElementById('chart'), {
                 type: 'bar',
                 data: { labels: rows.map(r => r.t), datasets: keys.map(k => ({ label: NAMES[k], data: rows.map(r => r[k]), backgroundColor: COLORS[k], borderRadius: 2, maxBarThickness: 12 })) },
@@ -174,6 +184,7 @@
             document.getElementById('mixTotal').textContent = total > 0 ? `${f(total, 1)} kWh` : '–';
             document.getElementById('mixCost').textContent = cost > 0 ? `· ${f(cost, 0)} kr` : '';
             document.getElementById('bar').innerHTML = keys.map(k => `<i style="width:${total > 0 ? Math.max(0, parts[k] / total * 100) : 0}%;background:${COLORS[k]}"></i>`).join('');
+            document.getElementById('legend').style.gridTemplateColumns = keys.length > 3 ? 'repeat(2, 1fr)' : '';
             document.getElementById('legend').innerHTML = keys.map(k => `<span><span><i style="background:${COLORS[k]}"></i>${NAMES[k]}</span><b>${f(parts[k], 1)} kWh</b></span>`).join('');
         }
 
@@ -203,21 +214,21 @@
                 drawAreas(await series(sn, since, HOURS[hours].bucket), since);
                 // today, in kWh per group
                 const d0 = new Date(); d0.setHours(0, 0, 0, 0);
-                const day = await series(sn, +d0, 300e3), parts = { mill: 0, ev: 0, rest: 0 }, ptsToday = [];
-                for (const p of day) { const h = 300e3 / 3600e3; parts.mill += p.mill * h; parts.ev += p.ev * h; parts.rest += p.rest * h; ptsToday.push({ t: p.t, kwh: p.total * h }); }
-                const total = parts.mill + parts.ev + parts.rest;
-                mix('I dag', parts, total, await todayCost(sn, ptsToday).catch(() => 0), ['mill', 'ev', 'rest']);
+                const day = await series(sn, +d0, 300e3), parts = { mill: 0, vp: 0, ev: 0, rest: 0 }, ptsToday = [];
+                for (const p of day) { const h = 300e3 / 3600e3; parts.mill += p.mill * h; parts.vp += p.vp * h; parts.ev += p.ev * h; parts.rest += p.rest * h; ptsToday.push({ t: p.t, kwh: p.total * h }); }
+                const total = parts.mill + parts.vp + parts.ev + parts.rest;
+                mix('I dag', parts, total, await todayCost(sn, ptsToday).catch(() => 0), ['mill', 'vp', 'ev', 'rest']);
             } else {
                 const { rows, src } = await meterHours();
                 pill.textContent = sn.pulseEntity ? 'Pulse offline' : 'Måler'; pill.className = 'pill fair';
-                if (!rows.length) { document.getElementById('power').textContent = '–'; document.getElementById('note').textContent = 'ingen data fra Tibber endnu'; mix('Seneste døgn', { mill: 0, ev: 0, rest: 0 }, 0, 0, ['mill', 'ev', 'rest']); return; }
+                if (!rows.length) { document.getElementById('power').textContent = '–'; document.getElementById('note').textContent = 'ingen data fra Tibber endnu'; mix('Seneste døgn', { mill: 0, vp: 0, ev: 0, rest: 0 }, 0, 0, ['mill', 'vp', 'ev', 'rest']); return; }
                 drawMeter(rows);
-                const day = rows.slice(-24), parts = { mill: 0, ev: 0, sensibo: 0, rest: 0 };
+                const day = rows.slice(-24), parts = { mill: 0, vp: 0, ev: 0, sensibo: 0, rest: 0 };
                 let total = 0, cost = 0;
                 for (const r of day) { for (const k of Object.keys(parts)) parts[k] += r[k]; total += r.total; cost += r.cost; }
                 document.getElementById('power').textContent = f(total, 1); document.getElementById('unit').textContent = ' kWh';
                 document.getElementById('note').textContent = `fra måleren, til ${new Date(rows[rows.length - 1].t).toLocaleString('da-DK', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
-                const keys = ['mill', ...(DEMO ? [] : (src.sensibo && src.sensibo.length ? ['sensibo'] : [])), 'ev', 'rest'];
+                const keys = ['mill', ...(src.vp && src.vp.length ? ['vp'] : []), ...(DEMO ? [] : (src.sensibo && src.sensibo.length ? ['sensibo'] : [])), 'ev', 'rest'];
                 mix('Seneste døgn', parts, total, cost, keys);
             }
         }

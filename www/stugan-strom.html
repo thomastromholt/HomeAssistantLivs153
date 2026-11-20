@@ -11,23 +11,30 @@
         .container { overflow-y: auto; gap: 10px; padding: 18px 20px 16px; }
         .close { position: fixed; top: 10px; right: 10px; z-index: 10; border: 0; background: rgba(40, 52, 62, 0.92); color: #f2f5f7; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); }
         .head { padding-right: 48px; }
-        .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
         .hero-now { font-size: 54px; font-weight: 200; line-height: 1; letter-spacing: -1.5px; color: #64d2ff; }
         .hero-now small { font-size: 18px; color: #8da0ad; font-weight: 400; letter-spacing: 0; margin-left: 4px; }
         .hero-sub { margin-top: 6px; font-size: 12px; color: #8da0ad; }
+        .phases { flex: 1; max-width: 330px; display: grid; gap: 7px; }
+        .phase { display: grid; grid-template-columns: 22px 1fr 108px; align-items: center; gap: 8px; font-size: 12px; color: #8da0ad; }
+        .phase .bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden; }
+        .phase .bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, #64d2ff, #5fa8ff); transition: width .4s; }
+        .phase .bar i.hot { background: linear-gradient(90deg, #ffb340, #ff6b61); }
+        .phase b { text-align: right; color: #f2f5f7; font-weight: 600; white-space: nowrap; }
+        .phase b small { font-weight: 400; color: #8da0ad; }
         .month { display: flex; align-items: center; gap: 8px; }
-        .month button { width: 34px; height: 34px; border: 0; border-radius: 10px; background: rgba(255,255,255,0.08); color: inherit; font-size: 16px; cursor: pointer; }
+        .month button { width: 30px; height: 30px; border: 0; border-radius: 9px; background: rgba(255,255,255,0.08); color: inherit; font-size: 16px; cursor: pointer; }
         .month button:disabled { opacity: 0.3; cursor: default; }
-        .month b { min-width: 130px; text-align: center; font-size: 15px; font-weight: 600; text-transform: capitalize; }
+        .month b { min-width: 110px; text-align: center; font-size: 14px; font-weight: 600; text-transform: capitalize; }
         .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-        .kpi { padding: 11px 12px; border-radius: 12px; background: rgba(255,255,255,0.05); min-width: 0; }
+        .kpi { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.06); min-width: 0; }
         .kpi .label { font-size: 11px; color: #8da0ad; text-transform: uppercase; letter-spacing: 0.5px; }
-        .kpi .big { margin-top: 4px; font-size: 21px; font-weight: 300; white-space: nowrap; }
+        .kpi .big { margin-top: 4px; font-size: 24px; font-weight: 300; white-space: nowrap; }
         .kpi .big small { font-size: 11px; color: #8da0ad; margin-left: 2px; }
         .kpi .sub { font-size: 10px; color: #6d808c; margin-top: 2px; }
-        .box { border-radius: 14px; background: rgba(255,255,255,0.04); padding: 12px 12px 8px; }
-        .cap { display: flex; justify-content: space-between; align-items: baseline; margin: 0 4px 8px; font-size: 12px; color: #a9b8c2; }
-        .cap span { color: #6d808c; font-size: 11px; }
+        .box { border-radius: 14px; background: rgba(255,255,255,0.06); padding: 12px 14px 8px; }
+        .cap { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; font-size: 14px; font-weight: 600; color: #f2f5f7; }
+        .cap span { color: #8da0ad; font-size: 11px; font-weight: 400; }
         .chart { position: relative; height: 270px; }
         .chart.short { height: 210px; }
         .split { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 4px 10px; }
@@ -36,7 +43,7 @@
         .sp b { font-weight: 600; }
         .sp small { color: #8da0ad; font-size: 11px; }
         .note { font-size: 11px; color: #6d808c; padding: 0 4px; line-height: 1.5; }
-        .nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+        .nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
         .seg { display: flex; gap: 4px; }
         .seg button { padding: 6px 14px; border: 0; border-radius: 9px; background: rgba(255,255,255,0.07); color: #8da0ad; font: inherit; font-size: 12.5px; cursor: pointer; }
         .seg button.on { background: rgba(100,210,255,0.2); color: #64d2ff; }
@@ -47,7 +54,7 @@
         .sig-controls button { padding: 5px 12px; border: 0; border-radius: 8px; background: rgba(100,210,255,0.16); color: #64d2ff; font: inherit; cursor: pointer; }
         .sg { padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,0.06); font-size: 12px; line-height: 1.5; min-width: 200px; flex: 1; }
         .sg b { font-weight: 600; }
-        @media (max-width: 700px) { .kpis, .kpis.fc { grid-template-columns: repeat(2, 1fr); } .hero-now { font-size: 44px; } }
+        @media (max-width: 700px) { .kpis, .kpis.fc { grid-template-columns: repeat(2, 1fr); } .hero-now { font-size: 44px; } .hero { flex-direction: column; align-items: stretch; } .phases { max-width: none; } }
     </style>
 </head>
 <body>
@@ -60,9 +67,11 @@
                 <div class="hero-now"><span id="power">–</span><small id="unit">kW</small></div>
                 <div class="hero-sub" id="heroSub"></div>
             </div>
-            <div class="nav"><div class="seg" id="viewSeg"><button data-v="day">Dag</button><button data-v="month">Måned</button><button data-v="year">År</button></div>
-                <div class="month"><button id="prev" aria-label="Forrige">‹</button><b id="monthLabel"></b><button id="next" aria-label="Næste">›</button></div></div>
+            <div class="phases" id="phases" hidden></div>
         </div>
+
+        <div class="nav"><div class="seg" id="viewSeg"><button data-v="day">Dag</button><button data-v="month">Måned</button><button data-v="year">År</button></div>
+            <div class="month"><button id="prev" aria-label="Forrige">‹</button><b id="monthLabel"></b><button id="next" aria-label="Næste">›</button></div></div>
 
         <div class="kpis">
             <div class="kpi"><div class="label" id="kTotalL">Måned i alt</div><div class="big" id="kTotal">–</div><div class="sub" id="kTotalSub"></div></div>
@@ -114,8 +123,8 @@
         const INK = SUMMER ? { grid: 'rgba(20,50,63,0.10)', tick: '#5f7783', line: '#1a8fb8', cost: '#e08a00' } : { grid: 'rgba(255,255,255,0.05)', tick: '#6d808c', line: '#64d2ff', cost: '#ffb340' };
         // One colour per consumer: Mill and Sensibo apart, the car as at home, the rest in slate.
         const CATS = SUMMER
-            ? [{ key: 'mill', name: 'Mill', color: '#e8870e' }, { key: 'sensibo', name: 'Sensibo', color: '#1ab5a0' }, { key: 'ev', name: 'Elbil', color: '#3aa856' }, { key: 'rest', name: 'Resten', color: '#6f9bb3' }]
-            : [{ key: 'mill', name: 'Mill', color: '#ffb340' }, { key: 'sensibo', name: 'Sensibo', color: '#34d1b8' }, { key: 'ev', name: 'Elbil', color: '#5fe085' }, { key: 'rest', name: 'Resten', color: '#4d86a6' }];
+            ? [{ key: 'mill', name: 'El-varme', color: '#e8870e' }, { key: 'vp', name: 'Varmepumpe', color: '#8e5fd0' }, { key: 'sensibo', name: 'Sensibo', color: '#1ab5a0' }, { key: 'ev', name: 'Elbil', color: '#3aa856' }, { key: 'rest', name: 'Resten', color: '#6f9bb3' }]
+            : [{ key: 'mill', name: 'El-varme', color: '#ffb340' }, { key: 'vp', name: 'Varmepumpe', color: '#c792ea' }, { key: 'sensibo', name: 'Sensibo', color: '#34d1b8' }, { key: 'ev', name: 'Elbil', color: '#5fe085' }, { key: 'rest', name: 'Resten', color: '#4d86a6' }];
         document.getElementById('close').addEventListener('click', () => closePopup());
         const f = (v, d) => v.toLocaleString('da-DK', { minimumFractionDigits: d, maximumFractionDigits: d });
         const isOk = s => s && !['unavailable', 'unknown'].includes(s.state);
@@ -130,10 +139,15 @@
             if (sources) return sources;
             const list = (await callWS({ type: 'recorder/list_statistic_ids' })) || [];
             const cons = list.find(s => s.statistic_id.startsWith('tibber:energy_consumption_'));
+            // The heat pump's Mill socket is its own group ("Varmepumpe"); "El-varme" is every other Mill device.
+            const reg = (await callWS({ type: 'config/entity_registry/list' }).catch(() => [])) || [];
+            const vpU = reg.find(r => r.platform === 'mill' && r.entity_id.startsWith('climate.') && /varmepump/i.test(r.entity_id))?.unique_id;
+            const vpStat = vpU ? 'mill:energy_' + vpU.replace(/-/g, '_') : null;
             sources = {
+                vp: vpStat && list.some(x => x.statistic_id === vpStat) ? [vpStat] : [],
                 cons: cons?.statistic_id, cost: cons?.statistic_id.replace('energy_consumption_', 'energy_totalcost_'),
                 ev: list.filter(s => s.statistic_id === 'sensor.stugan_energy_meter').map(s => s.statistic_id),
-                mill: list.filter(s => s.source === 'mill' && s.statistic_id.startsWith('mill:energy_')).map(s => s.statistic_id),
+                mill: list.filter(s => s.source === 'mill' && s.statistic_id.startsWith('mill:energy_') && s.statistic_id !== vpStat).map(s => s.statistic_id),
                 sensibo: list.filter(s => /sensibo|thomas_s_device/.test(s.statistic_id) && s.has_sum && /kWh/.test(s.statistics_unit_of_measurement || s.unit_of_measurement || '')).map(s => s.statistic_id),
             };
             return sources;
@@ -155,18 +169,18 @@
             else {
                 const s = await discover();
                 if (!s.cons) { hours = []; return; }
-                const ids = [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo];
+                const ids = [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo, ...s.vp];
                 const res = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: ids, period: 'hour', types: ['change'] });
                 const at = new Map();   // hour -> row
-                const row = t => { if (!at.has(t)) at.set(t, { t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0 }); return at.get(t); };
+                const row = t => { if (!at.has(t)) at.set(t, { t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0 }); return at.get(t); };
                 const add = (id, key) => ((res && res[id]) || []).forEach(r => { if (r.change != null) row(new Date(r.start).getTime())[key] += r.change; });
                 add(s.cons, 'total'); add(s.cost, 'cost');
-                s.ev.forEach(id => add(id, 'ev')); s.mill.forEach(id => add(id, 'mill')); s.sensibo.forEach(id => add(id, 'sensibo'));
+                s.ev.forEach(id => add(id, 'ev')); s.mill.forEach(id => add(id, 'mill')); s.sensibo.forEach(id => add(id, 'sensibo')); s.vp.forEach(id => add(id, 'vp'));
                 hours = [...at.values()].filter(r => r.total > 0 || r.cost > 0 || r.ev > 0 || r.mill > 0).sort((a, b) => a.t - b.t);
             }
-            for (const h of hours) { h.rest = Math.max(0, h.total - h.mill - h.ev - h.sensibo); }
+            for (const h of hours) { h.rest = Math.max(0, h.total - h.mill - h.ev - h.sensibo - h.vp); }
             const by = new Map();
-            for (const h of hours) { const k = dayKey(h.t); const d = by.get(k) || { k, t: h.t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, rest: 0 }; for (const c of ['total', 'cost', 'mill', 'ev', 'sensibo', 'rest']) d[c] += h[c]; by.set(k, d); }
+            for (const h of hours) { const k = dayKey(h.t); const d = by.get(k) || { k, t: h.t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0, rest: 0 }; for (const c of ['total', 'cost', 'mill', 'ev', 'sensibo', 'vp', 'rest']) d[c] += h[c]; by.set(k, d); }
             days = [...by.values()].filter(d => d.total > 0);
             const complete = new Set(days.map(d => d.k));
             hours = hours.filter(h => complete.has(dayKey(h.t)));
@@ -202,7 +216,7 @@
             const set = (id, html, sub) => { document.getElementById(id).innerHTML = html; document.getElementById(id + 'Sub').textContent = sub ?? ''; };
             const lab = (id, text) => { document.getElementById(id + 'L').textContent = text; };
             const none = () => { for (const id of ['kTotal', 'kCost', 'kAvg', 'kMax', 'kLast']) set(id, '–', ''); };
-            const NOTE = 'Total og kost er fra elmåleren via Tibber (kommer cirka et døgn forsinket). Elbil er Zaptec-laderen, Mill er varmerne, og Resten er alt andet. Sensibo vises, når den har en forbrugsmåling.';
+            const NOTE = 'Total og kost er fra elmåleren via Tibber (kommer cirka et døgn forsinket). Elbil er Zaptec-laderen, El-varme er Mill-varmerne (uden varmepumpens stik), Varmepumpe er Mills stik på den, og Resten er alt andet.';
             if (view === 'day') {
                 lab('kTotal', 'Dagens forbrug'); lab('kCost', 'Dagens pris'); lab('kAvg', 'Gns. pr. time'); lab('kMax', 'Største time'); lab('kLast', 'Nat 00–06');
                 if (!hs.length) { none(); document.getElementById('note').textContent = 'Ingen timedata for denne dag endnu. Tibber henter måleren cirka et døgn forsinket.'; }
@@ -273,13 +287,13 @@
             else {
                 const s = await discover();
                 if (!s.cons) { months = []; return; }
-                const res = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo], period: 'month', types: ['change'] });
-                const at = new Map(), row = t => { const k = dayKey(t).slice(0, 7); if (!at.has(k)) at.set(k, { k, t: +new Date(t), total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0 }); return at.get(k); };
+                const res = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo, ...s.vp], period: 'month', types: ['change'] });
+                const at = new Map(), row = t => { const k = dayKey(t).slice(0, 7); if (!at.has(k)) at.set(k, { k, t: +new Date(t), total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0 }); return at.get(k); };
                 const add = (id, key) => ((res && res[id]) || []).forEach(r => { if (r.change != null) row(r.start)[key] += r.change; });
-                add(s.cons, 'total'); add(s.cost, 'cost'); s.ev.forEach(i => add(i, 'ev')); s.mill.forEach(i => add(i, 'mill')); s.sensibo.forEach(i => add(i, 'sensibo'));
+                add(s.cons, 'total'); add(s.cost, 'cost'); s.ev.forEach(i => add(i, 'ev')); s.mill.forEach(i => add(i, 'mill')); s.sensibo.forEach(i => add(i, 'sensibo')); s.vp.forEach(i => add(i, 'vp'));
                 months = [...at.values()].filter(r => r.total > 0).sort((a, b) => a.t - b.t);
             }
-            for (const m of months) m.rest = Math.max(0, m.total - m.mill - m.ev - m.sensibo);
+            for (const m of months) m.rest = Math.max(0, m.total - m.mill - m.ev - m.sensibo - m.vp);
         }
         function renderYear() {
             const set = (id, html, sub) => { document.getElementById(id).innerHTML = html; document.getElementById(id + 'Sub').textContent = sub ?? ''; };
@@ -294,7 +308,7 @@
                 set('kAvg', `${f(total / months.length, 0)}<small>kWh</small>`, `${f(cost / months.length, 0)} kr pr. måned`);
                 set('kMax', `${f(max.total, 0)}<small>kWh</small>`, `${mn(max.t)} · ${f(max.cost, 0)} kr`);
                 set('kLast', `${f(last.total, 0)}<small>kWh</small>`, `${mn(last.t)} · ${f(last.cost, 0)} kr${last.k === dayKey(new Date()).slice(0, 7) ? ' (hidtil)' : ''}`);
-                document.getElementById('note').textContent = 'Total og kost er fra elmåleren via Tibber. Elbil er Zaptec-laderen, Mill er varmerne, og Resten er alt andet (varmepumpen ligger i Resten, indtil dens stik har data).';
+                document.getElementById('note').textContent = 'Total og kost er fra elmåleren via Tibber. Elbil er Zaptec-laderen, El-varme er Mill-varmerne, og Varmepumpe er Mills stik på den. Resten er alt andet (varmepumpen ligger i Resten, indtil stikket har data i Mills historik).';
             }
             const hasSrc = c => DEMO ? months.some(d => d[c.key] > 0) : c.key === 'rest' || !!(sources && sources[c.key] && sources[c.key].length);
             const shown = CATS.filter(hasSrc), sum = months.reduce((a, m) => a + m.total, 0);
@@ -347,10 +361,10 @@
             const monthTotal = (y, m, k = 1) => dim(y, m) * FC.baseDay + FC.visitMonth + FC.b * FC.hdd[m] * k;
             const list = [{ label: MON[m0], partial: true, actual: soFar, exp: soFar + rest, low: soFar + restMild, high: soFar + restCold }];
             for (let i = 1; i <= 12; i++) { const m = (m0 + i) % 12, y = y0 + Math.floor((m0 + i) / 12); list.push({ label: MON[m] + (y !== y0 ? ' ' + String(y).slice(2) : ''), exp: monthTotal(y, m), low: monthTotal(y, m, FC.mild), high: monthTotal(y, m, FC.cold), calYear: y }); }
-            fcCache = { list, soFar, soFarCost, price, m0, y0, rest }; fcAt = Date.now();
+            fcCache = { list, soFar, soFarCost, price, m0, y0, rest, lastDay }; fcAt = Date.now();
             draw(fcCache);
             function draw(c) {
-                const { list, soFar, soFarCost, price, m0 } = c, kr = v => `${f(Math.round(v * price / 10) * 10, 0)} kr`, h = v => f(Math.round(v / 10) * 10, 0);
+                const { list, soFar, soFarCost, price, m0, lastDay } = c, kr = v => `${f(Math.round(v * price / 10) * 10, 0)} kr`, h = v => f(Math.round(v / 10) * 10, 0);
                 const restYear = list[0].exp - soFar + list.slice(1).filter(x => x.calYear === c.y0).reduce((a, x) => a + x.exp, 0);
                 const next6 = list.slice(1, 7).reduce((a, x) => a + x.exp, 0), y12 = list.slice(1).reduce((a, x) => a + x.exp, 0) + list[0].exp;
                 const box = (label, big, sub) => `<div class="kpi"><div class="label">${label}</div><div class="big">${big}</div><div class="sub">${sub}</div></div>`;
@@ -398,6 +412,23 @@
             // Tibber Pulse: the integration puts its real-time sensors under their own device ("Tibber Pulse <home>"), unique id <home>_rt_power
             const rtPower = mine.find(r => /_rt_power$/.test(r.unique_id || '')) || mine.find(r => states.get(r.entity_id)?.attributes.device_class === 'power' && /power/i.test(r.entity_id) && !/average|production|min_|max_|factor/i.test(r.entity_id));
             const power = rtPower && states.get(rtPower.entity_id);
+            // L1-L3 from the Pulse: current (A) and voltage per phase, the power per phase is voltage times current.
+            const phaseBox = document.getElementById('phases');
+            const phaseOf = n => {
+                const find = re => { const r = mine.find(x => re.test(x.unique_id || '')); return r && states.get(r.entity_id); };
+                return [find(new RegExp(`_rt_currentL${n}$`)), find(new RegExp(`_rt_voltagePhase${n}$`))];
+            };
+            const phases = [1, 2, 3].map(phaseOf);
+            if (phases.some(([i]) => isOk(i))) {
+                if (!phaseBox.children.length) phaseBox.innerHTML = [1, 2, 3].map(n => `<div class="phase"><span>L${n}</span><div class="bar"><i></i></div><b>–</b></div>`).join('');
+                phases.forEach(([cur, volt], k) => {
+                    const row = phaseBox.children[k], a = isOk(cur) ? parseFloat(cur.state) : NaN, v = isOk(volt) ? parseFloat(volt.state) : NaN;
+                    row.querySelector('b').innerHTML = Number.isNaN(a) ? '–' : `${f(a, 1)} A${Number.isNaN(v) ? '' : ` <small>· ${f(a * v / 1000, 2)} kW</small>`}`;
+                    row.querySelector('i').style.width = `${Number.isNaN(a) ? 0 : Math.max(0, Math.min(100, a / 25 * 100))}%`;
+                    row.querySelector('i').classList.toggle('hot', a > 16);
+                });
+                phaseBox.hidden = false;
+            } else phaseBox.hidden = true;
             if (isOk(power)) {
                 document.getElementById('power').textContent = f(parseFloat(power.state) * (power.attributes.unit_of_measurement === 'kW' ? 1 : 1e-3), 2);
                 document.getElementById('unit').textContent = 'kW'; document.getElementById('heroSub').textContent = 'Pulse, lige nu';
@@ -517,7 +548,7 @@
         document.getElementById('prev').addEventListener('click', () => move(-1));
         document.getElementById('next').addEventListener('click', () => move(1));
         document.getElementById('viewSeg').addEventListener('click', e => { const v = e.target.dataset?.v; if (v && v !== view) setView(v); });
-        const go = () => (view === 'year' ? loadYear() : loadMonth()).then(render).then(live).then(() => forecast()).catch(showError);
+        const go = () => (view === 'year' ? loadYear() : loadMonth()).then(render).then(live).then(() => forecast().catch(e => console.warn('forecast', e))).catch(showError);
         go();
         signature().catch(showError);
         setInterval(() => live().catch(() => {}), 15e3);
