@@ -41,9 +41,13 @@
         const DEMO = new URLSearchParams(location.search).has('demo');
         const SUMMER = new URLSearchParams(location.search).get('theme') === 'summer';
         const GRIDC = SUMMER ? 'rgba(20,50,63,0.10)' : 'rgba(255,255,255,0.06)', TICKC = SUMMER ? '#5f7783' : '#8da0ad';
-        const ORE = v => Math.round(v * 100);   // SEK/kWh -> öre/kWh
+        // Tibber's price plus tax and transfer, so the card shows the whole price per kWh as the Tibber app does. The 90 öre are
+        // matched to the app (2026-11-20 12:34: the app 291 öre against Tibber's API price 201 öre) and split as at home:
+        // energy tax 45 öre and transfer (the grid fee) 45 öre, both incl. VAT. Change them here when the grid fee is known exactly.
+        const ENERGY_TAX_ORE = 45, TRANSFER_ORE = 45, EXTRA_ORE = ENERGY_TAX_ORE + TRANSFER_ORE;
+        const ORE = v => Math.round(v * 100 + EXTRA_ORE);   // SEK/kWh (Tibber) -> öre/kWh (total)
         const clock = t => new Date(t).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
-        for (const line of ['Totalpris pr. kWh fra Tibber: spotpris, Tibbers tillæg, nettarif, afgifter og moms.', 'Morgendagens priser kommer, når de er offentliggjort.', 'Blå: de billigste timer til kl. 07, som bilen har brug for (mindst 3). Kun en vejledning: Tibber Grid Rewards styrer selve ladningen.']) {
+        for (const line of [`Totalpris pr. kWh: Tibbers pris (spot, tillæg og moms) plus skat og overførsel (+${EXTRA_ORE} öre: elskat ${ENERGY_TAX_ORE} og overførsel ${TRANSFER_ORE}, afstemt mod Tibber-appen).`, 'Morgendagens priser kommer, når de er offentliggjort.', 'Blå: de billigste timer til kl. 07, som bilen har brug for (mindst 3). Kun en vejledning: Tibber Grid Rewards styrer selve ladningen.']) {
             const row = document.createElement('div'); row.textContent = line; document.getElementById('infoBox').append(row);
         }
         let chart = null, past = [];
@@ -80,16 +84,18 @@
         // When the car should charge, as on the home card: the cheapest hours from now until 07:00 that give the energy the
         // car needs (at least 3). Only shown: Tibber (Grid Rewards) decides what the charger really does at the cottage.
         const HOUR = 3600e3, DEADLINE_HOUR = 7, MIN_HOURS = 3, BATTERY_KWH = 8.9, EFF = 0.9, CHARGER_KW = 3.7, CHARGE_COLOR = '#64d2ff', NORMAL_COLOR = '#ff9500';
+        // Never plan an hour dearer than petrol: 350 öre/kWh in total (break-even 380-575 öre with the Ceed, docs/ladeplan.md). Fixed on purpose; change it
+        // here if the petrol price moves a lot (it rises about 3 kr/l on 1 December 2026).
+        const MAX_CHARGE_ORE = 350;
         let chargeHours = new Set();
         async function planHours(all, now) {
             const info = document.getElementById('chargeInfo'), legend = document.getElementById('legend');
             legend.hidden = true;
-            let soc = NaN, full = false;
-            try {
-                full = (await callApi('GET', 'states/sensor.stugan_charger_mode')).state === 'connected_finished';
-                soc = parseFloat((await callApi('GET', 'states/sensor.ceed_ev_battery_level')).state);
-            } catch (e) { /* no car data: plan for an empty car */ }
-            if (full || soc >= 99) return new Set();
+            // Only the car's battery decides whether there is anything to plan. The charger's "connected_finished" also appears when
+            // a charge was stopped by hand or by Tibber, so it must not hide the plan (it did on 2026-11-20 after "Stop ladning").
+            let soc = NaN;
+            try { soc = parseFloat((await callApi('GET', 'states/sensor.ceed_ev_battery_level')).state); } catch (e) { /* no car data: plan for an empty car */ }
+            if (soc >= 99) return new Set();
             const need = Math.max(MIN_HOURS, Math.ceil((100 - (Number.isNaN(soc) ? 0 : soc)) / 100 * BATTERY_KWH / EFF / CHARGER_KW));
             const deadline = new Date(now); deadline.setHours(DEADLINE_HOUR, 0, 0, 0);
             if (deadline.getTime() <= now) deadline.setDate(deadline.getDate() + 1);
@@ -99,9 +105,9 @@
                 if (h < first || h >= deadline.getTime()) continue;
                 const e = sums.get(h) || [0, 0]; e[0] += p.price; e[1]++; sums.set(h, e);
             }
-            const hourly = new Map([...sums].map(([h, [sum, n]]) => [h, ORE(sum / n)]));
+            const hourly = new Map([...sums].map(([h, [sum, n]]) => [h, ORE(sum / n)]).filter(([, ore]) => ore <= MAX_CHARGE_ORE));
             const picked = new Set([...hourly.keys()].sort((a, b) => hourly.get(a) - hourly.get(b)).slice(0, need));
-            if (!picked.size) return picked;
+            if (!picked.size) { info.textContent = `ingen timer under ${MAX_CHARGE_ORE} öre`; legend.hidden = false; return picked; }
             const hh = t => String(new Date(t).getHours()).padStart(2, '0'), runs = [];
             for (const t of [...picked].sort((a, b) => a - b)) { const l = runs[runs.length - 1]; if (l && l.end === t) l.end = t + HOUR; else runs.push({ start: t, end: t + HOUR }); }
             const avg = [...picked].reduce((a, t) => a + hourly.get(t), 0) / picked.size;

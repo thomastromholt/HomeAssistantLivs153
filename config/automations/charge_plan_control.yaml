@@ -1,7 +1,7 @@
 # Ladeplan, part 1: the charging hours. Every hour it fetches the Nord Pool SE3 prices for today and tomorrow
 # (tomorrow from about 13:00) and picks the cheapest hours from now until 07:00. They need not be in a row. The number
 # of hours is what the car needs to be full at 07:00 (at about 2.3 kW), at least 3. If the cheapest hours soon (next 6 h)
-# cost at most 5 kr more than the cheapest until 07:00, those are used instead (hours above 5 kr/kWh are never used; the early plan is only before 21:00, and only if they are also at most 30 öre/kWh dearer on average; from 21:00 the
+# cost at most 5 kr more than the cheapest until 07:00, those are used instead (hours above 1.97 kr/kWh spot, 350 öre total, are never used; the early plan is only before 21:00, and only if they are also at most 30 öre/kWh dearer on average; from 21:00 the
 # cheapest hours until 07:00 are always used). The hours go to input_text.ladeplan
 # (hour numbers since 1970, comma separated) and input_boolean.ladevindue is on during them. The plan is always made,
 # also when the car is unplugged; the price card draws input_text.ladeplan (docs/ladeplan.md).
@@ -47,9 +47,12 @@
         # From 21:00 (evening) the early plan is not used: the cheapest hours until 07:00 are always taken, since there
         # is no "soon" left to save for, and the night is when it is cheapest.
         early_until_h: 21
-        # Never charge in an hour whose spot price is above this (SEK/MWh, 5000 = 5 kr/kWh): above that the Ceed is cheaper on
-        # petrol. Such hours are not candidates, so they are never in the plan ("Lad nu" is still a manual override).
-        max_price: 5000
+        # Never charge in an hour whose spot price is above this (SEK/MWh): above that the Ceed is as cheap or cheaper on petrol,
+        # and charging hard also wears the battery. 1970 SEK/MWh spot = 350 öre/kWh in total ((spot + 26) x 1.25 + 26 + 45 öre,
+        # docs/elpriskalkulator.md), a cap under the break-even of 380-575 öre worked out on 2026-11-20 (docs/ladeplan.md). Fixed on
+        # purpose: change it here if the petrol price moves a lot (it rises about 3 kr/l on 1 December 2026). Such hours are not
+        # candidates, so they are never in the plan ("Lad nu" is still a manual override).
+        max_price: 1970
         plan: >-
           {% set items = ((np_today.SE3 if np_today is defined else []) + (np_tomorrow.SE3 if np_tomorrow is defined else [])) %} {% set ns = namespace(sum={}, cnt={}) %} {% for p in items %}
             {% set h = (as_timestamp(p.start) // 3600) | int | string %}

@@ -16,7 +16,7 @@
         .hero-now small { font-size: 18px; color: #8da0ad; font-weight: 400; letter-spacing: 0; margin-left: 4px; }
         .hero-sub { margin-top: 6px; font-size: 12px; color: #8da0ad; }
         .phases { flex: 1; max-width: 330px; display: grid; gap: 7px; }
-        .phase { display: grid; grid-template-columns: 22px 1fr 108px; align-items: center; gap: 8px; font-size: 12px; color: #8da0ad; }
+        .phase { display: grid; grid-template-columns: 22px 1fr 62px; align-items: center; gap: 8px; font-size: 12px; color: #8da0ad; }
         .phase .bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden; }
         .phase .bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, #64d2ff, #5fa8ff); transition: width .4s; }
         .phase .bar i.hot { background: linear-gradient(90deg, #ffb340, #ff6b61); }
@@ -123,8 +123,8 @@
         const INK = SUMMER ? { grid: 'rgba(20,50,63,0.10)', tick: '#5f7783', line: '#1a8fb8', cost: '#e08a00' } : { grid: 'rgba(255,255,255,0.05)', tick: '#6d808c', line: '#64d2ff', cost: '#ffb340' };
         // One colour per consumer: Mill and Sensibo apart, the car as at home, the rest in slate.
         const CATS = SUMMER
-            ? [{ key: 'mill', name: 'El-varme', color: '#e8870e' }, { key: 'vp', name: 'Varmepumpe', color: '#8e5fd0' }, { key: 'sensibo', name: 'Sensibo', color: '#1ab5a0' }, { key: 'ev', name: 'Elbil', color: '#3aa856' }, { key: 'rest', name: 'Resten', color: '#6f9bb3' }]
-            : [{ key: 'mill', name: 'El-varme', color: '#ffb340' }, { key: 'vp', name: 'Varmepumpe', color: '#c792ea' }, { key: 'sensibo', name: 'Sensibo', color: '#34d1b8' }, { key: 'ev', name: 'Elbil', color: '#5fe085' }, { key: 'rest', name: 'Resten', color: '#4d86a6' }];
+            ? [{ key: 'mill', name: 'El-varme', color: '#e8870e' }, { key: 'vp', name: 'Varmepumpe', color: '#8e5fd0' }, { key: 'ev', name: 'Elbil', color: '#3aa856' }, { key: 'rest', name: 'Resten', color: '#6f9bb3' }]
+            : [{ key: 'mill', name: 'El-varme', color: '#ffb340' }, { key: 'vp', name: 'Varmepumpe', color: '#c792ea' }, { key: 'ev', name: 'Elbil', color: '#5fe085' }, { key: 'rest', name: 'Resten', color: '#4d86a6' }];
         document.getElementById('close').addEventListener('click', () => closePopup());
         const f = (v, d) => v.toLocaleString('da-DK', { minimumFractionDigits: d, maximumFractionDigits: d });
         const isOk = s => s && !['unavailable', 'unknown'].includes(s.state);
@@ -423,9 +423,10 @@
                 if (!phaseBox.children.length) phaseBox.innerHTML = [1, 2, 3].map(n => `<div class="phase"><span>L${n}</span><div class="bar"><i></i></div><b>–</b></div>`).join('');
                 phases.forEach(([cur, volt], k) => {
                     const row = phaseBox.children[k], a = isOk(cur) ? parseFloat(cur.state) : NaN, v = isOk(volt) ? parseFloat(volt.state) : NaN;
-                    row.querySelector('b').innerHTML = Number.isNaN(a) ? '–' : `${f(a, 1)} A${Number.isNaN(v) ? '' : ` <small>· ${f(a * v / 1000, 2)} kW</small>`}`;
-                    row.querySelector('i').style.width = `${Number.isNaN(a) ? 0 : Math.max(0, Math.min(100, a / 25 * 100))}%`;
-                    row.querySelector('i').classList.toggle('hot', a > 16);
+                    const w = Number.isNaN(a) ? NaN : a * (Number.isNaN(v) ? 230 : v);   // watt = current x voltage, shown in W as at home
+                    row.querySelector('b').textContent = Number.isNaN(w) ? '–' : `${f(w, 0)} W`;
+                    row.querySelector('i').style.width = `${Number.isNaN(w) ? 0 : Math.max(0, Math.min(100, w / 5500 * 100))}%`;   // full at 5500 W (25 A at 230 V), as at home
+                    row.querySelector('i').classList.toggle('hot', w > 3500);
                 });
                 phaseBox.hidden = false;
             } else phaseBox.hidden = true;

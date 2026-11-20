@@ -87,6 +87,7 @@
         .setter .tg.off i { left: 3px; }
         .setter .tg.busy { opacity: .55; cursor: default; }
         .setter .pw.off { background: rgba(255,255,255,0.08); color: #8da0ad; }
+        .setter .sw { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #8da0ad; text-align: right; }
         .setter .sl small { text-transform: none; letter-spacing: 0; font-size: 11px; color: #6d808c; }
         .setter input { width: 72px; height: 36px; padding: 0 10px; border: 0; border-radius: 10px; background: rgba(255,255,255,0.08); color: #f2f5f7; font: inherit; font-size: 18px; text-align: center; }
         .setter .pw:disabled { opacity: .5; cursor: default; }
@@ -116,7 +117,8 @@
 
         <div class="setter" id="setter" hidden>
             <button class="tg off" id="setPower" role="switch" aria-checked="false" aria-label="Tænd eller sluk varmepumpen" title="Tænd / sluk varmepumpen" hidden><i></i></button>
-            <span class="sl" id="setLabel">Sæt temperatur</span>
+            <span class="sl" id="setLabel">Varmepumpe</span>
+            <span class="sw" id="wishLabel">Ønsket temperatur</span>
             <button class="sb" id="setDown" aria-label="Lavere">−</button><span class="sv" id="setVal">–</span><button class="sb" id="setUp" aria-label="Højere">+</button>
         </div>
 
@@ -525,7 +527,7 @@
             const s = sensor(), pw = e.currentTarget;
             if (!/^climate\.thomas_s_device/.test(s.temperature) || powerBusy) return;
             const turnOn = pw.classList.contains('off');
-            powerBusy = true; pw.disabled = true; pw.classList.add('busy'); pw.classList.toggle('off', !turnOn); pw.setAttribute('aria-checked', String(turnOn));
+            powerBusy = true; pw.disabled = true; pw.classList.add('busy'); pw.classList.toggle('off', !turnOn); pw.setAttribute('aria-checked', String(turnOn)); document.getElementById('setLabel').textContent = turnOn ? 'Tænder…' : 'Slukker…';
             try { await callApi('POST', `services/climate/turn_${turnOn ? 'on' : 'off'}`, { entity_id: s.temperature }); } catch (err) { showError(err); }
             setTimeout(() => { powerBusy = false; pw.disabled = false; pw.classList.remove('busy'); load(); }, 4000);
         });
@@ -542,7 +544,9 @@
             const pw = document.getElementById('setPower'), sensibo = /^climate\.thomas_s_device/.test(s.temperature);
             // A Mill heater has a day, a night and an away temperature; HA only reads and sets the day one.
             pw.hidden = !sensibo;
-            if (sensibo && !powerBusy) { const on = main.state !== 'off'; pw.classList.toggle('off', !on); pw.setAttribute('aria-checked', String(on)); }
+            if (sensibo && !powerBusy) { const on = main.state !== 'off'; pw.classList.toggle('off', !on); pw.setAttribute('aria-checked', String(on)); document.getElementById('setLabel').textContent = on ? 'Varmepumpen er tændt' : 'Varmepumpen er slukket'; }
+            document.getElementById('wishLabel').hidden = !sensibo;
+            if (!sensibo) document.getElementById('setLabel').textContent = '';
             const v = parseFloat(main.attributes.temperature);
             document.getElementById('setVal').innerHTML = Number.isNaN(v) ? '–' : `${f1(v)}<small>°C</small>`;
         }
@@ -556,19 +560,20 @@
             const v = Math.min(hi, Math.max(lo, Math.round((Number.isNaN(base) ? 20 : base) + d)));
             clearTimeout(wish?.timer);
             wish = { v, timer: setTimeout(async () => {
-                const lab = document.getElementById('setLabel'), t0 = Date.now();
+                const lab = document.getElementById('wishLabel'), t0 = Date.now();
                 try { await callApi('POST', 'services/climate/set_temperature', { entity_id: s.temperature, temperature: v }); } catch (err) { showError(err); }
                 // The Sensibo cloud takes a while to confirm. Keep the wish on screen, ask HA for a fresh value every few seconds
                 // (homeassistant.update_entity: one Sensibo call, no request limit like Mill's) and stop when HA reports it (max 60 s).
                 let confirmed = false;
                 for (let i = 0; i < 15 && !confirmed; i++) {
-                    lab.textContent = `Sæt temperatur · venter på Sensibo (${Math.round((Date.now() - t0) / 1000)} s)…`;
+                    lab.textContent = `venter på Sensibo (${Math.round((Date.now() - t0) / 1000)} s)…`;
                     await new Promise(r => setTimeout(r, 4000));
                     try { await callApi('POST', 'services/homeassistant/update_entity', { entity_id: s.temperature }); } catch (err) { /* try again */ }
                     const st = await callApi('GET', `states/${s.temperature}`).catch(() => null);
                     confirmed = !!st && Math.abs(parseFloat(st.attributes.temperature) - v) < 0.01;
                 }
-                lab.textContent = confirmed ? `Sæt temperatur · bekræftet efter ${Math.round((Date.now() - t0) / 1000)} s` : 'Sæt temperatur · Sensibo har ikke bekræftet endnu';
+                lab.textContent = confirmed ? `bekræftet efter ${Math.round((Date.now() - t0) / 1000)} s` : 'ikke bekræftet endnu';
+                setTimeout(() => { lab.textContent = 'Ønsket temperatur'; }, 6000);
                 wish = null; load();
             }, 3000) };   // only the last value is sent, 3 s after the last press (the Mill cloud is slow, and each call changes the device)
             val.classList.add('wait'); val.innerHTML = `${f1(v)}<small>°C</small>`;

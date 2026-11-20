@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vand · Stugan</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script>if (new URLSearchParams(location.search).get('theme') === 'summer') { document.documentElement.className = 'summer'; document.write('<link rel="stylesheet" href="/local/card-summer.css?v=1">'); }</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        .container { overflow-y: auto; gap: 10px; padding: 18px 20px 16px; }
+        .close { position: fixed; top: 10px; right: 10px; z-index: 10; border: 0; background: rgba(40, 52, 62, 0.92); color: #f2f5f7; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+        .head { padding-right: 48px; }
+        .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+        .pill2 { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(255,255,255,0.08); color: #c5d1d9; }
+        .pill2 i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+        .pill2.ok { background: rgba(52,199,89,0.16); color: #5fe085; }
+        .pill2.bad { background: rgba(255,69,58,0.2); color: #ff6b61; }
+        .pill2.warn { background: rgba(255,179,64,0.18); color: #ffb340; }
+        .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+        .hero-now { font-size: 54px; font-weight: 200; line-height: 1; letter-spacing: -1.5px; color: #64d2ff; }
+        .hero-now small { font-size: 18px; color: #8da0ad; font-weight: 400; letter-spacing: 0; margin-left: 6px; }
+        .hero-sub { margin-top: 6px; font-size: 12px; color: #8da0ad; }
+        .hbar { height: 6px; margin-top: 10px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; max-width: 330px; }
+        .hbar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #2a8fd6, #64d2ff); transition: width .4s; }
+        .hbar i.hot { background: linear-gradient(90deg, #ffb340, #ff6b61); }
+        .live { flex: 1; max-width: 330px; display: grid; gap: 7px; }
+        .lrow { display: grid; grid-template-columns: 62px 1fr 78px; align-items: center; gap: 8px; font-size: 12px; color: #8da0ad; }
+        .lrow .bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden; }
+        .lrow .bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, #64d2ff, #5fa8ff); transition: width .4s; }
+        .lrow b { text-align: right; color: #f2f5f7; font-weight: 600; white-space: nowrap; }
+        .lrow b small { font-weight: 400; color: #8da0ad; }
+        .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+        .kpi { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.06); min-width: 0; }
+        .kpi .label { font-size: 11px; color: #8da0ad; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi .big { margin-top: 4px; font-size: 24px; font-weight: 300; white-space: nowrap; }
+        .kpi .big small { font-size: 11px; color: #8da0ad; margin-left: 2px; }
+        .kpi .sub { font-size: 10px; color: #6d808c; margin-top: 2px; }
+        .box { border-radius: 14px; background: rgba(255,255,255,0.06); padding: 12px 14px 8px; }
+        .cap { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; font-size: 14px; font-weight: 600; color: #f2f5f7; }
+        .cap span { color: #8da0ad; font-size: 11px; font-weight: 400; }
+        .chart { position: relative; height: 210px; }
+        .chart.short { height: 170px; }
+        .seg { display: flex; gap: 4px; }
+        .seg button { padding: 6px 14px; border: 0; border-radius: 9px; background: rgba(255,255,255,0.07); color: #8da0ad; font: inherit; font-size: 12.5px; cursor: pointer; }
+        .seg button.on { background: rgba(100,210,255,0.2); color: #64d2ff; }
+        .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .empty { padding: 26px 8px; text-align: center; font-size: 12px; color: #6d808c; }
+        .note { padding: 9px 12px; border-radius: 10px; background: rgba(255,179,64,0.12); color: #ffb340; font-size: 12px; }
+        .fine { font-size: 11px; color: #6d808c; padding: 0 4px; line-height: 1.5; }
+        @media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, 1fr); } .hero-now { font-size: 44px; } .hero { flex-direction: column; align-items: stretch; } .live { max-width: none; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head"><span class="name">Vand <span class="muted">· Grohe Sense</span></span><button class="close" id="close" aria-label="Luk">✕</button></div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="toolbar"><div class="pills" id="pills"></div><div class="seg" id="win"><button data-w="24h">24 t</button><button data-w="7d">7 d</button><button data-w="30d">30 d</button><button data-w="90d">90 d</button></div></div>
+
+        <div class="hero">
+            <div>
+                <div class="hero-now"><span id="today">–</span><small>liter i dag</small></div>
+                <div class="hero-sub" id="heroSub"></div>
+                <div class="hbar"><i id="heroBar" style="width:0"></i></div>
+            </div>
+            <div class="live" id="live"></div>
+        </div>
+
+        <div class="kpis">
+            <div class="kpi"><div class="label">Gns. døgn</div><div class="big" id="kAvg">–</div><div class="sub" id="kAvgSub">fra Grohe</div></div>
+            <div class="kpi"><div class="label">Seneste 7 dage</div><div class="big" id="k7">–</div><div class="sub" id="k7Sub"></div></div>
+            <div class="kpi"><div class="label">Seneste 30 dage</div><div class="big" id="k30">–</div><div class="sub" id="k30Sub"></div></div>
+            <div class="kpi"><div class="label">Højeste døgn</div><div class="big" id="kMax">–</div><div class="sub" id="kMaxSub"></div></div>
+            <div class="kpi"><div class="label">Seneste tapning</div><div class="big" id="kLast">–</div><div class="sub" id="kLastSub"></div></div>
+        </div>
+
+        <div class="box">
+            <div class="cap"><span id="useTitle" style="font-size:14px;font-weight:600;color:inherit">Forbrug</span><span id="useCap"></span></div>
+            <div class="chart"><canvas id="useChart"></canvas></div>
+            <div class="empty" id="useEmpty" hidden>Ingen data i dette vindue endnu. Grohe fortæller om vandforbrug fra den dag, integrationen blev sat op.</div>
+        </div>
+        <div class="box">
+            <div class="cap">Tryk og flow <span id="pfCap">seneste døgn</span></div>
+            <div class="chart short"><canvas id="pfChart"></canvas></div>
+            <div class="empty" id="pfEmpty" hidden>Ingen målinger af tryk og flow endnu.</div>
+        </div>
+        <div class="box">
+            <div class="cap">Temperatur i enheden <span id="tempCap">°C, seneste døgn</span></div>
+            <div class="chart short"><canvas id="tempChart"></canvas></div>
+            <div class="empty" id="tempEmpty" hidden>Ingen temperaturmålinger endnu.</div>
+        </div>
+
+        <div class="note" id="noteBox" hidden></div>
+        <div class="fine" id="fine"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=1"></script>
+    <script>
+        /* The cottage's water (Grohe Sense Guard): the valve and the connection, today's litres against the average, the live pressure,
+           flow and temperature, the litres per day (30 days) and per hour (48 hours) from the long-term statistics of the total counter,
+           and pressure / flow / temperature for the last 24 hours. Read-only: the main valve is not switched from here.
+           The sensors are found by the valve's name (valve.<name>_valve), so a renamed device still works. */
+        const SUMMER = new URLSearchParams(location.search).get('theme') === 'summer';
+        const INK = SUMMER ? { grid: 'rgba(20,50,63,0.10)', tick: '#5f7783', water: '#1a8fb8', avg: '#e08a00', flow: '#e08a00', temp: '#1a8fb8' }
+                           : { grid: 'rgba(255,255,255,0.06)', tick: '#8da0ad', water: '#64d2ff', avg: '#ffb340', flow: '#ffb340', temp: '#ff9f6b' };
+        document.getElementById('close').addEventListener('click', () => closePopup());
+        const f = (v, d) => v.toLocaleString('da-DK', { minimumFractionDigits: d, maximumFractionDigits: d });
+        const dayKey = t => new Date(t).toLocaleDateString('sv-SE');
+        const bad = s => !s || ['unavailable', 'unknown', 'None'].includes(s.state);
+        const num = s => (bad(s) ? NaN : parseFloat(s.state));
+        let charts = {};
+        const draw = (id, config) => { charts[id]?.destroy(); charts[id] = new Chart(document.getElementById(id), config); };
+        const axis = (extra = {}) => ({ grid: { color: INK.grid }, ticks: { color: INK.tick, font: { size: 10 }, ...(extra.ticks || {}) }, ...extra });
+        const wsStats = async (id, period, start) => {
+            const r = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: new Date().toISOString(), statistic_ids: [id], period, types: ['change'] });
+            return ((r && r[id]) || []).filter(x => x.change != null);
+        };
+        const show = (id, has) => { document.getElementById(id).hidden = has; document.getElementById(id.replace('Empty', 'Chart')).closest('.box').querySelector('.chart').style.display = has ? '' : 'none'; };
+
+        // The time window of the charts: 24 h (litres per hour, live detail), 7 d (per day, hourly pressure), 30 d and 90 d (per day, daily).
+        const WIN = {
+            '24h': { ms: 864e5, use: 'hour', pf: 'history', label: 'seneste 24 timer', useTitle: 'Pr. time', useCap: 'liter pr. time' },
+            '7d': { ms: 7 * 864e5, use: 'day', pf: 'hour', label: 'seneste 7 dage', useTitle: 'Pr. døgn', useCap: 'liter pr. døgn · stiplet linje = gennemsnit' },
+            '30d': { ms: 30 * 864e5, use: 'day', pf: 'day', label: 'seneste 30 dage', useTitle: 'Pr. døgn', useCap: 'liter pr. døgn · stiplet linje = gennemsnit' },
+            '90d': { ms: 90 * 864e5, use: 'day', pf: 'day', label: 'seneste 90 dage', useTitle: 'Pr. døgn', useCap: 'liter pr. døgn · stiplet linje = gennemsnit' },
+        };
+        let win = '24h', CTX = null;
+        try { const w = localStorage.getItem('vand_win'); if (WIN[w]) win = w; } catch (e) { /* no storage */ }
+        const markWin = () => document.querySelectorAll('#win button').forEach(b => b.classList.toggle('on', b.dataset.w === win));
+        document.getElementById('win').addEventListener('click', e => {
+            const w = e.target.dataset?.w; if (!w || w === win) return;
+            win = w; try { localStorage.setItem('vand_win', w); } catch (x) { /* no storage */ } markWin(); renderCharts().catch(showError);
+        });
+        markWin();
+        // mean / max statistics of a measurement over the window, as {x, y} points
+        const wsMeasure = async (id, period, start, type) => {
+            const r = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: new Date().toISOString(), statistic_ids: [id], period, types: [type] });
+            return ((r && r[id]) || []).filter(x => x[type] != null).map(x => ({ x: new Date(x.start).getTime(), y: x[type] }));
+        };
+
+        async function renderCharts() {
+            if (!CTX) return;
+            const { total, press, flow, temp, A } = CTX, W = WIN[win], start = new Date(Date.now() - W.ms);
+            document.getElementById('useTitle').textContent = W.useTitle; document.getElementById('useCap').textContent = W.useCap;
+            document.getElementById('pfCap').textContent = W.label; document.getElementById('tempCap').textContent = '°C, ' + W.label;
+
+            // litres: per hour for 24 h, per day for the longer windows (long-term statistics of the total counter)
+            let rows = [];
+            if (total) {
+                const from = W.use === 'day' ? (() => { const d = new Date(start); d.setHours(0, 0, 0, 0); return d; })() : start;
+                rows = (await wsStats(total.entity_id, W.use, from).catch(() => [])).map(x => ({ t: new Date(x.start).getTime(), v: x.change }));
+            }
+            show('useEmpty', rows.length > 0);
+            if (rows.length) {
+                const avgLine = W.use === 'day' ? (!Number.isNaN(A) ? A : rows.reduce((s, r) => s + r.v, 0) / rows.length) : null;
+                const lab = r => W.use === 'hour' ? new Date(r.t).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+                                                  : new Date(r.t).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' });
+                draw('useChart', { type: 'bar', data: { labels: rows.map(lab),
+                    datasets: [{ data: rows.map(r => W.use === 'hour' ? +r.v.toFixed(1) : Math.round(r.v)), backgroundColor: rows.map((r, i) => (i === rows.length - 1 ? INK.water : INK.water + '99')), borderRadius: 4, maxBarThickness: win === '90d' ? 8 : 18 },
+                               ...(avgLine != null ? [{ type: 'line', data: rows.map(() => Math.round(avgLine)), borderColor: INK.avg, borderDash: [5, 4], borderWidth: 1.4, pointRadius: 0 }] : [])] },
+                    options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: i => `${f(i.parsed.y, W.use === 'hour' ? 1 : 0)} L` } } },
+                        scales: { x: axis({ grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } }), y: axis({ beginAtZero: true }) } } });
+            }
+
+            // pressure, flow and temperature: the live history for 24 h, otherwise the hourly / daily statistics (flow as the maximum)
+            let pp = [], fp = [], tp = [];
+            if (W.pf === 'history') {
+                const ids = [press, flow, temp].filter(Boolean).map(s => s.entity_id);
+                const hist = ids.length ? await callApi('GET', `history/period/${start.toISOString()}?filter_entity_id=${ids.join(',')}&end_time=${encodeURIComponent(new Date().toISOString())}&minimal_response&no_attributes`).catch(() => []) : [];
+                // minimal_response only names the entity on the first row of each series
+                const byId = {}; (hist || []).forEach(r => { if (r.length) byId[r[0].entity_id] = r; });
+                const pts = id => (byId[id] || []).map(r => ({ x: new Date(r.last_changed || r.last_updated).getTime(), y: parseFloat(r.state) })).filter(p => !Number.isNaN(p.y));
+                pp = press ? pts(press.entity_id) : []; fp = flow ? pts(flow.entity_id) : []; tp = temp ? pts(temp.entity_id) : [];
+            } else {
+                [pp, fp, tp] = await Promise.all([press ? wsMeasure(press.entity_id, W.pf, start, 'mean') : [], flow ? wsMeasure(flow.entity_id, W.pf, start, 'max') : [], temp ? wsMeasure(temp.entity_id, W.pf, start, 'mean') : []].map(p => Promise.resolve(p).catch(() => [])));
+            }
+            const stepped = W.pf === 'history' ? 'before' : false;
+            const xs = { type: 'linear', min: +start, max: Date.now(), grid: { color: INK.grid }, ticks: { color: INK.tick, font: { size: 10 }, maxRotation: 0, maxTicksLimit: 6,
+                callback: v => W.ms <= 864e5 ? new Date(v).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }) : new Date(v).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' }) } };
+            show('pfEmpty', pp.length + fp.length > 1);
+            if (pp.length + fp.length > 1) draw('pfChart', { type: 'line', data: { datasets: [
+                { label: 'Tryk (bar)', data: pp, borderColor: INK.water, borderWidth: 1.8, pointRadius: 0, stepped, yAxisID: 'y' },
+                { label: W.pf === 'history' ? 'Flow (m³/h)' : 'Flow, højeste (m³/h)', data: fp, borderColor: INK.flow, borderWidth: 1.4, pointRadius: 0, stepped, yAxisID: 'y1' }] },
+                options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false, interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    plugins: { legend: { labels: { color: INK.tick, boxWidth: 10, font: { size: 10 } } } },
+                    scales: { x: xs, y: axis({ position: 'left' }), y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: INK.flow, font: { size: 10 } }, beginAtZero: true } } } });
+            show('tempEmpty', tp.length > 1);
+            if (tp.length > 1) draw('tempChart', { type: 'line', data: { datasets: [{ data: tp, borderColor: INK.temp, borderWidth: 2, pointRadius: 0, tension: 0.25, fill: true, backgroundColor: INK.temp + '22' }] },
+                options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false, plugins: { legend: { display: false } }, scales: { x: xs, y: axis() } } });
+        }
+
+        async function load() {
+            const states = new Map((await callApi('GET', 'states')).map(s => [s.entity_id, s]));
+            const valve = [...states.values()].find(s => s.entity_id.startsWith('valve.') && /_valve$/.test(s.entity_id));
+            if (!valve) { document.getElementById('error').hidden = false; document.getElementById('error').textContent = 'Fandt ingen Grohe-ventil (valve.…_valve).'; return; }
+            const px = valve.entity_id.slice('valve.'.length, -'_valve'.length);
+            const S = k => states.get(k.includes('.') ? k : `sensor.${px}_${k}`);
+            const today = S('water_consumption'), total = S('total_water_consumption'), avgDay = S('average_daily_consumption'), avgMonth = S('average_monthly_consumption'),
+                  latest = S('latest_consumption'), maxFlow = S('latest_max_flow_rate'), flow = S('actual_flow_rate'), press = S('actual_pressure'), temp = S('temperature'),
+                  note = S('latest_notification'), online = states.get(`binary_sensor.${px}_online`), limit = states.get(`number.${px}_withdrawal_amount_limit`);
+
+            // pills: the valve, the connection
+            const open = valve.state === 'open';
+            document.getElementById('pills').innerHTML =
+                `<span class="pill2 ${open ? 'ok' : valve.state === 'closed' ? 'bad' : 'warn'}"><i></i>${open ? 'Hovedventil åben' : valve.state === 'closed' ? 'Hovedventil LUKKET' : valve.state}</span>`
+                + (online ? `<span class="pill2 ${online.state === 'on' ? 'ok' : 'bad'}"><i></i>${online.state === 'on' ? 'Online' : 'Offline'}</span>` : '')
+                + (limit && !bad(limit) ? `<span class="pill2">Grænse pr. tapning ${f(num(limit), 0)} L</span>` : '');
+
+            // hero: today against the average
+            const L = num(today), A = num(avgDay), used = !Number.isNaN(L) && A > 0 ? L / A * 100 : 0;
+            document.getElementById('today').textContent = Number.isNaN(L) ? '–' : f(L, 0);
+            document.getElementById('heroSub').textContent = Number.isNaN(A) ? '' : `${f(used, 0)} % af et gennemsnitligt døgn (${f(A, 0)} L)`;
+            const hb = document.getElementById('heroBar'); hb.style.width = Math.min(100, used) + '%'; hb.classList.toggle('hot', used > 130);
+
+            // live rows: pressure, flow, temperature
+            const P = num(press), F = num(flow), T = num(temp), maxF = Math.max(num(maxFlow) || 0, F || 0, 1);
+            const row = (name, v, unit, d, pct) => `<div class="lrow"><span>${name}</span><div class="bar"><i style="width:${Number.isNaN(v) ? 0 : Math.max(0, Math.min(100, pct))}%"></i></div><b>${Number.isNaN(v) ? '–' : f(v, d)} <small>${unit}</small></b></div>`;
+            document.getElementById('live').innerHTML = row('Tryk', P, 'bar', 1, P / 6 * 100) + row('Flow', F, 'm³/h', 1, F / maxF * 100) + row('Enhed', T, '°C', 1, T / 30 * 100);
+
+            // KPIs from the statistics
+            const t30 = new Date(); t30.setDate(t30.getDate() - 29); t30.setHours(0, 0, 0, 0);
+            let days = [];
+            if (total) days = await wsStats(total.entity_id, 'day', t30).catch(() => []);
+            const rows = days.map(x => ({ t: new Date(x.start).getTime(), v: x.change }));
+            const d7 = rows.slice(-7), sum = a => a.reduce((s, r) => s + r.v, 0);
+            document.getElementById('kAvg').innerHTML = Number.isNaN(A) ? '–' : `${f(A, 0)}<small>L</small>`;
+            document.getElementById('kAvgSub').textContent = Number.isNaN(num(avgMonth)) ? 'fra Grohe' : `måned ${f(num(avgMonth), 0)} L`;
+            document.getElementById('k7').innerHTML = d7.length ? `${f(sum(d7), 0)}<small>L</small>` : '–';
+            document.getElementById('k7Sub').textContent = d7.length ? `${d7.length} dage med data` : '';
+            document.getElementById('k30').innerHTML = rows.length ? `${f(sum(rows), 0)}<small>L</small>` : '–';
+            document.getElementById('k30Sub').textContent = rows.length ? `gns. ${f(sum(rows) / rows.length, 0)} L pr. døgn` : '';
+            const top = rows.length ? rows.reduce((a, b) => (b.v > a.v ? b : a)) : null;
+            document.getElementById('kMax').innerHTML = top ? `${f(top.v, 0)}<small>L</small>` : '–';
+            document.getElementById('kMaxSub').textContent = top ? new Date(top.t).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+            document.getElementById('kLast').innerHTML = latest && !bad(latest) ? `${f(num(latest), 1)}<small>L</small>` : '–';
+            document.getElementById('kLastSub').textContent = !Number.isNaN(num(maxFlow)) ? `maks flow ${f(num(maxFlow), 1)} m³/h` : '';
+
+            CTX = { total, press, flow, temp, A, rows30: rows };
+            await renderCharts();
+
+            // notification
+            const nb = document.getElementById('noteBox');
+            const msg = note && !bad(note) && !/ingen|no actual/i.test(note.state) ? note.state : '';
+            nb.hidden = !msg; nb.textContent = msg;
+            document.getElementById('fine').textContent = 'Kun visning: hovedventilen åbnes og lukkes i Grohe-appen. Tallene kommer fra Grohes sky, så de kan være forsinket, hvis sommerhuset mister forbindelsen.';
+            showError(null);
+        }
+        const tick = () => load().catch(showError);
+        tick();
+        setInterval(tick, 60e3);
+    </script>
+</body>
+</html>

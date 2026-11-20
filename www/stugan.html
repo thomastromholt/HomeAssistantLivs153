@@ -80,6 +80,9 @@
         .sc-cap { display: flex; justify-content: space-between; margin: 0 2px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8da0ad; }
         .sc-cap span { color: #ffb340; text-transform: none; letter-spacing: 0; }
         .sc-cv { position: relative; height: 96px; }
+        /* the single heat pump card: the room temperature curve takes the space that is left */
+        body.single .sens-curve { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+        body.single .sens-curve .sc-cv { flex: 1; height: auto; min-height: 96px; }
         .refresh { border: 0; border-radius: 999px; background: rgba(255,255,255,0.08); color: #8da0ad; font: inherit; font-size: 11px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
         .refresh:disabled { opacity: .55; cursor: default; }
         .zone { display: flex; align-items: center; gap: 6px; height: 42px; padding: 3px 8px; border-radius: 14px; border: 1px solid rgba(100,210,255,0.28); background: rgba(100,210,255,0.05); cursor: pointer; }
@@ -165,9 +168,9 @@
         /* The cottage's devices. The cards find each integration's entities themselves (through the entity registry), so nothing
            here names an entity: add the integration in Settings -> Devices & services and it shows up. */
         const BLOCKS = [
-            { key: 'mill', title: 'Varme', sub: 'Mill', platforms: ['mill', 'mill_local'],
+            { key: 'mill', title: 'Elvarme', sub: 'Mill', platforms: ['mill', 'mill_local'],
               how: 'Tilføj <b>Mill</b> under Indstillinger → Enheder & tjenester (log ind med din Mill-konto).' },
-            { key: 'sensibo', title: 'Klima', sub: 'Sensibo', platforms: ['sensibo'],
+            { key: 'sensibo', title: 'Varmepumpe', sub: 'Sensibo', platforms: ['sensibo'],
               how: 'Tilføj <b>Sensibo</b> under Indstillinger → Enheder & tjenester (kræver en API-nøgle fra home.sensibo.com/me/api).' },
             { key: 'grohe', title: 'Vand', sub: 'Grohe Sense', platforms: ['grohe_smarthome', 'grohe_sense', 'grohe'],
               how: 'Grohe Sense er ikke en indbygget integration. Installér <b>Grohe Smarthome</b> (Flo-Schilli/ha-grohe_smarthome) via HACS, og log ind med din Grohe-konto.' },
@@ -420,21 +423,30 @@
         }
 
         // Is the cottage online? The cloud integrations (Grohe, Sensibo, Tibber, Mill) keep showing their last values when the cottage
-        // loses its connection, and none of them says how old a value is. The Zaptec charger's own temperature normally changes several
-        // times an hour: if it has not changed for a few hours, the numbers on the Grohe and Sensibo cards are the last ones the clouds remember.
-        const LIVE_PROBE = 'sensor.stugan_temperature_internal', STALE_AFTER_H = 3;
+        // loses its connection, and none of them says how old a value is. Two probes that normally keep changing: the Tibber Pulse's
+        // power (every few seconds, so a change in the last 15 minutes means the cottage is online) and the Zaptec charger's own
+        // temperature (a few times an hour; unchanged for STALE_AFTER_H hours counts as offline). Either one alive is enough: a stuck
+        // Zaptec reading alone must not mark the live Sensibo and Grohe cards "Sidst kendt".
+        const LIVE_PROBE = 'sensor.stugan_temperature_internal', STALE_AFTER_H = 3, PULSE_ALIVE_MIN = 15;
         let cottage = { at: 0, offline: false, since: null };
+        // When did this entity last change its state (ms), looking 12 h back? null = no readings at all.
+        async function lastChange(entityId) {
+            const res = await callApi('GET', `history/period/${new Date(Date.now() - 12 * 3600e3).toISOString()}?filter_entity_id=${entityId}&end_time=${encodeURIComponent(new Date().toISOString())}&minimal_response&no_attributes`);
+            const rows = ((res && res[0]) || []).filter(r => !['unavailable', 'unknown'].includes(r.state));
+            if (!rows.length) return null;
+            const last = rows[rows.length - 1].state;
+            let idx = -1; for (let i = rows.length - 1; i >= 0; i--) if (rows[i].state !== last) { idx = i; break; }
+            return idx >= 0 ? new Date(rows[idx + 1].last_changed || rows[idx + 1].last_updated).getTime() : Date.now() - 12 * 3600e3;
+        }
         async function checkCottage() {
             if (DEMO || Date.now() - cottage.at < 5 * 60e3) return;
             cottage.at = Date.now();
             try {
-                const res = await callApi('GET', `history/period/${new Date(Date.now() - 12 * 3600e3).toISOString()}?filter_entity_id=${LIVE_PROBE}&end_time=${encodeURIComponent(new Date().toISOString())}&minimal_response&no_attributes`);
-                const rows = ((res && res[0]) || []).filter(r => !['unavailable', 'unknown'].includes(r.state));
-                if (!rows.length) { cottage.offline = false; return; }
-                const last = rows[rows.length - 1].state;
-                let idx = -1; for (let i = rows.length - 1; i >= 0; i--) if (rows[i].state !== last) { idx = i; break; }
-                const since = idx >= 0 ? new Date(rows[idx + 1].last_changed || rows[idx + 1].last_updated).getTime() : Date.now() - 12 * 3600e3;
-                cottage.since = since; cottage.offline = Date.now() - since > STALE_AFTER_H * 3600e3;
+                const pulseId = registry.find(r => /_rt_power$/.test(r.unique_id || ''))?.entity_id;
+                const [pulse, zaptec] = await Promise.all([pulseId ? lastChange(pulseId).catch(() => null) : null, lastChange(LIVE_PROBE).catch(() => null)]);
+                if (pulse == null && zaptec == null) { cottage.offline = false; return; }
+                const alive = (pulse != null && Date.now() - pulse < PULSE_ALIVE_MIN * 60e3) || (zaptec != null && Date.now() - zaptec < STALE_AFTER_H * 3600e3);
+                cottage.since = Math.max(pulse || 0, zaptec || 0); cottage.offline = !alive;
             } catch (e) { /* leave it as it was */ }
         }
 
@@ -510,6 +522,8 @@
         document.getElementById('grid').addEventListener('click', e => {
             const el = e.target.closest('[data-e]');
             if (!el) return;
+            // Anything in the water card (the Grohe) opens the water dialog; the valve pill still opens the valve's own history.
+            if (el.closest('.gh') && !el.classList.contains('gh-pill')) { openPopup(`/local/stugan-vand.html?theme=${THEME}&v=` + Date.now()); return; }
             if (el.dataset.dialog) {
                 const q = new URLSearchParams({ entity: el.dataset.e, name: el.dataset.name, sub: el.dataset.sub, theme: THEME });
                 if (el.dataset.hum) q.set('humidity', el.dataset.hum);
