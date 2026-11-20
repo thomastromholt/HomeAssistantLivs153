@@ -96,7 +96,7 @@
             <div class="chart"><canvas id="yearChart"></canvas></div>
         </div>
         <div class="box" id="fcBox">
-            <div class="cap">Forventet forbrug <span>hele sommerhuset · kWh og kr</span></div>
+            <div class="cap">Forventet forbrug · året, næste 6 måneder og denne måned <span>hele sommerhuset · kWh og kr</span></div>
             <div class="kpis fc" id="fcKpis"></div>
             <div class="chart short"><canvas id="fcChart"></canvas></div>
             <div class="note" id="fcNote" style="margin-top:6px"></div>
@@ -133,7 +133,7 @@
         const FIRST_DAY = '2025-10-10';   // the first day the Tibber meter has data for
         let view = 'month', year = new Date().getFullYear();
         try { const v = localStorage.getItem('ss_view'); if (['day', 'month', 'year'].includes(v)) view = v; } catch (e) {}
-        let month = new Date(thisMonth), selected = null, dayChart = null, hourChart = null, yearChart = null, hours = [], days = [], months = [], sources = null;
+        let month = new Date(thisMonth), selected = null, dayChart = null, hourChart = null, yearChart = null, hours = [], days = [], months = [], sources = null, liveToday = null;
 
         async function discover() {
             if (sources) return sources;
@@ -182,6 +182,7 @@
             const by = new Map();
             for (const h of hours) { const k = dayKey(h.t); const d = by.get(k) || { k, t: h.t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0, rest: 0 }; for (const c of ['total', 'cost', 'mill', 'ev', 'sensibo', 'vp', 'rest']) d[c] += h[c]; by.set(k, d); }
             days = [...by.values()].filter(d => d.total > 0);
+            applyLive();
             const complete = new Set(days.map(d => d.k));
             hours = hours.filter(h => complete.has(dayKey(h.t)));
             if (!selected || !by.has(selected)) selected = days.length ? days[days.length - 1].k : null;
@@ -207,6 +208,16 @@
             document.getElementById('prev').disabled = prevOff; document.getElementById('next').disabled = nextOff;
         }
 
+        // The meter's hourly statistics come through Tibber about a day late, so today is short there (3.2 kWh at lunchtime against 8.4 on the
+        // card). The Pulse counts today's kWh and cost in real time (accumulated consumption / cost since midnight), so today takes the larger.
+        function applyLive() {
+            if (!liveToday) return;
+            const k = liveToday.key;
+            if (dayKey(month).slice(0, 7) !== k.slice(0, 7)) return;   // another month is shown
+            const d = days.find(x => x.k === k);
+            if (d) { if (liveToday.kwh > d.total) { d.rest += liveToday.kwh - d.total; d.total = liveToday.kwh; d.cost = Math.max(d.cost, liveToday.cost); } }
+            else if (liveToday.kwh > 0) days.push({ k, t: new Date(k + 'T12:00:00').getTime(), total: liveToday.kwh, cost: liveToday.cost, mill: 0, ev: 0, sensibo: 0, vp: 0, rest: liveToday.kwh });
+        }
         function render() {
             document.getElementById('dayBox').hidden = view !== 'month';
             document.getElementById('hourBox').hidden = view !== 'day';
@@ -366,13 +377,15 @@
             function draw(c) {
                 const { list, soFar, soFarCost, price, m0, lastDay } = c, kr = v => `${f(Math.round(v * price / 10) * 10, 0)} kr`, h = v => f(Math.round(v / 10) * 10, 0);
                 const restYear = list[0].exp - soFar + list.slice(1).filter(x => x.calYear === c.y0).reduce((a, x) => a + x.exp, 0);
-                const next6 = list.slice(1, 7).reduce((a, x) => a + x.exp, 0), y12 = list.slice(1).reduce((a, x) => a + x.exp, 0) + list[0].exp;
-                const box = (label, big, sub) => `<div class="kpi"><div class="label">${label}</div><div class="big">${big}</div><div class="sub">${sub}</div></div>`;
+                const next6 = list.slice(1, 7).reduce((a, x) => a + x.exp, 0), y12 = list.slice(1, 13).reduce((a, x) => a + x.exp, 0);   // y12: the 12 months after this one
+                // The same row as at home (stromforbrug.html): forecasts in whole hundreds, spaces between the thousands, kWh and kr in one figure.
+                const sv = v => Math.round(v).toLocaleString('sv-SE'), hundreds = v => (Math.round(v / 100) * 100).toLocaleString('sv-SE'), tens = v => (Math.round(v / 10) * 10).toLocaleString('sv-SE');
+                const box = (label, big) => `<div class="kpi"><div class="label">${label}</div><div class="big">${big}</div></div>`;
                 document.getElementById('fcKpis').innerHTML =
-                    box('Resten af året', `${h(restYear)}<small>kWh</small>`, `cirka ${kr(restYear)} · til og med dec.`) +
-                    box('Næste 6 måneder', `${h(next6)}<small>kWh</small>`, `cirka ${kr(next6)} · fra næste måned`) +
-                    box(`${MON[m0]} hidtil`, `${f(soFar, 0)}<small>kWh</small>`, `${f(soFarCost, 0)} kr · til og med ${lastDay ? new Date(lastDay + 'T12:00:00').toLocaleDateString('da-DK', { day: 'numeric', month: 'short' }) : '–'}`) +
-                    box(`${MON[m0]} forventet`, `${h(list[0].exp)}<small>kWh</small>`, `${kr(list[0].exp)} · ${h(list[0].low)}–${h(list[0].high)} kWh`);
+                    box('Forventet for et år (næste 12 måneder)', `${hundreds(y12)}<small> kWh</small>`) +
+                    box('Næste 6 måneder', `${hundreds(next6)}<small> kWh</small>`) +
+                    box(`${MON[m0]} hidtil`, `${sv(soFar)}<small> kWh</small> / ${sv(soFarCost)}<small> kr</small>`) +
+                    box(`${MON[m0]} forventet`, `${hundreds(list[0].exp)}<small> kWh</small> / ${tens(list[0].exp * price)}<small> kr</small>`);
                 if (fcChart) fcChart.destroy();
                 const rows = list.slice(0, 7);
                 fcChart = new Chart(document.getElementById('fcChart'), {
@@ -412,6 +425,10 @@
             // Tibber Pulse: the integration puts its real-time sensors under their own device ("Tibber Pulse <home>"), unique id <home>_rt_power
             const rtPower = mine.find(r => /_rt_power$/.test(r.unique_id || '')) || mine.find(r => states.get(r.entity_id)?.attributes.device_class === 'power' && /power/i.test(r.entity_id) && !/average|production|min_|max_|factor/i.test(r.entity_id));
             const power = rtPower && states.get(rtPower.entity_id);
+            const acc = id => { const r = mine.find(x => new RegExp(`_rt_${id}$`).test(x.unique_id || '')); const st = r && states.get(r.entity_id); return isOk(st) ? parseFloat(st.state) : NaN; };
+            const accK = acc('accumulatedConsumption'), accC = acc('accumulatedCost');
+            if (!Number.isNaN(accK) && accK > 0) { liveToday = { key: dayKey(Date.now()), kwh: accK, cost: Number.isNaN(accC) ? 0 : accC }; applyLive(); if (view !== 'year') render(); }
+            const MAIN_FUSE_A = 16;   // the cottage's main fuse, per phase (owner, 2026-11-20); at home the bar is full at 25 A
             // L1-L3 from the Pulse: current (A) and voltage per phase, the power per phase is voltage times current.
             const phaseBox = document.getElementById('phases');
             const phaseOf = n => {
@@ -425,8 +442,8 @@
                     const row = phaseBox.children[k], a = isOk(cur) ? parseFloat(cur.state) : NaN, v = isOk(volt) ? parseFloat(volt.state) : NaN;
                     const w = Number.isNaN(a) ? NaN : a * (Number.isNaN(v) ? 230 : v);   // watt = current x voltage, shown in W as at home
                     row.querySelector('b').textContent = Number.isNaN(w) ? '–' : `${f(w, 0)} W`;
-                    row.querySelector('i').style.width = `${Number.isNaN(w) ? 0 : Math.max(0, Math.min(100, w / 5500 * 100))}%`;   // full at 5500 W (25 A at 230 V), as at home
-                    row.querySelector('i').classList.toggle('hot', w > 3500);
+                    row.querySelector('i').style.width = `${Number.isNaN(a) ? 0 : Math.max(0, Math.min(100, a / MAIN_FUSE_A * 100))}%`;   // full at the main fuse: 16 A per phase at the cottage
+                    row.querySelector('i').classList.toggle('hot', a >= MAIN_FUSE_A * 0.8);   // orange from 80 % (12.8 A, about 3 kW)
                 });
                 phaseBox.hidden = false;
             } else phaseBox.hidden = true;

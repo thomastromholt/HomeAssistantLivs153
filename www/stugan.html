@@ -114,7 +114,9 @@
         .gh-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .gh-pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; }
         .gh-pill i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
-        .gh-pill.ok { background: rgba(52,199,89,0.16); color: #5fe085; }
+        /* an open valve is the normal state: quiet text, no coloured pill (a closed valve keeps the red pill) */
+        .gh-pill.ok { background: none; color: #6d808c; font-weight: 500; font-size: 11px; padding-left: 0; }
+        .gh-pill.ok i { width: 6px; height: 6px; box-shadow: none; background: #5fe085; opacity: .8; }
         .gh-pill.bad { background: rgba(255,69,58,0.2); color: #ff6b61; }
         .gh-temp { border: 0; background: none; color: #c5d1d9; font: inherit; font-size: 18px; font-weight: 300; cursor: pointer; display: flex; align-items: baseline; gap: 3px; }
         .gh-temp small { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6d808c; margin-right: 4px; }
@@ -242,16 +244,19 @@
         function roomRow(s, hum, sub, pow, ex, hidName, fb) {
             const a = s.attributes, ec = ex || null;
             const useFb = !ec && !isOk(s) && !!fb;
-            const act = sub === 'Mill' ? millActive(millRooms.get(String(a.room || '').toLowerCase())) : null;
+            const mr = sub === 'Mill' ? millRooms.get(String(a.room || '').toLowerCase()) : null, act = mr ? millActive(mr) : null;
             const cur = ec ? ec[0] : useFb ? fb.cur : parseFloat(a.current_temperature), tgt = ec ? ec[1] : useFb ? fb.tgt : act ? act.v : parseFloat(a.temperature);
             const action = ec ? ec[4] : a.hvac_action, mode = ec ? 'heat' : s.state;
             const off = !ec && !isOk(s);
-            const w = ec ? ec[2] : (pow && isOk(pow) ? num(pow) : NaN), h = ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
+            // Mill reports 0 W for a panel just switched on and nothing for up to ~10 minutes, and keeps the last value after it is switched off. So the thermostat's call
+            // decides: ON when the room is colder than the setpoint it follows; then Mill's reported power if any, else a typical 650 W (measured 0.57-0.73 kW per panel).
+            const calling = act && typeof mr.avg === 'number' ? mr.avg < act.v - 0.3 : null;
+            const w = ec ? ec[2] : (mr && calling != null ? (calling ? (mr.power > 0 ? mr.power : 650) : 0) : (mr && typeof mr.power === 'number' ? mr.power : (pow && isOk(pow) ? num(pow) : NaN))), h =   /* the room's own latest report from Mill's cloud (the script), since Home Assistant's Mill sensors are not polled */  ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
             const state = off ? 'bad' : action === 'heating' ? 'heat' : action === 'cooling' ? 'cool' : mode === 'off' ? 'idle' : 'on';
             const stateText = off ? (useFb ? 'Sidst kendt' : 'Offline') : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Fra', auto: 'Auto', dry: 'Affugt', fan_only: 'Blæser' }[mode] || 'Hviler');
-            // The technical room and the guest cottage are kept cool on purpose: orange below MIN_TEMP, red only when frost is near (FROST_WARN).
+            // The technical room and the guest cottage are kept cool on purpose: no colour for that (same as the other heaters), red only when frost is near (FROST_WARN).
             const sepRoom = /teknik|g[äa]st/i.test([s.entity_id, a.friendly_name, a.room].join(' '));
-            const tl = sepRoom ? (Number.isNaN(cur) ? '' : cur < FROST_WARN ? 'bad' : cur < MIN_TEMP ? 'warn' : '') : tempLevel(cur, tgt), hl = humLevel(h), worst = [tl, hl].includes('bad') ? 'bad' : [tl, hl].includes('warn') ? 'warn' : '';
+            const tl = sepRoom ? (Number.isNaN(cur) ? '' : cur < FROST_WARN ? 'bad' : '') : tempLevel(cur, tgt), hl = humLevel(h), worst = [tl, hl].includes('bad') ? 'bad' : [tl, hl].includes('warn') ? 'warn' : '';
             const cell = (label, value, cls) => `<div class="cell"><div class="tile-label">${label}</div><div class="cell-value ${cls || ''}">${value}</div></div>`;
             const nice = n => String(n).trim().replace(/^./, c => c.toLocaleUpperCase('da-DK'));   // Mill's room names come lower case, some with a trailing space
             const name = hidName ? '' : esc(nice(a.friendly_name || s.entity_id));
@@ -336,7 +341,7 @@
                 if (b.key === 'mill') indexed.sort((x, y) => rank(x[0]) - rank(y[0]) || x[1] - y[1]);
                 const group = (label, list) => list.length ? `<div class="grp">${label}</div>${list.map(([c, i]) => rowOf(c, i)).join('')}` : '';
                 const rows = b.key === 'mill'
-                    ? group('Huset · åbent', indexed.filter(([c]) => !isSep(c))) + group('Separat', indexed.filter(([c]) => isSep(c)))
+                    ? group('Huset', indexed.filter(([c]) => !isSep(c))) + group('Separat', indexed.filter(([c]) => isSep(c)))
                     : indexed.map(([c, i]) => rowOf(c, i)).join('');
                 html += `<div class="rooms">${rows}</div>`;
             }
@@ -532,6 +537,9 @@
                 openPopup(`/local/temperatur-detail.html?${q}&v=` + Date.now());
             } else openHistory(el.dataset.e);
         });
+
+        // The Mill dialog (another frame, same origin) says through localStorage that it has changed something: read again after it has read itself.
+        window.addEventListener('storage', e => { if (e.key === 'mill_changed') setTimeout(async () => { if (await loadMillRooms(true)) tick(); }, 9000); });
 
         // Refresh button on the Mill card: asks Mill now (the script reuses an answer younger than 60 s, so a double click costs one read).
         document.addEventListener('click', async e => {

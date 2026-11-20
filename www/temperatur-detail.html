@@ -125,8 +125,7 @@
         <div class="setter" id="awayRow" hidden>
             <span class="sl">Away-temperatur<br><small id="awayHint">Henter fra Mill…</small></span>
             <button class="pw off" id="millRefresh" title="Hent fra Mill (højst hvert minut)">↻</button>
-            <input id="awayVal" type="number" inputmode="decimal" min="5" max="30" step="1" placeholder="–" aria-label="Away-temperatur">
-            <button class="pw" id="awaySet">Sæt away</button>
+            <button class="sb" id="awayDown" aria-label="Lavere">−</button><span class="sv" id="awayShow">–</span><button class="sb" id="awayUp" aria-label="Højere">+</button>
         </div>
 
         <div class="banner" id="exampleNote" hidden>Eksempeldata, indtil enheden er online.</div>
@@ -602,29 +601,39 @@
         }
         const awayKey = room => 'mill_away_' + String(room || '').toLowerCase();
         const awayStored = room => { try { const v = parseFloat(localStorage.getItem(awayKey(room))); return Number.isNaN(v) ? null : v; } catch (e) { return null; } };
-        // Debounced: every press, every new number and Enter restarts a 3 s wait, and only the last value is sent (one call).
-        let awayTimer = null, awayBusy = false;
-        async function sendAway() {
-            const s = sensor(), btn = document.getElementById('awaySet'), hint = document.getElementById('awayHint');
+        // The room's AWAY temperature with − and + like the Sensibo (1 °C steps, same look). Nothing is sent per press: the last value goes out once
+        // the presses have stopped for 3 s (one mill.set_room_temperature call, per room, never Teknikrum or Gæststuga). The shown value starts from
+        // what Mill says now (the script reads it), so the steps begin at the real away temperature.
+        let awayNow = null, awayWish = null, awayBusy = false;
+        const showAway = (v, pending) => { const el = document.getElementById('awayShow'); el.innerHTML = v == null || Number.isNaN(v) ? '–' : `${f1(v)}<small>°C</small>`; el.classList.toggle('wait', !!pending); };
+        async function sendAway(v) {
+            const s = sensor(), hint = document.getElementById('awayHint');
             let st = null; try { st = await callApi('GET', `states/${s.temperature}`); } catch (err) { /* below */ }
             const room = st?.attributes?.room;
-            const v = parseFloat(document.getElementById('awayVal').value.replace(',', '.'));
-            if (!room || NEVER_SET.test([s.temperature, s.label, st.attributes.friendly_name, room].join(' '))) { hint.textContent = 'Dette rum kan ikke sættes her.'; return; }
-            if (Number.isNaN(v) || v < 5 || v > 30) { hint.textContent = 'Skriv en away-temperatur mellem 5 og 30 °C.'; return; }
-            awayBusy = true; btn.disabled = true; hint.textContent = `Sender ${f1(v)} °C til ${room}…`;
-            try { await callApi('POST', 'services/mill/set_room_temperature', { room_name: room, away_temp: v }); hint.textContent = `Sendt: away ${f1(v)} °C for ${room}. Tjek i Mill-appen.`; try { localStorage.setItem(awayKey(room), String(v)); } catch (e) { /* no storage */ } document.getElementById('placeSince').textContent = `Away ${f1(v)} °C (sidst sat her)`; setTimeout(async () => { await millRoom(room, true); load(); }, 6000); }
-            catch (err) { hint.textContent = 'Mislykkedes: ' + (err?.message || err); showError(err); }
-            setTimeout(() => { awayBusy = false; btn.disabled = false; }, 8000);
+            if (!room || NEVER_SET.test([s.temperature, s.label, st.attributes.friendly_name, room].join(' '))) { hint.textContent = 'Dette rum kan ikke sættes her.'; awayWish = null; showAway(awayNow); return; }
+            awayBusy = true; hint.textContent = `Sender ${f1(v)} °C til ${room}…`;
+            try {
+                await callApi('POST', 'services/mill/set_room_temperature', { room_name: room, away_temp: v });
+                hint.textContent = `Sendt: away ${f1(v)} °C for ${room}. Tjek i Mill-appen.`;
+                awayNow = v; try { localStorage.setItem(awayKey(room), String(v)); } catch (e) { /* no storage */ }
+                document.getElementById('placeSince').textContent = `Away ${f1(v)} °C (sidst sat her)`;
+                setTimeout(async () => { await millRoom(room, true); load(); }, 6000);
+                try { localStorage.setItem('mill_changed', String(Date.now())); } catch (e) { /* no storage */ }
+            } catch (err) { hint.textContent = 'Mislykkedes: ' + (err?.message || err); showError(err); }
+            awayBusy = false; awayWish = null; showAway(awayNow);
         }
-        function queueAway() {
-            if (awayBusy) return;
-            const hint = document.getElementById('awayHint'), v = parseFloat(document.getElementById('awayVal').value.replace(',', '.'));
-            clearTimeout(awayTimer);
-            if (Number.isNaN(v)) { hint.textContent = 'Skriv en away-temperatur mellem 5 og 30 °C.'; return; }
-            hint.textContent = `Sender ${f1(v)} °C om 3 sekunder… (ret tallet eller tryk igen for at vente)`;
-            awayTimer = setTimeout(sendAway, 3000);
+        function stepAway(d) {
+            const hint = document.getElementById('awayHint');
+            if (awayBusy) return;   // one call at a time
+            const base = awayWish ? awayWish.v : awayNow;
+            if (base == null) { hint.textContent = 'Kender ikke away endnu: tryk ↻ og prøv igen.'; return; }
+            const v = Math.min(30, Math.max(5, Math.round(base + d)));
+            clearTimeout(awayWish?.timer);
+            awayWish = { v, timer: setTimeout(() => sendAway(v), 3000) };
+            showAway(v, true); hint.textContent = `Sender ${f1(v)} °C om 3 sekunder…`;
         }
-        document.getElementById('awaySet').addEventListener('click', queueAway);
+        document.getElementById('awayDown').addEventListener('click', () => stepAway(-1));
+        document.getElementById('awayUp').addEventListener('click', () => stepAway(1));
         document.getElementById('millRefresh').addEventListener('click', async e => {
             const b = e.currentTarget; if (b.disabled) return;
             b.disabled = true; document.getElementById('awayHint').textContent = 'Henter fra Mill…';
@@ -633,8 +642,6 @@
             await load();
             setTimeout(() => { b.disabled = false; }, 8000);
         });
-        document.getElementById('awayVal').addEventListener('keydown', e => { if (e.key === 'Enter') queueAway(); });
-        document.getElementById('awayVal').addEventListener('input', () => { if (awayTimer) { clearTimeout(awayTimer); awayTimer = null; document.getElementById('awayHint').textContent = 'Tryk "Sæt away" for at sende.'; } });
         document.getElementById('setDown').addEventListener('click', () => stepWish(-1));
         document.getElementById('setUp').addEventListener('click', () => stepWish(1));
 
@@ -666,7 +673,7 @@
                     const color = offline ? '#ff6b61' : act === 'Varmer' ? '#ffb340' : act === 'Køler' ? '#64d2ff' : '#8da0ad';
                     pill.innerHTML = `<i style="background:${color}"></i>${act}`;
                     if (/^climate\.thomas_s_device/.test(s.temperature)) document.getElementById('placeSince').textContent = Number.isNaN(parseFloat(a.temperature)) ? '' : `Mål ${f1(parseFloat(a.temperature))} °C`;
-                    else { const mr = await millRoom(a.room), aw = mr ? mr.away : awayStored(a.room); document.getElementById('placeSince').textContent = mr ? millText(mr) : (aw == null ? 'Away: kunne ikke hentes fra Mill' : `Away ${f1(aw)} °C (sidst sat her)`); if (aw != null && !document.getElementById('awayVal').value) document.getElementById('awayVal').value = aw; if (mr) document.getElementById('awayHint').textContent = `Hentet fra Mill kl. ${new Date(millCache.fetched_at * 1000).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}${millCache.stale ? ' (gammelt: ' + (millCache.error || '') + ')' : ''}`; }
+                    else { const mr = await millRoom(a.room), aw = mr ? mr.away : awayStored(a.room); document.getElementById('placeSince').textContent = mr ? millText(mr) : (aw == null ? 'Away: kunne ikke hentes fra Mill' : `Away ${f1(aw)} °C (sidst sat her)`); if (aw != null) awayNow = aw; if (!awayWish && !awayBusy) showAway(awayNow); if (mr) document.getElementById('awayHint').textContent = `Hentet fra Mill kl. ${new Date(millCache.fetched_at * 1000).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}${millCache.stale ? ' (gammelt: ' + (millCache.error || '') + ')' : ''}`; }
                 } else if (CUSTOM) {
                     const offline = !main || ['unavailable', 'unknown'].includes(main.state);
                     pill.innerHTML = `<i style="background:${offline ? '#ff6b61' : '#5fe085'}"></i>${offline ? 'Offline' : 'Online'}`;

@@ -106,7 +106,10 @@
         // When the battery is full at the power the charger is giving right now, or null if it is not charging.
         const fullAt = () => {
             if (!carState || !carState.charging || carState.kw <= 0 || Number.isNaN(carState.soc) || carState.soc >= 100) return null;
-            const hoursLeft = (100 - carState.soc) / 100 * BATTERY_KWH / (carState.kw * CHARGE_EFFICIENCY);
+            // The Kia level can be older than this charge (the car's cloud reports rarely): then take off what the session has delivered since.
+            const sessionStart = Date.now() - carState.session / carState.kw * 3600e3;
+            const delivered = !Number.isNaN(carState.kiaMs) && carState.kiaMs < sessionStart ? carState.session : 0;
+            const hoursLeft = Math.max(0, (100 - carState.soc) / 100 * BATTERY_KWH / CHARGE_EFFICIENCY - delivered) / carState.kw;
             return new Date(Date.now() + hoursLeft * 3600e3);
         };
         const at = row => new Date(row.last_updated || row.last_changed).getTime();
@@ -216,7 +219,7 @@
                 const dot = document.getElementById('dot');
                 dot.className = `dot ${!isOnline ? 'bad' : charging ? '' : 'idle'}`;
                 const label = MODES[s('mode')] ?? (s('plug') === 'on' ? 'Plugged in' : 'Not plugged');
-                carState = { soc, kw, charging };
+                carState = { soc, kw, charging, session: parseFloat(s('session')) || 0, kiaMs: new Date(s('carUpdated')).getTime() };
                 const finish = fullAt();
                 const minutes = parseFloat(s('minutes'));
                 let statusMsg;

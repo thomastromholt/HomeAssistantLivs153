@@ -16,6 +16,10 @@ Målt 2026-11-20 med Tibber Pulse (`sensor.tibber_pulse_sven_wallanders_vag_50_*
 | Varmepumpen (Sensibo) | **L1** | −1040 W og −4,7 A da den blev slukket 11:20:25 | sikker, L2 og L3 uændrede |
 | Gæststuga-radiator (Mill) | **L1** | **−756 W** (2510 → 1754 W) og **−3,3 A** (L1 3,7 → 0,4 A) kl. 11:32:12–18 da ejeren slukkede den; Mill melder 763 W | sikker. Første forsøg kl. ~11:22 gik ikke igennem (Mills grænse), og Pulse'en faldt ikke |
 | Resten ved siden af (baseline) | L1 | cirka 940 W i alt med Gæststuga-radiatoren tændt; L2 0,3–0,4 A, L3 0,2 A | pr. fase er det L1, der bærer næsten alt |
+| Barnrum-radiator (Mill) | **L3** | +2,8 A, +709 W kl. 15:01:45 (trinvis test, varmepumpen tændt); Mill melder 700 W | sikker |
+| Farstu-radiator (Mill) | **L1** | +2,4 A, +569 W kl. 15:04:48; Mill meldte 0 W (melder ved ændringen, før varmen starter, og så først ~10 min senere) | sikker |
+| Sovrum-radiator (Mill) | **L1** | +3,1 A, +727 W kl. 15:07:52; Mill melder 700 W | sikker |
+| Teknikrum-radiator (Mill) | **L1** | +1,9 A kl. 15:11:51, da panelet selv begyndte at varme (rummet 8,5 °C mod away 9 °C); Mill melder 443 W. **Teknikrum er en frostvagt** (ejeren, 2026-11-20): panelet holder rummet over cirka 9 °C og tænder af sig selv, når det køler; vi styrer det aldrig, kun læser det | sikker (tidspunkt og størrelse passer med Mills melding) |
 | Stuen-radiator (Mill) | **L2** | **−707 W** (2808 → 2101 W) og **−2,8 A** (L2 3,2 → 0,4 A) kl. 11:46:38 da den blev slukket i appen. Cirka 0,7 kW | sikker (L1 og L3 uændrede). Tændingen blev ikke set, kun slukningen |
 | Zaptec-lader (Ceed) | **L3** | **15,3 A** og cirka **3,4 kW** (Zaptec: 3428 W; Pulse 4,7 kW i alt med varmepumpen), målt kl. 13:39 da ladningen startede fra appen | sikker. Enfaset lader på L3, samme fase som vandvarmeren og køleskabet |
 | Køleskab | **L3** | **−103 W** (280 → 177 W) og **−0,5 A** (L3 0,7 → 0,2 A) kl. 11:35:41–47 da det blev slukket. Da det blev tændt (11:29:01–07): et stød til 0,6 A, så stabilt cirka +0,5 A | sikker (både tænd og sluk målt, kun L3 flyttede sig) |
@@ -58,3 +62,14 @@ Mills `number.*_elektrisk_effekt` (indstillet maksimal effekt): Barnrum og Sovru
 - **Aldrig** skriv til Teknikrum og Gæststuga (frost, vandskade).
 - **Mills grænse:** et antal kald i timen (sås som "> 2500"). De dyre kald er HA-starter (cirka 100 kald, 10 måneders statistik pr. enhed) og skrivninger (tømmer cachen). Derfor er automatisk opdatering slået fra (`pref_disable_polling`), og kort og dialoger lægges ud uden HA-genstart: kopiér filerne og giv kortene et nyt `?v=`-stempel gennem websocket (`lovelace/config` og `lovelace/config/save`).
 - **Mills tal i HA er ikke realtid:** `current_power` er cirka 10 minutter bagud. Brug Tibber Pulse til forsøg med effekt.
+
+## Test: "vi varmer med el i stedet for varmepumpen" (planlagt, ikke bygget)
+
+**Kort test, kørt 2026-11-20 14:30–14:35** (fra Claude Code, scriptet lå uden for repoet): Sensibo slukket, Barnrum, Sovrum, Stuen og Farstu sat til 20 °C gennem deres *rum* (`mill.set_room_temperature`, away-temperatur, fordi huset står i away-mode), 5 minutter, derefter alt tilbage (Sensibo tændt på 23 °, away tilbage til 11/11/11/5). Resultat: samlet 2860 W; radiatorerne trak cirka 2,6 kW, cirka 0,65 kW hver; to på L1, Stuen alene på L2, én på L3. Fasen for hver enkelt radiator blev målt bagefter med en trinvis test (se tabellen). L1 bærer nu varmepumpe og fire radiatorer; i værste fald (alle tændt, varmepumpen på 2 kW) er det cirka 15 A mod en sikring på 16 A.
+
+**Idé til senere:** en knap i HA med to valg, "Mål last (5 min)" og "El i dag (24 t)", der sammenligner el-varme og varmepumpe (varmepumpens COP er i noterne gættet til cirka 2). Krav, så den kan køre uden opsyn:
+- Kører i HA (script eller automation med timer), ikke fra en computer, og gendanner selv, også efter en HA-genstart (varmepumpe til, away-temperaturerne tilbage).
+- Kun rum, vi må styre; **aldrig Teknikrum og Gæststuga**, og aldrig enhedstemperatur på et Mill-panel (kun `mill.set_room_temperature`).
+- Ikke ved hård frost (fx under −5 °C udenfor), ikke mens der lades, og afbrydes hvis L3 går over 14 A (hovedsikring 16 A).
+- Mill har en grænse på antal kald pr. time; en test er cirka 8 skrivende kald plus et par læsninger.
+- Mål: samme mål-temperatur i rummene, kWh pr. dag fra Pulse'en (El-varme og Varmepumpe kan skilles fra faserne, se ovenfor), sammenlignet på dage med samme vejr.

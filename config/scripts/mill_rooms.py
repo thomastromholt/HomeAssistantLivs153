@@ -9,7 +9,9 @@ Called from the Stugan dashboard when it is opened, through `shell_command.mill_
 
 Mill limits the number of requests per hour, so the answer is cached in /config/.cache_mill_rooms.json:
   cached (default): a result younger than 10 min is returned without any request
-  fresh:            a result younger than 60 s is still reused (so a burst of calls costs one read)
+  fresh:            a result younger than 15 s is still reused (so a burst of calls costs one read; it must be short, since a read right after a
+                    write has to see the change)
+The answer has each room's power in W (the devices' lastMetrics.currentPower) too.
 One read is about 10 requests (sign-in, houses, the house's devices, one per room). Read-only: nothing is written to Mill.
 The login comes from Home Assistant's own stored config entry for Mill; it is never printed or copied anywhere.
 """
@@ -23,7 +25,7 @@ import urllib.request
 API = "https://api.millnorwaycloud.com/"
 ENTRIES = "/config/.storage/core.config_entries"
 CACHE = "/config/.cache_mill_rooms.json"
-TTL = {"cached": 600, "fresh": 60}
+TTL = {"cached": 600, "fresh": 15}
 ROOM_KEYS = ("mode", "activeModeFromWeeklyProgram", "overrideModeType", "isRoomOnline")
 
 
@@ -57,8 +59,12 @@ def read_mill():
             if not room_id:
                 continue
             room = call(f"rooms/{room_id}/devices", token=token)
+            # the devices' own latest report (about a minute old, much fresher than Home Assistant's Mill sensors when their polling is off)
+            metrics = [(d.get("lastMetrics") or {}) for d in (room.get("devices") or [])]
             row = {
                 "name": room.get("name"),
+                "power": sum(m.get("currentPower") or 0 for m in metrics),          # W, all devices in the room
+                "received": max([m.get("receivedAt") or "" for m in metrics] or [""]),
                 "away": room.get("roomAwayTemperature"),
                 "comfort": room.get("roomComfortTemperature"),
                 "sleep": room.get("roomSleepTemperature"),

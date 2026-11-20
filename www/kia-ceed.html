@@ -51,6 +51,9 @@
         .grid .btn-small { flex: 1; padding: 5px 0; border: 0; border-radius: 8px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: rgba(255, 255, 255, 0.08); color: #8da0ad; transition: opacity 0.2s, background 0.2s, color 0.2s; }
         .grid .btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
         .grid .btn-small.busy { opacity: 1; background: rgba(255, 255, 255, 0.12); color: #e5ecf0; cursor: progress; }
+        .head-r { display: flex; align-items: center; gap: 8px; }
+        .kia-refresh { border: 0; border-radius: 999px; background: rgba(255,255,255,0.08); color: #8da0ad; font: inherit; font-size: 11px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
+        .kia-refresh:disabled { opacity: .55; cursor: default; }
         .spinner { display: inline-block; width: 9px; height: 9px; margin-right: 5px; vertical-align: -1px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .grid .tile-hint { margin-top: 3px; font-size: 11px; color: #8da0ad; line-height: 1.25; }
@@ -63,7 +66,7 @@
     <div class="container">
         <div class="head">
             <span class="name">Ceed <span class="muted">PHEV</span></span>
-            <span class="pill" id="online"></span>
+            <span class="head-r"><button class="kia-refresh" id="kiaRefresh" title="Spørg selve bilen om nye data (vækker den). Højst hvert 5. minut, aldrig automatisk.">↻ Kia</button><span class="pill" id="online"></span></span>
         </div>
         <div id="error" class="error" hidden></div>
         <div id="problems" class="problems" hidden></div>
@@ -80,7 +83,6 @@
         </div>
 
         <div class="grid" id="tiles"></div>
-        <div class="footer" id="updated"></div>
     </div>
 
     <script src="/local/card-common.js?v=1"></script>
@@ -100,6 +102,7 @@
             // Zaptec Go2 (the home charger).
             mode: `sensor.${CH}_charger_mode`,
             power: `sensor.${CH}_charge_power`,
+            session: `sensor.${CH}_session_total_charge`,   // kWh delivered in this session
             online: `binary_sensor.${CH}_online`,
             ladNu: 'input_boolean.lad_nu',
             ladStop: 'input_boolean.lad_stop',
@@ -139,6 +142,37 @@
         const hours = minutes => `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
         const batteryColor = level => level > 50 ? '#34c759' : level > 20 ? '#ffd60a' : '#ffb340';
 
+        // Refresh button for the car's data: the Kia cloud only reports now and then, so the battery level and the time estimate are often old.
+        // kia_uvo.force_update asks the car itself (it wakes the car and counts against Kia's daily request limit), so it can be used at most
+        // every 5 minutes. The button then waits for the car's "last updated" time to move.
+        const KIA_GAP = 5 * 60e3, kiaBtn = document.getElementById('kiaRefresh');
+        let kiaDevice = null, kiaBusy = false, kiaLabel = '↻ Kia';
+        const kiaLast = () => { try { return +localStorage.getItem('kia_refresh_at') || 0; } catch (e) { return 0; } };
+        const kiaSetLast = () => { try { localStorage.setItem('kia_refresh_at', String(Date.now())); } catch (e) { /* no storage */ } };
+        async function kiaDeviceId() {
+            if (kiaDevice) return kiaDevice;
+            const r = await callWS({ type: 'config/entity_registry/get', entity_id: E.battery });
+            return (kiaDevice = r?.device_id || null);
+        }
+        kiaBtn.addEventListener('click', async () => {
+            if (kiaBusy) return;
+            const wait = KIA_GAP - (Date.now() - kiaLast());
+            if (wait > 0) { kiaBtn.textContent = `vent ${Math.ceil(wait / 60e3)} min`; setTimeout(() => { kiaBtn.textContent = kiaLabel; }, 3000); return; }
+            kiaBusy = true; kiaBtn.disabled = true; kiaBtn.textContent = '↻ spørger bilen…';
+            try {
+                const device_id = await kiaDeviceId();
+                if (!device_id) throw new Error('Fandt ikke bilens enhed');
+                const before = (await callApi('GET', `states/${E.updatedAt}`)).state;
+                kiaSetLast();
+                await callApi('POST', 'services/kia_uvo/force_update', { device_id });
+                let after = before;
+                for (let i = 0; i < 12 && after === before; i++) { await new Promise(r => setTimeout(r, 5000)); after = (await callApi('GET', `states/${E.updatedAt}`)).state; }
+                kiaBtn.textContent = after !== before ? '↻ opdateret' : '↻ ingen nye data';
+            } catch (err) { kiaBtn.textContent = '↻ mislykkedes'; showError(err); }
+            await render();
+            setTimeout(() => { kiaBusy = false; kiaBtn.disabled = false; kiaBtn.textContent = kiaLabel; }, 4000);
+        });
+
         async function render() {
             try {
                 const [states, buttonStates] = await Promise.all([
@@ -168,18 +202,30 @@
 
                 // Plugged in = the Zaptec charger sees the car (its long-lived API), not the Kia cloud.
                 const plugged = String(s('mode')).startsWith('connected');
-                const minutes = parseFloat(s('chargeMinutes'));
+                let minutes = parseFloat(s('chargeMinutes')), estimated = false;
+                // Kia's own estimate is 0 (or missing) when the car's cloud does not report a charge, which is what it does most of the time at
+                // the cottage. Then the time is worked out here: what the battery still needs (8.9 kWh, 90 % charging efficiency) minus what this
+                // session has delivered if the Kia level is older than the session, divided by the charging power. Rounded to 5 minutes.
+                if (charging && !(minutes > 0) && !Number.isNaN(level) && kw > 0.5) {
+                    const sessionKwh = parseFloat(s('session')) || 0, kiaMs = new Date(s('updatedAt')).getTime();
+                    const sessionStart = Date.now() - sessionKwh / kw * 3600e3;
+                    const delivered = !Number.isNaN(kiaMs) && kiaMs < sessionStart ? sessionKwh : 0;
+                    minutes = Math.round(Math.max(0, (100 - level) / 100 * 8.9 / 0.9 - delivered) / kw * 60 / 5) * 5;
+                    estimated = true;
+                }
                 if (tiles.time) {
                     tiles.time.textContent = charging
-                        ? (Number.isNaN(minutes) ? 'Charging' : hours(minutes))
+                        ? (Number.isNaN(minutes) ? 'Charging' : (estimated ? '~' : '') + hours(minutes))
                         : '–';   // plugged in or not is shown in the charger tile
                     tiles.time.classList.toggle('live', charging);
                 }
 
                 const online = document.getElementById('online');
                 const isOnline = s('online') === 'on';
-                online.textContent = isOnline ? 'Charger online' : 'Charger offline';
-                online.className = `pill ${isOnline ? 'good' : 'fair'}`;
+                // Only said when something is wrong: "Charger online" is the normal state and takes no room.
+                online.textContent = isOnline ? '' : 'Charger offline';
+                online.className = `pill fair`;
+                online.hidden = isOnline;
 
                 // Zaptec's mode in words. "connected_finished" is also what a pause looks like, so it only counts as
                 // fully charged when the car itself reports a full battery.
@@ -199,7 +245,11 @@
                 const carFull = level >= 99;
                 const waitingForCar = want && plugged && !charging && !carFull;
                 // A press shows at once, before Home Assistant has answered.
-                if (pressed && Date.now() - pressed.at > 20e3) pressed = null;
+                // At the cottage the Zaptec cloud can take up to ~2 minutes to confirm a start or stop (measured 2026-11-20: 10 s to 110 s,
+                // while the Pulse already showed 15 A), so a press waits for the charger to answer for 3 minutes there.
+                if (pressed && Date.now() - pressed.at > (STUGAN ? 180e3 : 20e3)) pressed = null;
+                if (pressed?.start && charging) pressed = null;        // confirmed
+                if (pressed && !pressed.start && !charging) pressed = null;
                 const waited = (Date.now() - (pressed?.at ?? lastChange)) / 60e3;
                 // Spin for up to 2 minutes after a change; after that the car is simply pausing (the Ceed pauses
                 // for ~8 minutes by itself), and the automation wakes it through Kia after 10 minutes.
@@ -222,9 +272,11 @@
                 let hint = '';
                 if (pendingStart) {
                     statusText = 'Starting…'; statusClass = 'warn';
-                    hint = mode === 'connected_finished' ? 'Asking the charger to resume' : 'Waiting for the car to draw power';
+                    hint = pressed?.start && STUGAN ? `Sendt til Zaptec · venter på bekræftelse (${Math.round((Date.now() - pressed.at) / 1000)} s)`
+                        : mode === 'connected_finished' ? 'Asking the charger to resume' : 'Waiting for the car to draw power';
                 } else if (pendingStop) {
                     statusText = 'Stopping…'; statusClass = 'warn';
+                    if (STUGAN && pressed) hint = `Sendt til Zaptec · venter på bekræftelse (${Math.round((Date.now() - pressed.at) / 1000)} s)`;
                 } else if (waitingForCar) {
                     statusText = 'Waiting for the car'; statusClass = 'warn';
                     hint = 'The car pauses by itself; woken after 10 min';
@@ -236,9 +288,9 @@
                 statusHint.textContent = hint;
 
                 const updated = new Date(s('updatedAt'));
-                document.getElementById('updated').textContent = Number.isNaN(updated.getTime())
-                    ? ''
-                    : `Car data from ${updated.toLocaleString('sv-SE', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
+                kiaLabel = Number.isNaN(updated.getTime()) ? '↻ Kia' : `↻ Kia ${updated.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}`;
+                if (!kiaBusy) kiaBtn.textContent = kiaLabel;
+                // (the time of the car's data is on the refresh button in the corner, so there is no "Car data from" line any more)
 
                 const problems = [];
                 const ageHours = (Date.now() - updated.getTime()) / 3600e3;
