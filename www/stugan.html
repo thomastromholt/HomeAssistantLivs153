@@ -62,7 +62,7 @@
         .sep { height: 8px; }
         .tiles.hp3, .tiles.hp2 { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
         .tiles.hp2 { grid-template-columns: repeat(2, 1fr); }
-        .tiles.hp1 { grid-template-columns: 1fr; margin-top: 8px; }
+        .tiles.hp1 { grid-template-columns: 112px; justify-content: start; margin-top: 8px; }
         .hp1 .t { padding: 6px 9px; }
         .hp1 .t .v { font-size: 17px; margin-top: 1px; }
         .hp1 .t .l { font-size: 9px; }
@@ -80,6 +80,8 @@
         .sc-cap { display: flex; justify-content: space-between; margin: 0 2px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8da0ad; }
         .sc-cap span { color: #ffb340; text-transform: none; letter-spacing: 0; }
         .sc-cv { position: relative; height: 96px; }
+        .refresh { border: 0; border-radius: 999px; background: rgba(255,255,255,0.08); color: #8da0ad; font: inherit; font-size: 11px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
+        .refresh:disabled { opacity: .55; cursor: default; }
         .zone { display: flex; align-items: center; gap: 6px; height: 42px; padding: 3px 8px; border-radius: 14px; border: 1px solid rgba(100,210,255,0.28); background: rgba(100,210,255,0.05); cursor: pointer; }
         .zone:hover { background: rgba(100,210,255,0.1); }
         .zone.example { opacity: 0.85; }
@@ -93,6 +95,7 @@
         .zone-bad { border-color: rgba(255,107,97,0.3); }
         @keyframes pulse { 50% { opacity: 0.35; } }
         .zone .cell { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding: 1px 3px; border-radius: 9px; background: rgba(255,255,255,0.06); text-align: center; }
+        .zone .cell.cell-gap { visibility: hidden; }   /* a room without a humidity sensor keeps the space, so all rows line up */
         .zone .tile-label { font-size: 8px; letter-spacing: 0.5px; }
         .zone .cell-value { font-size: 17px; font-weight: 300; line-height: 1.15; white-space: nowrap; }
         .zone .cell-value small { font-size: 9px; color: #8da0ad; margin-left: 1px; }
@@ -212,10 +215,32 @@
             return c && isOk(c) ? { cur: num(c), tgt: t && isOk(t) ? num(t) : NaN } : null;
         }
 
+        // The Mill rooms' real temperatures (day / night / away) and the house mode come from Mill's cloud through
+        // shell_command.mill_rooms (config/scripts/mill_rooms.py). The script caches for 10 min, and the card asks at most every 5 min.
+        let millRooms = new Map(), millHouse = null, millAt = 0, millFetched = 0;
+        async function loadMillRooms(force) {
+            if (DEMO || (!force && Date.now() - millAt < 300e3)) return false;
+            millAt = Date.now();
+            try {
+                const res = await callApi('POST', `services/shell_command/${force ? 'mill_rooms_fresh' : 'mill_rooms'}?return_response`, {});
+                const out = JSON.parse(res?.service_response?.stdout || '{}');
+                if (!out.rooms || !out.rooms.length) return false;
+                millRooms = new Map(out.rooms.map(r => [String(r.name || '').toLowerCase(), r])); millHouse = out.house; millFetched = out.fetched_at * 1000;
+                return true;
+            } catch (e) { return false; }
+        }
+        // The setpoint a room follows right now: its own mode, or the program's active mode.
+        const MILL_MODE = { away: 'Away', comfort: 'Dag', sleep: 'Nat' };
+        function millActive(r) {
+            if (!r) return null;
+            const m = r.mode === 'weekly_program' ? r.activeModeFromWeeklyProgram : r.mode;
+            return MILL_MODE[m] && typeof r[m] === 'number' ? { label: MILL_MODE[m], v: r[m] } : null;
+        }
         function roomRow(s, hum, sub, pow, ex, hidName, fb) {
             const a = s.attributes, ec = ex || null;
             const useFb = !ec && !isOk(s) && !!fb;
-            const cur = ec ? ec[0] : useFb ? fb.cur : parseFloat(a.current_temperature), tgt = ec ? ec[1] : useFb ? fb.tgt : parseFloat(a.temperature);
+            const act = sub === 'Mill' ? millActive(millRooms.get(String(a.room || '').toLowerCase())) : null;
+            const cur = ec ? ec[0] : useFb ? fb.cur : parseFloat(a.current_temperature), tgt = ec ? ec[1] : useFb ? fb.tgt : act ? act.v : parseFloat(a.temperature);
             const action = ec ? ec[4] : a.hvac_action, mode = ec ? 'heat' : s.state;
             const off = !ec && !isOk(s);
             const w = ec ? ec[2] : (pow && isOk(pow) ? num(pow) : NaN), h = ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
@@ -230,10 +255,10 @@
             return `<div class="zone zone-${state}${worst ? ' lvl-' + worst : ''}${ec ? ' example' : ''}" data-e="${esc(s.entity_id)}"${canSet(s) && isOk(s) ? ' data-settable="1"' : ''} data-dialog="1" data-name="${esc(nice(a.friendly_name || s.entity_id))}" data-sub="${esc(sub)}" data-hum="${esc(hum || '')}" ${ec ? 'data-example="1"' : ''} title="${stateText}">
                 ${hidName ? '' : `<div class="zone-name"><i></i><span>${name}</span></div>`}
                 ${cell('Read', `${fmt(cur)}<small>°</small>`, 'temp' + (tl ? ' ' + tl : ''))}
-                ${cell('Set', Number.isNaN(tgt) ? '–' : `${fmt(tgt)}<small>°</small>`)}
+                ${cell(act ? act.label : 'Set', Number.isNaN(tgt) ? '–' : `${fmt(tgt)}<small>°</small>`)}
                 ${hidName ? cell('Status', stateText) : ''}
                 ${Number.isNaN(w) && !pow && !ec ? '' : cell('Effekt', Number.isNaN(w) ? '–' : `${fmt(w, 0)}<small>W</small>`, 'pow')}
-                ${!hum && !ec || (hidName && Number.isNaN(h)) ? '' : cell('Fugt', Number.isNaN(h) ? '–' : `${fmt(h, 0)}<small>%</small>`, 'hum' + (hl ? ' ' + hl : ''))}
+                ${hidName && Number.isNaN(h) ? '' : !hum && !ec ? '<div class="cell cell-gap"></div>' : cell('Fugt', Number.isNaN(h) ? '–' : `${fmt(h, 0)}<small>%</small>`, 'hum' + (hl ? ' ' + hl : ''))}
             </div>`;
         }
 
@@ -301,7 +326,11 @@
                 const rowOf = (c, i) => roomRow(c, humOf.get(c.entity_id), b.sub, states0.get(powOf.get(c.entity_id)), null, b.key === 'sensibo', fbT);
                 // The main house has its doors open (one zone, the radiators help each other); the guest cottage and the technical room stand apart.
                 const isSep = c => /g[äa]st|teknik/i.test(c.attributes.friendly_name || c.entity_id);
+                // Order of the rooms in the Mill card: Stuen above Farstu (any other room keeps its place after these).
+                const ROOM_ORDER = ['barn', 'sov', 'stue', 'stuen', 'farstu', 'teknik', 'g'];
+                const rank = c => { const n = String(c.attributes.room || c.attributes.friendly_name || c.entity_id).toLowerCase(); const i = ROOM_ORDER.findIndex(k => n.startsWith(k)); return i < 0 ? 99 : i; };
                 const indexed = climates.map((c, i) => [c, i]);
+                if (b.key === 'mill') indexed.sort((x, y) => rank(x[0]) - rank(y[0]) || x[1] - y[1]);
                 const group = (label, list) => list.length ? `<div class="grp">${label}</div>${list.map(([c, i]) => rowOf(c, i)).join('')}` : '';
                 const rows = b.key === 'mill'
                     ? group('Huset · åbent', indexed.filter(([c]) => !isSep(c))) + group('Separat', indexed.filter(([c]) => isSep(c)))
@@ -454,6 +483,11 @@
             drawSensCurve();
             const b = BLOCKS.find(x => x.key === only);
             if (b) document.querySelector('.name').innerHTML = `${b.title} <span class="muted">${b.sub}</span>`;
+            if (b && b.key === 'mill') {
+                let rb = document.querySelector('.head .refresh');
+                if (!rb) { document.querySelector('.head').insertAdjacentHTML('beforeend', '<button class="refresh" id="millRefresh" title="Hent dag, nat og away fra Mill (højst hvert minut, cirka 10 kald)"></button>'); rb = document.getElementById('millRefresh'); }
+                if (!rb.disabled) rb.textContent = millFetched ? `↻ Mill ${new Date(millFetched).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}` : '↻ Hent Mill';
+            }
             if (b && b.key === 'grohe' && !document.querySelector('.head .brand')) document.querySelector('.head').insertAdjacentHTML('beforeend', '<img class="brand" src="/local/grohe-logo.png?v=1" alt="Grohe">');
             showProblems(problems);
             showError(null);
@@ -485,8 +519,20 @@
             } else openHistory(el.dataset.e);
         });
 
+        // Refresh button on the Mill card: asks Mill now (the script reuses an answer younger than 60 s, so a double click costs one read).
+        document.addEventListener('click', async e => {
+            const rb = e.target.closest('#millRefresh');
+            if (!rb || rb.disabled) return;
+            rb.disabled = true; rb.textContent = '↻ henter…';
+            const got = await loadMillRooms(true);
+            millAt = Date.now();
+            await tick();
+            rb.textContent = got ? '↻ opdateret' : '↻ kunne ikke hentes';
+            setTimeout(() => { rb.disabled = false; tick(); }, 4000);
+        });
         const tick = () => load().catch(showError);
         tick();
+        loadMillRooms().then(got => { if (got) tick(); });
         setInterval(tick, 10e3);
     </script>
 </body>

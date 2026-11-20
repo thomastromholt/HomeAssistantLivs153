@@ -39,3 +39,13 @@ Mills `number.*_elektrisk_effekt` (indstillet maksimal effekt): Barnrum og Sovru
 - Fase for Barnrum, Sovrum, Farstu og Teknikrum (tænd én ad gangen i mindst 2 minutter).
 - Hvor ofte vandvarmeren kører i hverdagen (fase, effekt og en kørsel på cirka 8 minutter er målt). De tidligere kandidater i Pulse (09:46–09:52, +1,4 kW, og en stigning fra 10:38) kan være vandvarmeren: de passer på størrelsen, men fasen blev ikke logget dengang.
 - Fase for kølefrys, hvis det betyder noget (gav intet udslag).
+
+## Mill: sådan læses og sættes temperaturerne (2026-11-20)
+
+- **Rummene har tre temperaturer:** dag (`roomComfortTemperature`), nat (`roomSleepTemperature`) og away (`roomAwayTemperature`). Huset har en mode (`away`, `weekly_program` …), og hvert rum kan stå i sin egen mode. HA's Mill-integration viser dem ikke; den viser kun enhedens egen `temperature`, som ikke er den, panelet følger.
+- **Læsning:** `config/scripts/mill_rooms.py` kalder Mills sky (sign-in, huse, husets enheder, ét kald pr. rum, cirka 10 kald) med det login, HA selv har gemt (`/config/.storage/core.config_entries`), og skriver svaret i `/config/.cache_mill_rooms.json`. Kun læsning. Cache: 10 minutter (`cached`), 60 sekunder ved `fresh`. På boksen i `configuration.yaml`, blokken `shell_command:`:
+  `mill_rooms: python3 /config/scripts/mill_rooms.py cached` og `mill_rooms_fresh: python3 /config/scripts/mill_rooms.py fresh`. Kortet og dialogen kalder dem med `?return_response`. Opdater-knappen på Mill-kortet bruger `fresh`.
+- **Sætning:** kun per rum med `mill.set_room_temperature` (`room_name` + `away_temp`; biblioteket sender kun de felter, man angiver). **Aldrig** `climate.set_temperature` på et Mill-panel: det sætter enheden i `control_individually`, og så følger panelet ikke rummets indstillinger ("room settings are not followed"). Dialogen sender kun enheds-temperatur til Sensibo.
+- **Aldrig** skriv til Teknikrum og Gæststuga (frost, vandskade).
+- **Mills grænse:** et antal kald i timen (sås som "> 2500"). De dyre kald er HA-starter (cirka 100 kald, 10 måneders statistik pr. enhed) og skrivninger (tømmer cachen). Derfor er automatisk opdatering slået fra (`pref_disable_polling`), og kort og dialoger lægges ud uden HA-genstart: kopiér filerne og giv kortene et nyt `?v=`-stempel gennem websocket (`lovelace/config` og `lovelace/config/save`).
+- **Mills tal i HA er ikke realtid:** `current_power` er cirka 10 minutter bagud. Brug Tibber Pulse til forsøg med effekt.

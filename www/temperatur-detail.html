@@ -81,6 +81,11 @@
         .setter .sv.wait { color: #ffb340; }
         .setter .sb { width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(100,210,255,0.16); color: #64d2ff; font: inherit; font-size: 24px; line-height: 1; cursor: pointer; }
         .setter .pw { height: 36px; padding: 0 14px; border: 0; border-radius: 18px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: rgba(95,224,133,0.18); color: #5fe085; }
+        .setter .tg { position: relative; width: 52px; height: 30px; padding: 0; border: 0; border-radius: 15px; background: #34c759; cursor: pointer; flex: none; transition: background .2s; }
+        .setter .tg i { position: absolute; top: 3px; left: 25px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); transition: left .2s; }
+        .setter .tg.off { background: rgba(255,255,255,0.18); }
+        .setter .tg.off i { left: 3px; }
+        .setter .tg.busy { opacity: .55; cursor: default; }
         .setter .pw.off { background: rgba(255,255,255,0.08); color: #8da0ad; }
         .setter .sl small { text-transform: none; letter-spacing: 0; font-size: 11px; color: #6d808c; }
         .setter input { width: 72px; height: 36px; padding: 0 10px; border: 0; border-radius: 10px; background: rgba(255,255,255,0.08); color: #f2f5f7; font: inherit; font-size: 18px; text-align: center; }
@@ -110,13 +115,14 @@
         </div>
 
         <div class="setter" id="setter" hidden>
-            <button class="pw" id="setPower" hidden></button>
+            <button class="tg off" id="setPower" role="switch" aria-checked="false" aria-label="Tænd eller sluk varmepumpen" title="Tænd / sluk varmepumpen" hidden><i></i></button>
             <span class="sl" id="setLabel">Sæt temperatur</span>
             <button class="sb" id="setDown" aria-label="Lavere">−</button><span class="sv" id="setVal">–</span><button class="sb" id="setUp" aria-label="Højere">+</button>
         </div>
 
         <div class="setter" id="awayRow" hidden>
-            <span class="sl">Away-temperatur<br><small id="awayHint">Mill: HA kan sætte den, men ikke læse den. Tjek i Mill-appen.</small></span>
+            <span class="sl">Away-temperatur<br><small id="awayHint">Henter fra Mill…</small></span>
+            <button class="pw off" id="millRefresh" title="Hent fra Mill (højst hvert minut)">↻</button>
             <input id="awayVal" type="number" inputmode="decimal" min="5" max="30" step="1" placeholder="–" aria-label="Away-temperatur">
             <button class="pw" id="awaySet">Sæt away</button>
         </div>
@@ -519,9 +525,9 @@
             const s = sensor(), pw = e.currentTarget;
             if (!/^climate\.thomas_s_device/.test(s.temperature) || powerBusy) return;
             const turnOn = pw.classList.contains('off');
-            powerBusy = true; pw.disabled = true; pw.textContent = turnOn ? 'Tænder…' : 'Slukker…';
+            powerBusy = true; pw.disabled = true; pw.classList.add('busy'); pw.classList.toggle('off', !turnOn); pw.setAttribute('aria-checked', String(turnOn));
             try { await callApi('POST', `services/climate/turn_${turnOn ? 'on' : 'off'}`, { entity_id: s.temperature }); } catch (err) { showError(err); }
-            setTimeout(() => { powerBusy = false; pw.disabled = false; load(); }, 4000);
+            setTimeout(() => { powerBusy = false; pw.disabled = false; pw.classList.remove('busy'); load(); }, 4000);
         });
         function updateSetter(s, main) {
             const box = document.getElementById('setter');
@@ -536,7 +542,7 @@
             const pw = document.getElementById('setPower'), sensibo = /^climate\.thomas_s_device/.test(s.temperature);
             // A Mill heater has a day, a night and an away temperature; HA only reads and sets the day one.
             pw.hidden = !sensibo;
-            if (sensibo && !powerBusy) { const on = main.state !== 'off'; pw.textContent = on ? 'Tændt' : 'Slukket'; pw.classList.toggle('off', !on); }
+            if (sensibo && !powerBusy) { const on = main.state !== 'off'; pw.classList.toggle('off', !on); pw.setAttribute('aria-checked', String(on)); }
             const v = parseFloat(main.attributes.temperature);
             document.getElementById('setVal').innerHTML = Number.isNaN(v) ? '–' : `${f1(v)}<small>°C</small>`;
         }
@@ -550,14 +556,45 @@
             const v = Math.min(hi, Math.max(lo, Math.round((Number.isNaN(base) ? 20 : base) + d)));
             clearTimeout(wish?.timer);
             wish = { v, timer: setTimeout(async () => {
+                const lab = document.getElementById('setLabel'), t0 = Date.now();
                 try { await callApi('POST', 'services/climate/set_temperature', { entity_id: s.temperature, temperature: v }); } catch (err) { showError(err); }
-                setTimeout(() => { wish = null; load(); }, 8000);
+                // The Sensibo cloud takes a while to confirm. Keep the wish on screen, ask HA for a fresh value every few seconds
+                // (homeassistant.update_entity: one Sensibo call, no request limit like Mill's) and stop when HA reports it (max 60 s).
+                let confirmed = false;
+                for (let i = 0; i < 15 && !confirmed; i++) {
+                    lab.textContent = `Sæt temperatur · venter på Sensibo (${Math.round((Date.now() - t0) / 1000)} s)…`;
+                    await new Promise(r => setTimeout(r, 4000));
+                    try { await callApi('POST', 'services/homeassistant/update_entity', { entity_id: s.temperature }); } catch (err) { /* try again */ }
+                    const st = await callApi('GET', `states/${s.temperature}`).catch(() => null);
+                    confirmed = !!st && Math.abs(parseFloat(st.attributes.temperature) - v) < 0.01;
+                }
+                lab.textContent = confirmed ? `Sæt temperatur · bekræftet efter ${Math.round((Date.now() - t0) / 1000)} s` : 'Sæt temperatur · Sensibo har ikke bekræftet endnu';
+                wish = null; load();
             }, 3000) };   // only the last value is sent, 3 s after the last press (the Mill cloud is slow, and each call changes the device)
             val.classList.add('wait'); val.innerHTML = `${f1(v)}<small>°C</small>`;
         }
         // Mill: set the AWAY temperature of the room (mill.set_room_temperature, by the room's name in Mill). One call per press.
         // Never the technical room and the guest cottage. HA cannot read the away temperature, so the field stays empty.
         // HA cannot read the away temperature, so the last value set from here is kept in this browser and shown as "Away".
+        // The room's real day / night / away temperatures and the house mode: shell_command.mill_rooms (cached 10 min by the script),
+        // asked at most every 5 min from here; `fresh` after we have set something.
+        let millCache = null, millCacheAt = 0;
+        async function millRoom(room, fresh) {
+            if (!fresh && millCache && Date.now() - millCacheAt < 300e3) return millCache.rooms.find(r => String(r.name).toLowerCase() === String(room).toLowerCase()) || null;
+            try {
+                const res = await callApi('POST', `services/shell_command/${fresh ? 'mill_rooms_fresh' : 'mill_rooms'}?return_response`, {});
+                const out = JSON.parse(res?.service_response?.stdout || '{}');
+                if (out.rooms?.length) { millCache = out; millCacheAt = Date.now(); }
+            } catch (e) { /* the old answer, if any */ }
+            return millCache?.rooms.find(r => String(r.name).toLowerCase() === String(room).toLowerCase()) || null;
+        }
+        const MILL_NAME = { away: 'Away', comfort: 'Dag', sleep: 'Nat' };
+        function millText(r) {
+            if (!r) return null;
+            const m = r.mode === 'weekly_program' ? r.activeModeFromWeeklyProgram : r.mode;
+            const house = millCache?.house?.mode === 'away' ? ' · huset er i away-mode' : '';
+            return `Aktiv: ${MILL_NAME[m] || m} ${typeof r[m] === 'number' ? f1(r[m]) + ' °C' : ''}${house} · Dag ${f1(r.comfort)} · Nat ${f1(r.sleep)} · Away ${f1(r.away)}`;
+        }
         const awayKey = room => 'mill_away_' + String(room || '').toLowerCase();
         const awayStored = room => { try { const v = parseFloat(localStorage.getItem(awayKey(room))); return Number.isNaN(v) ? null : v; } catch (e) { return null; } };
         // Debounced: every press, every new number and Enter restarts a 3 s wait, and only the last value is sent (one call).
@@ -570,7 +607,7 @@
             if (!room || NEVER_SET.test([s.temperature, s.label, st.attributes.friendly_name, room].join(' '))) { hint.textContent = 'Dette rum kan ikke sættes her.'; return; }
             if (Number.isNaN(v) || v < 5 || v > 30) { hint.textContent = 'Skriv en away-temperatur mellem 5 og 30 °C.'; return; }
             awayBusy = true; btn.disabled = true; hint.textContent = `Sender ${f1(v)} °C til ${room}…`;
-            try { await callApi('POST', 'services/mill/set_room_temperature', { room_name: room, away_temp: v }); hint.textContent = `Sendt: away ${f1(v)} °C for ${room}. Tjek i Mill-appen.`; try { localStorage.setItem(awayKey(room), String(v)); } catch (e) { /* no storage */ } document.getElementById('placeSince').textContent = `Away ${f1(v)} °C (sidst sat her)`; }
+            try { await callApi('POST', 'services/mill/set_room_temperature', { room_name: room, away_temp: v }); hint.textContent = `Sendt: away ${f1(v)} °C for ${room}. Tjek i Mill-appen.`; try { localStorage.setItem(awayKey(room), String(v)); } catch (e) { /* no storage */ } document.getElementById('placeSince').textContent = `Away ${f1(v)} °C (sidst sat her)`; setTimeout(async () => { await millRoom(room, true); load(); }, 6000); }
             catch (err) { hint.textContent = 'Mislykkedes: ' + (err?.message || err); showError(err); }
             setTimeout(() => { awayBusy = false; btn.disabled = false; }, 8000);
         }
@@ -583,6 +620,14 @@
             awayTimer = setTimeout(sendAway, 3000);
         }
         document.getElementById('awaySet').addEventListener('click', queueAway);
+        document.getElementById('millRefresh').addEventListener('click', async e => {
+            const b = e.currentTarget; if (b.disabled) return;
+            b.disabled = true; document.getElementById('awayHint').textContent = 'Henter fra Mill…';
+            const st = await callApi('GET', `states/${sensor().temperature}`).catch(() => null);
+            await millRoom(st?.attributes?.room, true);
+            await load();
+            setTimeout(() => { b.disabled = false; }, 8000);
+        });
         document.getElementById('awayVal').addEventListener('keydown', e => { if (e.key === 'Enter') queueAway(); });
         document.getElementById('awayVal').addEventListener('input', () => { if (awayTimer) { clearTimeout(awayTimer); awayTimer = null; document.getElementById('awayHint').textContent = 'Tryk "Sæt away" for at sende.'; } });
         document.getElementById('setDown').addEventListener('click', () => stepWish(-1));
@@ -616,7 +661,7 @@
                     const color = offline ? '#ff6b61' : act === 'Varmer' ? '#ffb340' : act === 'Køler' ? '#64d2ff' : '#8da0ad';
                     pill.innerHTML = `<i style="background:${color}"></i>${act}`;
                     if (/^climate\.thomas_s_device/.test(s.temperature)) document.getElementById('placeSince').textContent = Number.isNaN(parseFloat(a.temperature)) ? '' : `Mål ${f1(parseFloat(a.temperature))} °C`;
-                    else { const aw = awayStored(a.room); document.getElementById('placeSince').textContent = aw == null ? 'Away: ukendt (sæt nedenfor)' : `Away ${f1(aw)} °C (sidst sat her)`; if (aw != null && !document.getElementById('awayVal').value) document.getElementById('awayVal').value = aw; }
+                    else { const mr = await millRoom(a.room), aw = mr ? mr.away : awayStored(a.room); document.getElementById('placeSince').textContent = mr ? millText(mr) : (aw == null ? 'Away: kunne ikke hentes fra Mill' : `Away ${f1(aw)} °C (sidst sat her)`); if (aw != null && !document.getElementById('awayVal').value) document.getElementById('awayVal').value = aw; if (mr) document.getElementById('awayHint').textContent = `Hentet fra Mill kl. ${new Date(millCache.fetched_at * 1000).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })}${millCache.stale ? ' (gammelt: ' + (millCache.error || '') + ')' : ''}`; }
                 } else if (CUSTOM) {
                     const offline = !main || ['unavailable', 'unknown'].includes(main.state);
                     pill.innerHTML = `<i style="background:${offline ? '#ff6b61' : '#5fe085'}"></i>${offline ? 'Offline' : 'Online'}`;
