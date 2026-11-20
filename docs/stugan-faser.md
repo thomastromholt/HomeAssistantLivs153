@@ -63,6 +63,17 @@ Mills `number.*_elektrisk_effekt` (indstillet maksimal effekt): Barnrum og Sovru
 - **Mills grænse:** et antal kald i timen (sås som "> 2500"). De dyre kald er HA-starter (cirka 100 kald, 10 måneders statistik pr. enhed) og skrivninger (tømmer cachen). Derfor er automatisk opdatering slået fra (`pref_disable_polling`), og kort og dialoger lægges ud uden HA-genstart: kopiér filerne og giv kortene et nyt `?v=`-stempel gennem websocket (`lovelace/config` og `lovelace/config/save`).
 - **Mills tal i HA er ikke realtid:** `current_power` er cirka 10 minutter bagud. Brug Tibber Pulse til forsøg med effekt.
 
+## Varmepumpen stopper og starter af sig selv (målt 2026-11-20)
+
+Varmepumpen (Sensibo styrer kun *ønsket*; selve kompressoren styres af anlæggets egen termostat) kan stoppe og starte uden, at nogen rører noget. Det må ikke fejltolkes som en følge af en radiator eller en kommando.
+
+- **Sensibo-historik 19.00–21.14:** `heat`, indstilling 16 °C, ventilator medium, ingen ændring, mens varmepumpen stoppede og startede. Rummet stod på 18 °C, altså over indstillingen, og den trak alligevel cirka 0,45–0,55 kW (L1 2,5 A) i to timer.
+- **Ingen automation** rører varmepumpen eller Sensibo (kun Mill-opdateringen, som læser). Logbogen viser ingen kommando.
+- **Forløb 21:08–21:15:** L1 steg 3,3 → 4,2 A (21:06–21:08), faldt så til 0,5 A over cirka tre minutter (21:08:47–21:11:37; Mill-stikket viste 14 W kl. 21:10), og startede igen 21:14:37 (0,6 → 3,3 A på cirka 80 sekunder). Det ligner en afrimning (defrost) eller en termostatpause. Tidligere defrost samme dag: 15:40–15:44 (se ovenfor).
+- **Sammenfald med radiatorer er tilfældigt.** Da Sovrum (21:01:52) og Barnrum (21:08:57) blev tændt, stoppede varmepumpen næsten samtidig, men kl. 19:48 (Gæststuga) og 20:19 (Teknikrum) blev den ved. En radiator kan ikke ændre varmepumpens egen sensor på et minut.
+- **Konsekvens for kortet:** et trin på L1 skal behandles som en radiator kun, hvis det er et hurtigt, fladt hop med et lige stort fald senere (`stepTracker`). Når L1 *falder* i ét hug uden et tilsvarende hop, er det varmepumpen, ikke en radiator.
+- **Mill-stikket på varmepumpen er sandheden for kWh** (ikke Pulse-estimatet), og når stikket ikke melder, står dets dagsmåler fast (set 20:10–21:10 den 20. nov.).
+
 ## Test: "vi varmer med el i stedet for varmepumpen" (planlagt, ikke bygget)
 
 **Kort test, kørt 2026-11-20 14:30–14:35** (fra Claude Code, scriptet lå uden for repoet): Sensibo slukket, Barnrum, Sovrum, Stuen og Farstu sat til 20 °C gennem deres *rum* (`mill.set_room_temperature`, away-temperatur, fordi huset står i away-mode), 5 minutter, derefter alt tilbage (Sensibo tændt på 23 °, away tilbage til 11/11/11/5). Resultat: samlet 2860 W; radiatorerne trak cirka 2,6 kW, cirka 0,65 kW hver; to på L1, Stuen alene på L2, én på L3. Fasen for hver enkelt radiator blev målt bagefter med en trinvis test (se tabellen). L1 bærer nu varmepumpe og fire radiatorer; i værste fald (alle tændt, varmepumpen på 2 kW) er det cirka 15 A mod en sikring på 16 A.

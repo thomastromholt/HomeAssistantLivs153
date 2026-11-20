@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="/local/card-dark.css?v=1">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
+        .head-r { display: flex; align-items: center; gap: 8px; }
+        .gear { border: 0; background: none; color: #6d808c; font-size: 17px; line-height: 1; cursor: pointer; padding: 0 2px; }
+        .gear:hover { color: #c5d1d9; }
         .now { display: flex; align-items: baseline; gap: 6px; margin: 2px 0 0; }
         .now button { border: 0; background: none; color: inherit; font-family: inherit; cursor: pointer; padding: 0; }
         .now-value { font-size: 44px; font-weight: 300; line-height: 1.05; white-space: nowrap; }
@@ -32,7 +35,7 @@
 </head>
 <body>
     <div class="container">
-        <div class="head"><span class="name">Strømforbrug</span><span class="pill" id="pill"></span></div>
+        <div class="head"><span class="name">Strømforbrug</span><span class="head-r"><button class="gear" id="gear" title="Dataforbrug: hvor meget der sendes i dag og denne måned" aria-label="Dataforbrug">⚙</button><span class="pill" id="pill"></span></span></div>
         <div id="error" class="error" hidden></div>
 
         <div class="now">
@@ -49,7 +52,7 @@
         </div>
     </div>
 
-    <script src="/local/card-common.js?v=1"></script>
+    <script src="/local/card-common.js?v=2"></script>
     <script>
         /* Strømforbrug at the cottage, built like the card at home (hus.html).
            Live (Tibber Pulse online): the power now, and the last 1 h / 6 h / 24 h as stacked areas: El-varme (Mill without the heat pump's socket), Varmepumpe (its socket), the EV charger and
@@ -72,12 +75,15 @@
         // otherwise a typical 650 W (Mill reports 0 W for a panel that was just switched on, and then nothing for up to 10 minutes).
         const L1_ROOMS = ['sovrum', 'farstu', 'teknikrum', 'gäststuga', 'gaeststuga'], RAD_W = 650;
         let millPow = new Map(), millPowAt = 0;
-        const radOn = r => { const m = r.mode === 'weekly_program' ? r.activeModeFromWeeklyProgram : r.mode; return typeof r[m] === 'number' && typeof r.avg === 'number' && r.avg < r[m] - 0.3; };
+        // ON: the panel reports power and the room is under its setpoint, or the room is clearly (1 degree) under it (Mill reports 0 W for a panel just switched on, so a
+        // room far under its setpoint is assumed to heat). A room only a little under its setpoint is not assumed to (the thermostat's pause band): the guest cottage at 6.6 against 7 was
+        // wrongly counted as 650 W on 2026-11-20, while the Pulse showed nothing. An offline panel (the Mill app says so) is not counted.
+        const radOn = r => { const m = r.mode === 'weekly_program' ? r.activeModeFromWeeklyProgram : r.mode; if (r.online === false || typeof r[m] !== 'number' || typeof r.avg !== 'number') return false; return r.avg < r[m] - 0.3 && ((r.power || 0) > 0 || r.avg < r[m] - 1.0); };
         async function loadMillPower() {
-            if (DEMO || Date.now() - millPowAt < 180e3) return;
+            if (DEMO || Date.now() - millPowAt < 300e3) return;
             millPowAt = Date.now();
             try {
-                const res = await callApi('POST', 'services/shell_command/mill_rooms_fresh?return_response', {});
+                const res = await callApi('POST', 'services/shell_command/mill_rooms?return_response', {});   // the cached one: Mill is asked at most every 10 minutes
                 const out = JSON.parse(res?.service_response?.stdout || '{}');
                 if (out.rooms?.length) millPow = new Map(out.rooms.map(r => [String(r.name || '').toLowerCase(), { w: r.power || 0, at: Date.parse(r.received || '') || 0, on: radOn(r) }]));
             } catch (e) { /* keep the old numbers */ }
@@ -89,6 +95,7 @@
         try { const h = +localStorage.getItem('sfc_h'); if (HOURS[h]) hours = h; } catch (e) {}
         let chart = null, reg = [], regAt = 0, ids = null, prices = null, pricesAt = 0;
         const openDialog = () => openPopup('/local/stugan-strom.html?v=' + Date.now());
+        document.getElementById('gear').addEventListener('click', e => { e.stopPropagation(); openPopup('/local/stugan-data.html?v=' + Date.now()); });
         for (const id of ['nowButton', 'mix', 'chartBox']) document.getElementById(id).addEventListener('click', openDialog);
 
         // The heat pump's Mill socket is its own group ("Varmepumpe"); "El-varme" is every other Mill device.
@@ -102,10 +109,12 @@
             const vpU = await vpUnique(), vpStat = vpU ? 'mill:energy_' + vpU.replace(/-/g, '_') : null;
             const cons = list.find(s => s.statistic_id.startsWith('tibber:energy_consumption_'));
             return (ids = {
-                vp: vpStat && list.some(x => x.statistic_id === vpStat) ? [vpStat] : [],
+                vp: list.some(x => x.statistic_id === 'sensor.varmepumpe_day_consumption') ? ['sensor.varmepumpe_day_consumption'] : [],   // the Mill socket's kWh since midnight (the 'mill:energy_' statistic is all zeros for it)
+                vpDay: 'sensor.varmepumpe_day_consumption',
+                millDay: reg.filter(r => r.platform === 'mill' && /_day_consumption$/.test(r.entity_id) && !/varmepump/.test(r.entity_id)).map(r => r.entity_id),
                 cons: cons?.statistic_id, cost: cons?.statistic_id.replace('energy_consumption_', 'energy_totalcost_'),
                 ev: list.filter(s => s.statistic_id === 'sensor.stugan_energy_meter').map(s => s.statistic_id),
-                mill: list.filter(s => s.source === 'mill' && s.statistic_id.startsWith('mill:energy_') && s.statistic_id !== vpStat).map(s => s.statistic_id),
+                mill: reg.filter(r => r.platform === 'mill' && /_day_consumption$/.test(r.entity_id) && !/varmepump/.test(r.entity_id) && list.some(x => x.statistic_id === r.entity_id)).map(r => r.entity_id),
                 sensibo: list.filter(s => /sensibo|thomas_s_device/.test(s.statistic_id) && s.has_sum && /kWh/.test(s.statistics_unit_of_measurement || s.unit_of_measurement || '')).map(s => s.statistic_id),
             });
         }
@@ -133,7 +142,37 @@
         const kw = (state, unit) => parseFloat(state) * (unit === 'kW' ? 1 : 1e-3);
 
         // Power histories from `since`, bucketed to a common timeline: [{t, total, mill, ev, rest}] in kW.
+        // The long windows (today) are fetched at most every 5 minutes: every 15 s was 46 KB gzipped (more than the whole rest), and it grows during the day.
+        const seriesCache = new Map();
+        /* A radiator on L1 (the guest cottage's frost guard cycles ~15 min on, Mill reports 0 W) switches on in ONE step of 1.7-3.3 A and off in one equal step;
+           the heat pump ramps over about a minute. So a fast rise that holds until an equal fall is a radiator. Measured 2026-11-20 19:48-20:04: +3.1 A, then -3.3 A. */
+        function stepTracker(thr) {
+            let steps = [], h = [];   // h: the last four readings; a jump counts only when the readings on both sides of it are flat
+            return (a, t) => {
+                steps = steps.filter(s => t - s.t < 45 * 60e3);
+                if (a != null) {
+                    h.push(a); if (h.length > 4) h.shift();
+                    if (h.length === 4) {
+                        const d = h[2] - h[1], flat = Math.abs(h[1] - h[0]) < 0.5 && Math.abs(h[3] - h[2]) < 0.5;
+                        if (flat && d >= thr) steps.push({ t, a: d });
+                        else if (flat && d <= -thr) {
+                            let bi = -1, bd = 1.0;
+                            steps.forEach((s, i) => { const diff = Math.abs(s.a + d); if (diff <= bd) { bd = diff; bi = i; } });
+                            if (bi >= 0) steps.splice(bi, 1);
+                        }
+                    }
+                }
+                return steps.reduce((p, s) => p + s.a, 0);   // amps of radiators switched on in steps
+            };
+        }
         async function series(sn, since, bucket) {
+            const long = Date.now() - since > 3 * 3600e3, key = `${bucket}|${Math.floor(since / 60e3)}`, hit = seriesCache.get(key);
+            if (long && hit && Date.now() - hit.at < 300e3) return hit.v;
+            const v = await seriesRaw(sn, since, bucket);
+            if (long) seriesCache.set(key, { at: Date.now(), v });
+            return v;
+        }
+        async function seriesRaw(sn, since, bucket) {
             await loadMillPower();
             if (DEMO) {
                 const n = Math.round((Date.now() - since) / bucket), out = [];
@@ -166,12 +205,12 @@
             const sensRows = (by.get(sn.sens) || []).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: r.state })).sort((x, y) => x.t - y.t);
             let si = 0, sLast = null;
             const tSens = t0 => { while (si < sensRows.length && sensRows[si].t < t0 + bucket) { sLast = sensRows[si].v; si++; } return sLast; };
-            const out = [];
+            const stepA = stepTracker(1.5), out = [];
             for (let t = Math.floor(since / bucket) * bucket; t < Date.now(); t += bucket) {
                 const total = tTot(t), e = tEv(t) || 0, mm = tMill.map(fn => fn(t) || 0);
                 const a1 = useL1 ? tL1(t) : null, volt = useL1 ? tV1(t) : null;
                 // amps of the heat pump = L1 above the baseline, minus the guest cottage's radiator (resistive, pf 1) on the same phase
-                const l1Rad = useL1 ? millL1Kw(t) : 0;
+                const stepAmps = useL1 ? stepA(a1, t) : 0, l1Rad = useL1 ? Math.max(millL1Kw(t), stepAmps * (volt || 230) / 1000) : 0;
                 const dA = useL1 ? Math.max(0, (a1 == null ? 0 : a1) - BASE_L1_A - l1Rad * 1000 / (volt || 230)) : 0;
                 const sensOff = useL1 && tSens(t) === 'off', V = volt || 230, a2 = useL1 ? tL2(t) : null, a3 = useL1 ? tL3(t) : null;
                 const vv = useL1 ? [sensOff ? 0 : dA * V * hpPf(dA) / 1000] : tVp.map(fn => fn(t) || 0);
@@ -185,7 +224,7 @@
                 if (waterOn) x = Math.max(0, x - WATER_A);
                 const radKw = useL1 ? excess(a2, BASE_L2_A) + (sensOff ? excess(a1, BASE_L1_A) : Math.min(l1Rad, excess(a1, BASE_L1_A))) + (x >= 1.5 && x <= 4 ? x * V / 1000 : 0) : null;
                 if (total == null) continue;
-                const m = Math.min(radKw != null ? radKw : mm.reduce((p, q) => p + q, 0), total), v = Math.min(vv.reduce((p, q) => p + q, 0), Math.max(0, total - m));
+                const keep = Math.min(total, 0.18), m = Math.min(radKw != null ? radKw : mm.reduce((p, q) => p + q, 0), total - keep), v = Math.min(vv.reduce((p, q) => p + q, 0), Math.max(0, total - keep - m));   // the house's own ~0.18 kW (fridge, router, standby, measured 2026-11-20) stays in Resten, so a radiator switching on never turns the whole curve orange
                 const ev = Math.min(eKw, Math.max(0, total - m - v)), w = Math.min(wKw, Math.max(0, total - m - v - ev));
                 out.push({ t, total, mill: m, vp: v, vv: w, ev, rest: Math.max(0, total - m - v - ev - w) });
             }
@@ -197,10 +236,10 @@
 
         function drawAreas(pts, since) {
             if (chart) chart.destroy();
-            const set = (key, label) => ({ label, data: pts.map(p => ({ x: p.t, y: p[key] })), borderColor: COLORS[key], borderWidth: 1.6, pointRadius: 0, tension: 0.2, fill: true, backgroundColor: gradient(COLORS[key]) });
+            const set = (key, label, i) => ({ label, data: pts.map(p => ({ x: p.t, y: p[key] })), borderColor: COLORS[key], borderWidth: 1.6, pointRadius: 0, tension: 0.2, fill: i === 0 ? 'origin' : '-1', backgroundColor: COLORS[key] + 'cc' });   // each group fills only its own band, in the legend's colour (a fill to the axis let the orange shine through the purple)
             chart = new Chart(document.getElementById('chart'), {
                 type: 'line',
-                data: { datasets: [set('rest', NAMES.rest), set('ev', NAMES.ev), set('vv', NAMES.vv), set('vp', NAMES.vp), set('mill', NAMES.mill)] },
+                data: { datasets: [set('rest', NAMES.rest, 0), set('ev', NAMES.ev, 1), set('vv', NAMES.vv, 2), set('vp', NAMES.vp, 3), set('mill', NAMES.mill, 4)] },   // Resten at the bottom, the heat pump above it, El-varme (orange) on top
                 options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false, interaction: { mode: 'index', intersect: false },
                     scales: { x: { type: 'linear', min: since, max: Date.now(), grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8da0ad', font: { size: 11 }, maxRotation: 0, maxTicksLimit: 5, callback: v => clock(v) } },
                               y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8da0ad', font: { size: 11 }, maxTicksLimit: 4, callback: v => `${f(v, v % 1 ? 1 : 0)} kW` } } },
@@ -274,11 +313,22 @@
                 document.getElementById('power').textContent = String(Math.round(w * 1000 / 10) * 10); document.getElementById('unit').textContent = ' W';   // watt, to the nearest 10 (320 W, 4310 W) document.getElementById('note').textContent = '';
                 pill.textContent = 'Live'; pill.className = 'pill good';
                 const since = Date.now() - hours * 3600e3;
-                drawAreas(await series(sn, since, HOURS[hours].bucket), since);
+                const chartPts = await series(sn, since, HOURS[hours].bucket);
                 // today, in kWh per group
                 const d0 = new Date(); d0.setHours(0, 0, 0, 0);
                 const day = await series(sn, +d0, 300e3), parts = { mill: 0, vp: 0, vv: 0, ev: 0, rest: 0 }, ptsToday = [];
                 for (const p of day) { const h = 300e3 / 3600e3; parts.mill += p.mill * h; parts.vp += p.vp * h; parts.vv += p.vv * h; parts.ev += p.ev * h; parts.rest += p.rest * h; ptsToday.push({ t: p.t, kwh: p.total * h }); }
+                // The heat pump's Mill socket counts today's kWh; the Pulse estimate only fills in when the socket has nothing. The difference comes off "Resten", so the total stays.
+                const sid = await statIds(), kwhOf = id => { const v = parseFloat(sn.states.get(id)?.state); return Number.isNaN(v) ? 0 : v; };
+                const vpMill = sid.vpDay ? kwhOf(sid.vpDay) : 0, elMill = (sid.millDay || []).reduce((a, id) => a + kwhOf(id), 0);   // the Mill counters: the heat pump's socket and every room's panel
+                // The graph follows the Mill counters too: the Pulse only gives each group's shape over time, so each group is scaled to what Mill counted today
+                // (the heat pump's socket, the rooms' panels); what that frees up or needs is taken from / given to "Resten", so the stack height stays the Pulse's total.
+                const pulseVp = parts.vp, pulseMill = parts.mill;
+                if (vpMill > 0) { parts.rest = Math.max(0, parts.rest - (vpMill - parts.vp)); parts.vp = vpMill; }
+                if (elMill > 0) { parts.rest = Math.max(0, parts.rest - (elMill - parts.mill)); parts.mill = elMill; }
+                const fVp = vpMill > 0 && pulseVp > 0.05 ? vpMill / pulseVp : 1, fMill = 1;   // El-varme in the graph is the Pulse's own measurement (a radiator = its measured ~0.65 kW); only the "I dag" kWh below uses the Mill counters
+                for (const q of chartPts) { const dv = q.vp * (fVp - 1), avail = q.rest - dv, dm = q.mill * (fMill - 1), dmEff = dm > 0 ? Math.min(dm, Math.max(0, avail - 0.18)) : dm; q.vp += dv; q.mill += dmEff; q.rest = Math.max(0, avail - dmEff); }   // never eat into the house's own ~0.18 kW
+                drawAreas(chartPts, since);
                 const total = parts.mill + parts.vp + parts.vv + parts.ev + parts.rest;
                 mix('I dag', parts, total, await todayCost(sn, ptsToday).catch(() => 0), ['mill', 'vp', 'vv', 'ev', 'rest']);
             } else {
@@ -302,7 +352,7 @@
         mark();
         const tick = () => load().then(() => showError(null)).catch(showError);
         tick();
-        setInterval(tick, 15e3);
+        setInterval(() => { if (!document.hidden) tick(); }, 15e3);   // nothing is fetched while the card is not seen
     </script>
 </body>
 </html>

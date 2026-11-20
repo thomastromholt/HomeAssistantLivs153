@@ -5,7 +5,16 @@
 async function callApi(method, path, body) {
     let hass = null;
     try { hass = window.parent.document.querySelector('home-assistant')?.hass; } catch (e) { /* cross-origin */ }
-    if (hass) return hass.callApi(method, path, body);
+    if (hass) {
+        // Data is expensive here (a 5 GB mobile plan, and the dashboard is often opened from outside through Tailscale): the frontend already holds every entity in memory
+        // and gets the changes pushed over its one websocket, so reading states costs nothing. A GET of "states" used to be 278 KB (48 KB gzipped) per card every 10-15 s.
+        if (method === 'GET' && hass.states) {
+            if (path === 'states') return Object.values(hass.states);
+            const m = /^states\/([^/?]+)$/.exec(path);
+            if (m && hass.states[m[1]]) return hass.states[m[1]];
+        }
+        return hass.callApi(method, path, body);
+    }
 
     const tokens = JSON.parse(localStorage.getItem('hassTokens') || 'null');
     if (!tokens) throw new Error('Not logged in to Home Assistant');

@@ -96,7 +96,7 @@
         <div class="fine" id="fine"></div>
     </div>
 
-    <script src="/local/card-common.js?v=1"></script>
+    <script src="/local/card-common.js?v=2"></script>
     <script>
         /* The cottage's water (Grohe Sense Guard): the valve and the connection, today's litres against the average, the live pressure,
            flow and temperature, the litres per day (30 days) and per hour (48 hours) from the long-term statistics of the total counter,
@@ -142,7 +142,7 @@
 
         async function renderCharts() {
             if (!CTX) return;
-            const { total, press, flow, temp, A } = CTX, W = WIN[win], start = new Date(Date.now() - W.ms);
+            const { total, press, flow, temp, A, L } = CTX, W = WIN[win], start = new Date(Date.now() - W.ms);
             document.getElementById('useTitle').textContent = W.useTitle; document.getElementById('useCap').textContent = W.useCap;
             document.getElementById('pfCap').textContent = W.label; document.getElementById('tempCap').textContent = '°C, ' + W.label;
 
@@ -151,6 +151,7 @@
             if (total) {
                 const from = W.use === 'day' ? (() => { const d = new Date(start); d.setHours(0, 0, 0, 0); return d; })() : start;
                 rows = (await wsStats(total.entity_id, W.use, from).catch(() => [])).map(x => ({ t: new Date(x.start).getTime(), v: x.change }));
+                if (W.use === 'day' && !Number.isNaN(L)) { const d0 = new Date(); d0.setHours(0, 0, 0, 0); const last = rows[rows.length - 1]; if (last && last.t >= +d0) last.v = Math.max(last.v, L); else rows.push({ t: +d0, v: L }); }
             }
             show('useEmpty', rows.length > 0);
             if (rows.length) {
@@ -194,7 +195,7 @@
         // The Grohe integration only polls every 15 minutes: ask the cloud for a fresh reading when the dialog opens and at most every 3 minutes after that.
         let groheAt = 0;
         async function refreshGrohe() {
-            if (Date.now() - groheAt < 180e3) return;
+            if (Date.now() - groheAt < 600e3) return;
             groheAt = Date.now();
             try {
                 const reg = (await callWS({ type: 'config/entity_registry/list' })) || [];
@@ -236,6 +237,9 @@
             let days = [];
             if (total) days = await wsStats(total.entity_id, 'day', t30).catch(() => []);
             const rows = days.map(x => ({ t: new Date(x.start).getTime(), v: x.change }));
+            // The statistics only hold finished hours, so today's row is too low: today comes from the live meter (the big number).
+            const todayFix = rs => { if (Number.isNaN(L)) return rs; const d0 = new Date(); d0.setHours(0, 0, 0, 0); const last = rs[rs.length - 1]; if (last && last.t >= +d0) last.v = Math.max(last.v, L); else rs.push({ t: +d0, v: L }); return rs; };
+            todayFix(rows);
             const d7 = rows.slice(-7), sum = a => a.reduce((s, r) => s + r.v, 0);
             document.getElementById('kAvg').innerHTML = Number.isNaN(A) ? '–' : `${f(A, 0)}<small>L</small>`;
             document.getElementById('kAvgSub').textContent = Number.isNaN(num(avgMonth)) ? 'fra Grohe' : `måned ${f(num(avgMonth), 0)} L`;
@@ -249,7 +253,7 @@
             document.getElementById('kLast').innerHTML = latest && !bad(latest) ? `${f(num(latest), 1)}<small>L</small>` : '–';
             document.getElementById('kLastSub').textContent = !Number.isNaN(num(maxFlow)) ? `maks flow ${f(num(maxFlow), 1)} m³/h` : '';
 
-            CTX = { total, press, flow, temp, A, rows30: rows };
+            CTX = { total, press, flow, temp, A, L, rows30: rows };
             await renderCharts();
 
             // notification
@@ -261,7 +265,7 @@
         }
         const tick = () => load().catch(showError);
         tick();
-        setInterval(tick, 60e3);
+        setInterval(() => { if (!document.hidden) tick(); }, 60e3);
     </script>
 </body>
 </html>

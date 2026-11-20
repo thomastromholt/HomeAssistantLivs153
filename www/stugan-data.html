@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data · Stugan</title>
+    <link rel="stylesheet" href="/local/card-dark.css?v=1">
+    <script>if (new URLSearchParams(location.search).get('theme') === 'summer') { document.documentElement.className = 'summer'; document.write('<link rel="stylesheet" href="/local/card-summer.css?v=1">'); }</script>
+    <style>
+        .container { overflow-y: auto; gap: 12px; padding: 18px 20px 16px; }
+        .close { position: fixed; top: 10px; right: 10px; z-index: 10; border: 0; background: rgba(40, 52, 62, 0.92); color: #f2f5f7; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+        .head { padding-right: 48px; }
+        .box { border-radius: 14px; background: rgba(255,255,255,0.06); padding: 12px 14px; }
+        .cap { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #f2f5f7; }
+        .cap span { color: #8da0ad; font-size: 11px; font-weight: 400; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: right; font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .5px; color: #8da0ad; padding: 4px 6px 6px; }
+        th:first-child, td:first-child { text-align: left; }
+        td { text-align: right; padding: 7px 6px; border-top: 1px solid rgba(255,255,255,0.06); color: #f2f5f7; white-space: nowrap; }
+        td:first-child { color: #c5d1d9; white-space: normal; }
+        td small { color: #8da0ad; }
+        .bar { height: 10px; border-radius: 5px; background: rgba(255,255,255,0.08); overflow: hidden; margin: 8px 0 4px; }
+        .bar i { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, #2a8fd6, #64d2ff); }
+        .bar i.hot { background: linear-gradient(90deg, #ffb340, #ff6b61); }
+        .fine { font-size: 11px; color: #6d808c; line-height: 1.55; }
+        .fine b { color: #8da0ad; font-weight: 600; }
+        .big { font-size: 28px; font-weight: 300; }
+        .big small { font-size: 13px; color: #8da0ad; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="head"><span class="name">Data <span class="muted">· hvor meget der sendes</span></span><button class="close" id="close" aria-label="Luk">✕</button></div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="box">
+            <div class="cap">Denne måned <span id="planSub"></span></div>
+            <div class="big" id="monthBig">–</div>
+            <div class="bar"><i id="monthBar" style="width:0"></i></div>
+            <div class="fine" id="monthNote"></div>
+        </div>
+
+        <div class="box">
+            <div class="cap">Tailscale <span>trafik mellem boksen og dine enheder udefra (dit dashboard, Claude Code, appen)</span></div>
+            <table id="tsTable"></table>
+        </div>
+
+        <div class="box">
+            <div class="cap">Boksens kabelnet <span>alt, hvad boksen sender og modtager (skyerne, Tailscale og lokalt)</span></div>
+            <table id="enoTable"></table>
+        </div>
+
+        <div class="fine" id="note"></div>
+    </div>
+
+    <script src="/local/card-common.js?v=2"></script>
+    <script>
+        /* How much data goes through the house's connection. Home Assistant's System Monitor (added 2026-11-20) counts the bytes on the box's network cards:
+           eno1 is the cable to the router (everything the box sends and receives), tailscale0 is the tunnel to the devices outside (this dashboard when it is
+           opened away from home, the app, Claude Code). The counters are totals; the long-term statistics give each day and month. They start when the
+           sensors were switched on (2026-11-20 about 17.50), so earlier days are empty. Reading this dialog costs about 30 KB. */
+        const MONTHLY_PLAN_GB = 5;   // the mobile broadband's monthly data (the owner, 2026-11-20): change it here
+        document.getElementById('close').addEventListener('click', () => closePopup());
+        const S = {
+            tsDown: 'sensor.system_monitor_network_out_tailscale0',   // box -> outside: what the outside device downloads
+            tsUp: 'sensor.system_monitor_network_in_tailscale0',
+            enoIn: 'sensor.system_monitor_network_in_eno1',
+            enoOut: 'sensor.system_monitor_network_out_eno1',
+        };
+        const fmt = mb => mb == null ? '–' : mb >= 1000 ? `${(mb / 1024).toLocaleString('da-DK', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}<small> GB</small>` : `${Math.round(mb).toLocaleString('da-DK')}<small> MB</small>`;
+        const day0 = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const dayKey = t => new Date(t).toLocaleDateString('sv-SE');
+
+        async function load() {
+            const now = new Date(), today = day0(), yesterday = new Date(+today - 864e5), week = new Date(+today - 6 * 864e5);
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1), lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const start = new Date(Math.min(+lastMonthStart, +week));
+            const ids = Object.values(S);
+            // days from the daily statistics; today from the 5-minute statistics (the day's last hour is not in the hourly ones yet)
+            const [dayRes, fiveRes] = await Promise.all([
+                callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: now.toISOString(), statistic_ids: ids, period: 'day', types: ['change'] }),
+                callWS({ type: 'recorder/statistics_during_period', start_time: today.toISOString(), end_time: now.toISOString(), statistic_ids: ids, period: '5minute', types: ['change'] }),
+            ]);
+            const perDay = id => { const m = new Map(); ((dayRes && dayRes[id]) || []).forEach(r => { if (r.change != null) m.set(dayKey(r.start), (m.get(dayKey(r.start)) || 0) + r.change); }); return m; };
+            const todayOf = id => ((fiveRes && fiveRes[id]) || []).reduce((a, r) => a + (r.change || 0), 0);
+            const sumBetween = (m, from, to) => { let s = 0, any = false; for (const [k, v] of m) { const t = new Date(k + 'T12:00:00'); if (+t >= +from && +t < +to) { s += v; any = true; } } return any ? s : null; };
+            const rows = id => {
+                const m = perDay(id), t = todayOf(id), tHas = ((fiveRes && fiveRes[id]) || []).length > 0;
+                const todayV = tHas ? t : null;
+                const yest = m.get(dayKey(yesterday)) ?? null;
+                const w = (sumBetween(m, week, today) ?? 0) + (todayV ?? 0), mo = (sumBetween(m, monthStart, today) ?? 0) + (todayV ?? 0), lm = sumBetween(m, lastMonthStart, monthStart);
+                return { today: todayV, yest, week: (tHas || sumBetween(m, week, today) != null) ? w : null, month: (tHas || sumBetween(m, monthStart, today) != null) ? mo : null, lastMonth: lm };
+            };
+            const R = { tsDown: rows(S.tsDown), tsUp: rows(S.tsUp), enoIn: rows(S.enoIn), enoOut: rows(S.enoOut) };
+            const table = (id, defs) => {
+                document.getElementById(id).innerHTML = '<tr><th></th><th>I dag</th><th>I går</th><th>7 dage</th><th>Denne måned</th><th>Sidste måned</th></tr>' +
+                    defs.map(([label, r]) => `<tr><td>${label}</td><td>${fmt(r.today)}</td><td>${fmt(r.yest)}</td><td>${fmt(r.week)}</td><td>${fmt(r.month)}</td><td>${fmt(r.lastMonth)}</td></tr>`).join('') +
+                    (defs.length > 1 ? (() => { const t = k => defs.reduce((a, [, r]) => a + (r[k] ?? 0), 0), has = k => defs.some(([, r]) => r[k] != null); const v = k => has(k) ? t(k) : null; return `<tr><td><b>I alt</b></td><td>${fmt(v('today'))}</td><td>${fmt(v('yest'))}</td><td>${fmt(v('week'))}</td><td>${fmt(v('month'))}</td><td>${fmt(v('lastMonth'))}</td></tr>`; })() : '');
+            };
+            table('tsTable', [['Ned til din enhed (boks → dig)', R.tsDown], ['Op fra din enhed (dig → boks)', R.tsUp]]);
+            table('enoTable', [['Modtaget (internet og lokalt → boks)', R.enoIn], ['Sendt (boks → internet og lokalt)', R.enoOut]]);
+
+            // the month against the plan: the Tailscale traffic both ways is what a device away from home uses of ITS connection
+            const ts = (R.tsDown.month ?? 0) + (R.tsUp.month ?? 0), planMb = MONTHLY_PLAN_GB * 1024;
+            document.getElementById('monthBig').innerHTML = (R.tsDown.month == null && R.tsUp.month == null) ? '–' : `${fmt(ts)} <span style="font-size:13px;color:#8da0ad">af ${MONTHLY_PLAN_GB} GB (${Math.round(ts / planMb * 100)} %)</span>`;
+            const bar = document.getElementById('monthBar'); bar.style.width = Math.min(100, ts / planMb * 100) + '%'; bar.classList.toggle('hot', ts / planMb > 0.7);
+            document.getElementById('planSub').textContent = 'Tailscale begge veje mod månedens data';
+            // since the box started: the counters themselves (every byte since boot)
+            const states = new Map((await callApi('GET', 'states')).map(s => [s.entity_id, s]));
+            const cur = k => { const v = parseFloat(states.get(S[k])?.state); return Number.isNaN(v) ? null : v; };
+            document.getElementById('monthNote').innerHTML = `Tællerne siden boksen sidst blev startet: Tailscale ned <b>${fmt(cur('tsDown'))}</b>, op <b>${fmt(cur('tsUp'))}</b>; kabelnet modtaget <b>${fmt(cur('enoIn'))}</b>, sendt <b>${fmt(cur('enoOut'))}</b>.`;
+            document.getElementById('note').innerHTML = '<b>Sådan læses det.</b> Står din mobile forbindelse dér, hvor du sidder (Stugan), er det Tailscale-tallene, der bruger af den: alt, hvad dashboardet og Claude Code henter fra boksen. Står den på boksens egen forbindelse, er det kabelnettet. Kabelnettet tæller også lokal trafik (derfor er det en øvre grænse for internettet). Tallene begynder, da målingen blev tændt (20. nov. cirka kl. 17.50); tidligere dage er tomme. Dagstal opdateres hvert 5. minut.';
+            showError(null);
+        }
+        const tick = () => load().catch(showError);
+        tick();
+        setInterval(() => { if (!document.hidden) tick(); }, 5 * 60e3);
+    </script>
+</body>
+</html>

@@ -161,7 +161,7 @@
         <div class="grid" id="grid"></div>
     </div>
 
-    <script src="/local/card-common.js?v=1"></script>
+    <script src="/local/card-common.js?v=2"></script>
     <script>
         const DEMO = new URLSearchParams(location.search).has('demo');
         const THEME = new URLSearchParams(location.search).get('theme') || '';
@@ -245,14 +245,15 @@
             const a = s.attributes, ec = ex || null;
             const useFb = !ec && !isOk(s) && !!fb;
             const mr = sub === 'Mill' ? millRooms.get(String(a.room || '').toLowerCase()) : null, act = mr ? millActive(mr) : null;
-            const cur = ec ? ec[0] : useFb ? fb.cur : parseFloat(a.current_temperature), tgt = ec ? ec[1] : useFb ? fb.tgt : act ? act.v : parseFloat(a.temperature);
+            const cur = ec ? ec[0] : useFb ? fb.cur : (mr && typeof mr.avg === 'number' ? mr.avg : parseFloat(a.current_temperature)), tgt = ec ? ec[1] : useFb ? fb.tgt : act ? act.v : parseFloat(a.temperature);
             const action = ec ? ec[4] : a.hvac_action, mode = ec ? 'heat' : s.state;
             const off = !ec && !isOk(s);
             // Mill reports 0 W for a panel just switched on and nothing for up to ~10 minutes, and keeps the last value after it is switched off. So the thermostat's call
             // decides: ON when the room is colder than the setpoint it follows; then Mill's reported power if any, else a typical 650 W (measured 0.57-0.73 kW per panel).
-            const calling = act && typeof mr.avg === 'number' ? mr.avg < act.v - 0.3 : null;
+            const calling = act && typeof mr.avg === 'number' ? (mr.online !== false && mr.avg < act.v - 0.3 && ((mr.power || 0) > 0 || mr.avg < act.v - 1.0)) : null;   // same rule as the consumption card: a room just under its setpoint is not assumed to heat
             const w = ec ? ec[2] : (mr && calling != null ? (calling ? (mr.power > 0 ? mr.power : 650) : 0) : (mr && typeof mr.power === 'number' ? mr.power : (pow && isOk(pow) ? num(pow) : NaN))), h =   /* the room's own latest report from Mill's cloud (the script), since Home Assistant's Mill sensors are not polled */  ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
-            const state = off ? 'bad' : action === 'heating' ? 'heat' : action === 'cooling' ? 'cool' : mode === 'off' ? 'idle' : 'on';
+            const millHeats = mr && !off && mr.online !== false && !Number.isNaN(w) && w > 0;   // the dot follows the Effekt cell: Home Assistant's own hvac_action is not polled for Mill
+            const state = off ? 'bad' : (mr ? millHeats : action === 'heating') ? 'heat' : action === 'cooling' ? 'cool' : mode === 'off' ? 'idle' : 'on';
             const stateText = off ? (useFb ? 'Sidst kendt' : 'Offline') : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Slukket', auto: 'Auto', heat_cool: 'Auto', dry: 'Affugt', fan_only: 'Blæser', heat: 'Varme', cool: 'Køl' }[mode] || mode)   /* the mode in words: the Sensibo does not say whether the compressor runs, so it is never "Hviler" */;
             // The technical room and the guest cottage are kept cool on purpose: no colour for that (same as the other heaters), red only when frost is near (FROST_WARN).
             const sepRoom = /teknik|g[äa]st/i.test([s.entity_id, a.friendly_name, a.room].join(' '));
@@ -265,7 +266,7 @@
                 ${cell('Read', `${fmt(cur)}<small>°</small>`, 'temp' + (tl ? ' ' + tl : ''))}
                 ${cell(act ? act.label : 'Set', Number.isNaN(tgt) ? '–' : `${fmt(tgt)}<small>°</small>`)}
                 ${hidName ? cell('Status', stateText) : ''}
-                ${Number.isNaN(w) && !pow && !ec ? '' : cell('Effekt', Number.isNaN(w) ? '–' : `${fmt(w, 0)}<small>W</small>`, 'pow')}
+                ${Number.isNaN(w) && !pow && !ec ? '' : cell('Effekt', mr && mr.online === false ? '<small>offline</small>' : Number.isNaN(w) ? '–' : `${fmt(w, 0)}<small>W</small>`, 'pow')}
                 ${hidName && Number.isNaN(h) ? '' : !hum && !ec ? '<div class="cell cell-gap"></div>' : cell('Fugt', Number.isNaN(h) ? '–' : `${fmt(h, 0)}<small>%</small>`, 'hum' + (hl ? ' ' + hl : ''))}
             </div>`;
         }
@@ -284,15 +285,22 @@
             const by = suffix => ents.find(s => s.entity_id.endsWith('_' + suffix));
             const temp = by('temperature'), today = by('water_consumption'), press = by('actual_pressure'), flow = by('actual_flow_rate'), avg = by('average_daily_consumption');
             const valve = ents.find(s => s.entity_id.startsWith('valve.')), online = ents.find(s => s.entity_id.endsWith('_online')), note = by('latest_notification');
-            const weekOk = !!groheWeek && groheWeek.length >= 3;   // a week of data, not the first hours after the integration was added
-            const week = weekOk ? groheWeek.reduce((a, r) => a + r.v, 0) : NaN;
             const L = today ? num(today) : NaN, A = avg ? num(avg) : NaN;
+            // The statistics only hold finished hours, so today's bar is too low: today comes from the live meter (the big number).
+            let wk = groheWeek ? groheWeek.slice() : null;
+            if (wk && !Number.isNaN(L)) {
+                const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+                if (wk.length && wk[wk.length - 1].t >= +day0) wk[wk.length - 1] = { ...wk[wk.length - 1], v: Math.max(L, wk[wk.length - 1].v) }; else wk.push({ t: +day0, v: L });
+                wk = wk.slice(-7);
+            }
+            const weekOk = !!wk && wk.length >= 3;   // a week of data, not the first hours after the integration was added
+            const week = weekOk ? wk.reduce((a, r) => a + r.v, 0) : NaN;
             const open = valve && valve.state === 'open', offline = online && online.state === 'off';
             const pill = valve ? `<span class="gh-pill ${open ? 'ok' : 'bad'}" data-e="${esc(valve.entity_id)}"><i></i>${open ? 'Hovedventil åben' : valve.state === 'closed' ? 'Hovedventil LUKKET' : esc(valve.state)}</span>` : '';
             const used = !Number.isNaN(L) && !Number.isNaN(A) && A > 0 ? Math.min(100, L / A * 100) : 0;
             // the 7 days: the average as a dashed line, the newest bar brighter
-            const max = weekOk ? Math.max(...groheWeek.map(r => r.v), A || 0, 1) : 1;
-            const bars = weekOk ? `<div class="gh-wk">${groheWeek.map((r, i) => `<div class="gh-d${i === groheWeek.length - 1 ? ' last' : ''}" title="${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' })}: ${fmt(r.v, 0)} L"><b>${r.v >= 1 ? fmt(r.v, 0) : ''}</b><i style="height:${Math.max(3, r.v / max * 100)}%"></i><span>${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'short' }).replace('.', '').slice(0, 2)}</span></div>`).join('')}</div>` : '';
+            const max = weekOk ? Math.max(...wk.map(r => r.v), A || 0, 1) : 1;
+            const bars = weekOk ? `<div class="gh-wk">${wk.map((r, i) => `<div class="gh-d${i === wk.length - 1 ? ' last' : ''}" title="${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' })}: ${fmt(r.v, 0)} L"><b>${r.v >= 1 ? fmt(r.v, 0) : ''}</b><i style="height:${Math.max(3, r.v / max * 100)}%"></i><span>${new Date(r.t).toLocaleDateString('da-DK', { weekday: 'short' }).replace('.', '').slice(0, 2)}</span></div>`).join('')}</div>` : '';
             const mini = (label, s, v, unit, d) => s ? `<button class="gh-mini ${isOk(s) ? '' : 'off'}" data-e="${esc(s.entity_id)}"><div class="l">${label}</div><div class="v">${fmt(v, d)}<small>${unit}</small></div></button>` : '';
             return `<div class="gh">
                 <div class="gh-top">${pill}${offline ? '<span class="gh-pill bad"><i></i>Offline</span>' : ''}${temp ? `<button class="gh-temp" data-e="${esc(temp.entity_id)}" title="Temperatur i enheden"><small>enheden</small>${fmt(num(temp), 1)}<em>°C</em></button>` : ''}</div>
@@ -454,10 +462,10 @@
         const powOf = new Map();   // climate entity -> the power sensor of the same device
         let states0 = new Map();   // all states, for the lookups above
         // The Grohe integration polls its cloud only every 15 minutes (its default, 900 s), so a valve closed in the Grohe app showed "åben" here for up to a quarter
-        // of an hour. The water card therefore asks for a fresh reading (homeassistant.update_entity on the valve refreshes the whole device) at most every 3 minutes.
+        // of an hour. The water card therefore asks for a fresh reading (homeassistant.update_entity on the valve refreshes the whole device) at most every 10 minutes (data is limited).
         let groheAt = 0;
         async function refreshGrohe() {
-            if (DEMO || Date.now() - groheAt < 180e3) return;
+            if (DEMO || Date.now() - groheAt < 600e3) return;
             groheAt = Date.now();
             const valve = registry.find(r => r.platform === 'grohe_smarthome' && r.entity_id.startsWith('valve.'))?.entity_id;
             if (valve) try { await callApi('POST', 'services/homeassistant/update_entity', { entity_id: valve }); } catch (e) { /* the next try */ }
@@ -559,7 +567,7 @@
         const tick = () => load().catch(showError);
         tick();
         loadMillRooms().then(got => { if (got) tick(); });
-        setInterval(tick, 10e3);
+        setInterval(() => { if (!document.hidden) tick(); }, 10e3);   // nothing is fetched while the card is not seen
     </script>
 </body>
 </html>

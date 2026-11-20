@@ -4,7 +4,7 @@ const fs = require('fs');
 const env = Object.fromEntries(fs.readFileSync(process.argv[2], 'utf8').split('\n').filter(l => l.includes('=')).map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1).replace(/^"|"$/g, '')]; }));
 const [url, out, w = 372, h = 440] = process.argv.slice(3);
 (async () => {
-  const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
+  const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', userDataDir: require('os').tmpdir() + '/ha-puppeteer-cache' });   // persistent profile: the HA frontend is fetched once, not on every run (data over Tailscale)
   const p = await b.newPage();
   await p.setViewport({ width: +w, height: +h, deviceScaleFactor: 2 });
   p.on('pageerror', e => console.log('pageerror:', e.message));

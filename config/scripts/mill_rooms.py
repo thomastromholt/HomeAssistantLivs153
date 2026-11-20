@@ -65,6 +65,7 @@ def read_mill():
                 "name": room.get("name"),
                 "power": sum(m.get("currentPower") or 0 for m in metrics),          # W, all devices in the room
                 "received": max([m.get("receivedAt") or "" for m in metrics] or [""]),
+                "online": all(d.get("isConnected") is not False for d in (room.get("devices") or [])),   # False = the app says the panel is offline
                 "away": room.get("roomAwayTemperature"),
                 "comfort": room.get("roomComfortTemperature"),
                 "sleep": room.get("roomSleepTemperature"),

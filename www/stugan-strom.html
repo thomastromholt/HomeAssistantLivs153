@@ -106,12 +106,11 @@
             <div class="sig-controls"><label>Sammenlign fra <input type="date" id="sigSplit"></label><button id="sigReset">Skiftet til varmepumpe</button><label><input type="checkbox" id="sigShow"> Vis besøgsdage</label></div>
             <div class="note" id="sigVisits" style="margin:0 4px 6px"></div>
             <div class="chart"><canvas id="sigChart"></canvas></div>
-            <div class="split" id="sigStats" style="margin-top:10px"></div>
         </div>
         <div class="note" id="note"></div>
     </div>
 
-    <script src="/local/card-common.js?v=1"></script>
+    <script src="/local/card-common.js?v=2"></script>
     <script>
         /* Consumption at the cottage, like Strømforbrug at home.
            Total and cost: the meter's hourly statistics through Tibber (tibber:energy_consumption_… / …totalcost_…).
@@ -144,10 +143,15 @@
             const vpU = reg.find(r => r.platform === 'mill' && r.entity_id.startsWith('climate.') && /varmepump/i.test(r.entity_id))?.unique_id;
             const vpStat = vpU ? 'mill:energy_' + vpU.replace(/-/g, '_') : null;
             sources = {
-                vp: vpStat && list.some(x => x.statistic_id === vpStat) ? [vpStat] : [],
+                // The heat pump's own Mill socket is the truth (the Pulse only gives an estimate). Mill's imported 'mill:energy_' statistic is all zeros for it, so the
+                // history comes from the socket's year counter (a running total, its 'change' is the kWh per hour); today's total is the day sensor.
+                // The day sensors (kWh since midnight, reset each day) have clean hourly statistics; the year counters jumped when the integration was reloaded.
+                vp: list.some(x => x.statistic_id === 'sensor.varmepumpe_day_consumption') ? ['sensor.varmepumpe_day_consumption'] : [],
+                vpDay: 'sensor.varmepumpe_day_consumption',
+                millDay: reg.filter(r => r.platform === 'mill' && /_day_consumption$/.test(r.entity_id) && !/varmepump/.test(r.entity_id) && list.some(x => x.statistic_id === r.entity_id)).map(r => r.entity_id),
                 cons: cons?.statistic_id, cost: cons?.statistic_id.replace('energy_consumption_', 'energy_totalcost_'),
                 ev: list.filter(s => s.statistic_id === 'sensor.stugan_energy_meter').map(s => s.statistic_id),
-                mill: list.filter(s => s.source === 'mill' && s.statistic_id.startsWith('mill:energy_') && s.statistic_id !== vpStat).map(s => s.statistic_id),
+                mill: reg.filter(r => r.platform === 'mill' && /_day_consumption$/.test(r.entity_id) && !/varmepump/.test(r.entity_id) && list.some(x => x.statistic_id === r.entity_id)).map(r => r.entity_id),
                 sensibo: list.filter(s => /sensibo|thomas_s_device/.test(s.statistic_id) && s.has_sum && /kWh/.test(s.statistics_unit_of_measurement || s.unit_of_measurement || '')).map(s => s.statistic_id),
             };
             return sources;
@@ -178,6 +182,27 @@
             return (phaseIds = { l1: rt(/_rt_currentL1$/), l2: rt(/_rt_currentL2$/), l3: rt(/_rt_currentL3$/), ev: 'sensor.stugan_charge_power', sens: reg.find(r => r.platform === 'sensibo' && r.entity_id.startsWith('climate.'))?.entity_id });
         }
         const hpPf = dA => { const x = Math.min(1, Math.max(0, (dA - 3) / 2)); return 0.82 + 0.16 * x * x * (3 - 2 * x); };
+        /* A radiator on L1 (the guest cottage's frost guard cycles ~15 min on, Mill reports 0 W) switches on in ONE step of 1.7-3.3 A and off in one equal step;
+           the heat pump ramps over about a minute. So a fast rise that holds until an equal fall is a radiator. Measured 2026-11-20 19:48-20:04: +3.1 A, then -3.3 A. */
+        function stepTracker(thr) {
+            let steps = [], h = [];   // h: the last four readings; a jump counts only when the readings on both sides of it are flat
+            return (a, t) => {
+                steps = steps.filter(s => t - s.t < 45 * 60e3);
+                if (a != null) {
+                    h.push(a); if (h.length > 4) h.shift();
+                    if (h.length === 4) {
+                        const d = h[2] - h[1], flat = Math.abs(h[1] - h[0]) < 0.5 && Math.abs(h[3] - h[2]) < 0.5;
+                        if (flat && d >= thr) steps.push({ t, a: d });
+                        else if (flat && d <= -thr) {
+                            let bi = -1, bd = 1.0;
+                            steps.forEach((s, i) => { const diff = Math.abs(s.a + d); if (diff <= bd) { bd = diff; bi = i; } });
+                            if (bi >= 0) steps.splice(bi, 1);
+                        }
+                    }
+                }
+                return steps.reduce((p, s) => p + s.a, 0);   // amps of radiators switched on in steps
+            };
+        }
         async function phaseDay(d0, ids) {
             const end = Math.min(+d0 + 864e5, Date.now()), V = 232, WATER_A = 6.5, STEP = 30e3, out = { vv: Array(24).fill(0), vp: Array(24).fill(0), mill: Array(24).fill(0) };
             const want = [ids.l1, ids.l2, ids.l3, ids.ev, ids.sens].filter(Boolean);
@@ -188,6 +213,7 @@
             const st = rows(ids.sens).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: r.state })).sort((a, b) => a.t - b.t);
             if (!l3.length && !l1.length) return out;
             const cur = [{ a: l1, i: 0, v: null }, { a: l2, i: 0, v: null }, { a: l3, i: 0, v: null }, { a: ev, i: 0, v: 0 }, { a: st, i: 0, v: null }];
+            const stepA = stepTracker(2.0);
             for (let t = +d0; t < end; t += STEP) {
                 for (const c of cur) while (c.i < c.a.length && c.a[c.i].t < t + STEP) { c.v = c.a[c.i].v; c.i++; }
                 const [a1, a2, a3, e, sens] = cur.map(c => c.v), h = new Date(t).getHours(), k = STEP / 3600e3, off = sens === 'off';
@@ -196,8 +222,9 @@
                 if (a3 != null) { if (e < 0.1 && x >= 11) x = 0; else x = Math.max(0, x - e * 1000 / V); }
                 if (x >= 4.5) { out.vv[h] += WATER_A * V / 1000 * k; x = Math.max(0, x - WATER_A); }
                 let rad = (a2 == null ? 0 : Math.max(0, a2 - 0.4)) * V / 1000 + (x >= 1.5 && x <= 4 ? x * V / 1000 : 0);
-                const dA = a1 == null ? 0 : Math.max(0, a1 - 0.4);
-                if (off) rad += dA * V / 1000; else out.vp[h] += dA * V * hpPf(dA) / 1000 * k;
+                const stepKw = stepA(a1, t) * V / 1000;
+                const dA = a1 == null ? 0 : Math.max(0, a1 - 0.4 - stepKw * 1000 / V);
+                if (off) rad += (a1 == null ? 0 : Math.max(0, a1 - 0.4)) * V / 1000; else { out.vp[h] += dA * V * hpPf(dA) / 1000 * k; rad += Math.min(stepKw, (a1 == null ? 0 : Math.max(0, a1 - 0.4)) * V / 1000); }
                 out.mill[h] += rad * k;
             }
             return out;
@@ -211,7 +238,19 @@
                 if (+d0 + 864e5 < Date.now() - 9.5 * 864e5 || +d0 < new Date('2026-11-20T00:00:00')) continue;
                 let ph = phaseCache.get(k);
                 if (!ph || (k === todayKey && Date.now() - (phaseCache.get(k + '@') || 0) > 5 * 60e3)) { ph = await phaseDay(d0, ids); phaseCache.set(k, ph); phaseCache.set(k + '@', Date.now()); }
-                for (const h of hrs) if (dayKey(h.t) === k) { const i = new Date(h.t).getHours(); h.vv = ph.vv[i] || 0; h.vp = ph.vp[i] || 0; h.mill = ph.mill[i] || 0; }
+                // Varmepumpe: the Mill socket decides the amount. A past day with its own hourly figures keeps them; today takes the socket's day total, and the Pulse's
+                // hourly shape only spreads it over the hours (the socket's hourly statistics miss the hours when its reports were late).
+                // El-varme is the same: the Mill rooms' own kWh counters (the sum of their day sensors), the Pulse's radiator steps only give the hourly shape.
+                const mine = hrs.filter(h => dayKey(h.t) === k), phSum = ph.vp.reduce((a, b) => a + b, 0), phMill = ph.mill.reduce((a, b) => a + b, 0);
+                const keepVp = k !== todayKey && mine.reduce((a, h) => a + (h.vp || 0), 0) > 0.05, keepMill = k !== todayKey && mine.reduce((a, h) => a + (h.mill || 0), 0) > 0.05;
+                const dayTotal = async ids => { let sum = 0, any = false; for (const id of ids || []) { const st = await callApi('GET', 'states/' + id).catch(() => null); const v = st ? parseFloat(st.state) : NaN; if (!Number.isNaN(v)) { sum += v; any = true; } } return any && sum > 0 ? sum : null; };
+                const vpToday = k === todayKey && sources ? await dayTotal([sources.vpDay]) : null, millToday = k === todayKey && sources ? await dayTotal(sources.millDay) : null;
+                if (k === todayKey) todayMill = { vp: vpToday, mill: millToday };
+                for (const h of mine) {
+                    const i = new Date(h.t).getHours(); h.vv = ph.vv[i] || 0;
+                    if (!keepVp) h.vp = vpToday != null && phSum > 0 ? ph.vp[i] * vpToday / phSum : ph.vp[i] || 0;
+                    if (!keepMill) h.mill = millToday != null && phMill > 0 ? ph.mill[i] * millToday / phMill : ph.mill[i] || 0;
+                }
             }
         }
 
@@ -263,11 +302,15 @@
 
         // The meter's hourly statistics come through Tibber about a day late, so today is short there (3.2 kWh at lunchtime against 8.4 on the
         // card). The Pulse counts today's kWh and cost in real time (accumulated consumption / cost since midnight), so today takes the larger.
+        let todayMill = null;   // the Mill counters' kWh since midnight (the hourly rows only cover the hours Tibber has delivered, so the day takes these directly)
         function applyLive() {
             if (!liveToday) return;
             const k = liveToday.key;
             if (dayKey(month).slice(0, 7) !== k.slice(0, 7)) return;   // another month is shown
             const d = days.find(x => x.k === k);
+            if (d && todayMill && k === dayKey(Date.now())) {
+                for (const [key, v] of [['vp', todayMill.vp], ['mill', todayMill.mill]]) if (v != null && v > d[key]) { const extra = v - d[key]; d[key] = v; d.rest = Math.max(0, d.rest - extra); }
+            }
             if (d) { if (liveToday.kwh > d.total) { d.rest += liveToday.kwh - d.total; d.total = liveToday.kwh; d.cost = Math.max(d.cost, liveToday.cost); } }
             else if (liveToday.kwh > 0) days.push({ k, t: new Date(k + 'T12:00:00').getTime(), total: liveToday.kwh, cost: liveToday.cost, mill: 0, ev: 0, sensibo: 0, vp: 0, rest: liveToday.kwh });
         }
@@ -469,10 +512,12 @@
             selected = dayKey(d); month = new Date(d.getFullYear(), d.getMonth(), 1); go();
         };
 
+        let liveReg = null, liveRegAt = 0;
         async function live() {
             if (DEMO) { document.getElementById('power').textContent = '2,14'; document.getElementById('heroSub').textContent = 'Pulse, lige nu'; return; }
             const states = new Map((await callApi('GET', 'states')).map(s => [s.entity_id, s]));
-            const reg = (await callWS({ type: 'config/entity_registry/list' })) || [];
+            if (!liveReg || Date.now() - liveRegAt > 600e3) { liveReg = (await callWS({ type: 'config/entity_registry/list' })) || liveReg || []; liveRegAt = Date.now(); }   // the registry is ~150 KB: not every 15 s
+            const reg = liveReg;
             const mine = reg.filter(r => r.platform === 'tibber' && !r.disabled_by);
             const price = mine.find(r => /\/kWh/.test(states.get(r.entity_id)?.attributes.unit_of_measurement || ''));
             // Tibber Pulse: the integration puts its real-time sensors under their own device ("Tibber Pulse <home>"), unique id <home>_rt_power
@@ -591,20 +636,6 @@
             });
             document.getElementById('sigVisits').textContent = `Grundforbrug ${f(base, 1)} kWh pr. dag (køleskab, Mill-standby og småt, stiplet linje). ${visits.length} besøgsdage udeladt (elbil, eller en time der skiller sig ud fra dagens niveau${manual.size ? `, ${manual.size} rettet af dig` : ''}). Tryk på et punkt for at flytte en dag mellem besøg og tom.`;
             const avg = (rs, key) => rs.length ? rs.reduce((a, r) => a + r[key], 0) / rs.length : 0;
-            document.getElementById('sigStats').innerHTML = groups.map(g => {
-                const fit = g.fit;
-                const head = `<span class="sp" style="padding:0;background:none"><i style="background:${g.color}"></i><b>${g.name}</b></span> · ${g.rows.length} dage (${g.rows[0].k} → ${g.rows[g.rows.length - 1].k})<br>`;
-                const mean = g.rows.reduce((a, r) => a + r.kwh, 0) / g.rows.length;
-                if (!fit) return `<div class="sg">${head}gns. <b>${f(mean, 1)} kWh</b> pr. dag · for få dage til en linje (mindst 3).</div>`;
-                return `<div class="sg">${head}gns. <b>${f(mean, 1)} kWh</b> pr. dag, mindste <b>${f(Math.min(...g.rows.map(r => r.kwh)), 1)}</b><br><b>${f(Math.abs(fit.b), 2)} kWh</b> ${fit.b < 0 ? 'mere' : 'mindre'} pr. grad koldere<br>Ved ${f(fit.xmin, 0)} °C: <b>${f(fit.at(fit.xmin), 1)} kWh</b> (opvarmning <b>${f(Math.max(0, fit.at(fit.xmin) - base), 1)}</b>)<br>Ved ${f(fit.xmax, 0)} °C: <b>${f(fit.at(fit.xmax), 1)} kWh</b> (opvarmning <b>${f(Math.max(0, fit.at(fit.xmax) - base), 1)}</b>)<br>Mill: <b>${f(avg(g.rows, 'mill'), 2)} kWh</b> pr. dag (${f(avg(g.rows, 'mill') / Math.max(0.01, avg(g.rows, 'kwh')) * 100, 0)} % af forbruget) · R² ${f(fit.r2, 2)}</div>`;
-            }).join('') + (() => {
-                const hp = groups.find(g => g.name === 'Varmepumpe'), prev = groups.filter(g => g !== hp).pop();
-                if (!hp || !prev || !hp.fit || !prev.fit) return '';
-                const lo = Math.ceil(Math.max(hp.fit.xmin, prev.fit.xmin)), hi = Math.floor(Math.min(hp.fit.xmax, prev.fit.xmax));
-                if (hi - lo < 1) return `<div class="sg"><b>Varmepumpen mod ${prev.name.split(' (')[0].toLowerCase()}</b><br>De to perioder overlapper ikke i temperatur, så de kan ikke sammenlignes direkte.</div>`;
-                const d = x => hp.fit.at(x) - prev.fit.at(x), col = v => v <= 0 ? '#5fe085' : '#ff6b61', row = x => `Ved ${x} °C: <b style="color:${col(d(x))}">${d(x) > 0 ? '+' : ''}${f(d(x), 1)} kWh/dag</b>`;
-                return `<div class="sg"><b>Varmepumpen mod ${prev.name.split(' (')[0].toLowerCase()}</b><br>${row(lo)}<br>${row(hi)}<br><small>Kun ${lo}–${hi} °C, hvor begge er målt.</small></div>`;
-            })();
         }
         document.getElementById('sigShow').checked = showVisits;
         document.getElementById('sigShow').addEventListener('change', e => { showVisits = e.target.checked; store.set('ss_showvisits', showVisits ? '1' : '0'); signature(); });
@@ -622,7 +653,7 @@
         const go = () => (view === 'year' ? loadYear() : loadMonth()).then(render).then(live).then(() => forecast().catch(e => console.warn('forecast', e))).catch(showError);
         go();
         signature().catch(showError);
-        setInterval(() => live().catch(() => {}), 15e3);
+        setInterval(() => { if (!document.hidden) live().catch(() => {}); }, 15e3);
     </script>
 </body>
 </html>

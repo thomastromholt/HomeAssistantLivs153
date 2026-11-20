@@ -33,7 +33,7 @@
         <div class="now"><div class="now-label">Nu</div><div class="now-value" id="nowValue">–</div></div>
     </div>
 
-    <script src="/local/card-common.js?v=1"></script>
+    <script src="/local/card-common.js?v=2"></script>
     <script>
         /* The cottage's total price per kWh from Tibber (tibber.get_prices): today, and tomorrow once it is published, every
            15 minutes, drawn like the price card at home: a stepped curve, a red line for now, and the price now underneath.
@@ -159,7 +159,7 @@
             } catch (e) { showError(e); }
         }
         render();
-        setInterval(render, 60e3);
+        setInterval(() => { if (!document.hidden) render(); }, 5 * 60e3);   // the prices change every 15 minutes: no need to ask every minute, and not when the card is not seen
     </script>
 </body>
 </html>

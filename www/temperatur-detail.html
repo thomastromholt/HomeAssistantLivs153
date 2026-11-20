@@ -161,7 +161,7 @@
         </div>
     </div>
 
-    <script src="/local/card-common.js?v=1"></script>
+    <script src="/local/card-common.js?v=2"></script>
     <script>
         /* ---------------------------------------------------------------------------------------------
            THE METERS AND WHERE THEY HAVE STOOD
@@ -403,6 +403,13 @@
                     const h = await historyRows(ids, start, true);
                     rows = { [s.temperature]: attrRows(h[s.temperature], 'current_temperature'), [s.humidity]: s.humidity ? numericRows(h[s.humidity]) : [] };
                     target = bucketize(attrRows(h[s.temperature], 'temperature'), cfg.bucket);
+                    if (!/^climate\.thomas_s_device/.test(s.temperature)) {
+                        // A Mill panel's own 'temperature' attribute is not the room's setpoint (Sovrum said 23 while the room followed Away 11). The line is the setpoint the
+                        // room follows now, from Mill's cloud: flat across the window, since Mill gives no history of it.
+                        const st = await callApi('GET', 'states/' + s.temperature).catch(() => null), mr = st ? await millRoom(st.attributes.room) : null;
+                        const m = mr ? (mr.mode === 'weekly_program' ? mr.activeModeFromWeeklyProgram : mr.mode) : null, v = mr && typeof mr[m] === 'number' ? mr[m] : null;
+                        target = v == null ? [] : [{ x: start, y: v }, { x: end, y: v }];
+                    }
                 } else {
                     rows = cfg.stats ? await statsRows(ids, start, cfg.period).catch(() => null) : null;
                     if (!rows || !(rows[s.temperature] || []).length) {
@@ -415,7 +422,7 @@
                 const hum = s.humidity ? bucketize(rows[s.humidity] || [], cfg.bucket) : [];
                 lastTemp = temp; lastHum = hum;
                 const extra = target.length ? [{ label: 'Mål', data: target, borderColor: '#ffb340', borderWidth: 1.6, borderDash: [5, 4], pointRadius: 0, stepped: 'before', fill: false }] : [];
-                if (extra.length) extra[0].label = /^climate\.thomas_s_device/.test(s.temperature) ? 'Mål' : 'Dagtemp.';
+                if (extra.length) extra[0].label = /^climate\.thomas_s_device/.test(s.temperature) ? 'Mål' : 'Set temp';
                 renderChart('tempChart', r, start, end, temp, { color: LINE, unit: '°', minSpan: 3, labels: true, extra });
                 if (s.humidity) renderChart('humChart', r, start, end, hum, { color: HUMLINE, unit: '%', minSpan: 20, labels: false, zone: { from: 25, to: 60 } });
                 renderKpis(temp, hum, start, end);
@@ -597,7 +604,9 @@
             if (!r) return null;
             const m = r.mode === 'weekly_program' ? r.activeModeFromWeeklyProgram : r.mode;
             const house = millCache?.house?.mode === 'away' ? ' · huset er i away-mode' : '';
-            return `Aktiv: ${MILL_NAME[m] || m} ${typeof r[m] === 'number' ? f1(r[m]) + ' °C' : ''}${house} · Dag ${f1(r.comfort)} · Nat ${f1(r.sleep)} · Away ${f1(r.away)}`;
+            // "Set temp" is the temperature the room follows right now (day, night or away); the day temperature is not shown on its own
+            const modeNote = m && m !== 'comfort' ? ` (${MILL_NAME[m] || m})` : '';
+            return `Set temp ${typeof r[m] === 'number' ? f1(r[m]) + ' °C' : '–'}${modeNote}${house} · Nat ${f1(r.sleep)} · Away ${f1(r.away)}`;
         }
         const awayKey = room => 'mill_away_' + String(room || '').toLowerCase();
         const awayStored = room => { try { const v = parseFloat(localStorage.getItem(awayKey(room))); return Number.isNaN(v) ? null : v; } catch (e) { return null; } };
@@ -690,8 +699,8 @@
         }
 
         renderChips(); renderMoves(); layout();
-        load(); setInterval(load, 10e3);
-        loadCharts(); setInterval(loadCharts, 60e3);
+        load(); setInterval(() => { if (!document.hidden) load(); }, 10e3);
+        loadCharts(); setInterval(() => { if (!document.hidden) loadCharts(); }, 60e3);
     </script>
 </body>
 </html>

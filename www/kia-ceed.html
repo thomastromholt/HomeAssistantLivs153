@@ -85,7 +85,7 @@
         <div class="grid" id="tiles"></div>
     </div>
 
-    <script src="/local/card-common.js?v=1"></script>
+    <script src="/local/card-common.js?v=2"></script>
     <script>
         // ?charger=stugan shows the same view for the cottage's Zaptec (no plan there: Lad nu / Stop press Zaptec's own buttons).
         const CH = new URLSearchParams(location.search).get('charger') || 'go2';
@@ -337,7 +337,7 @@
         }
 
         render();
-        setInterval(render, 15e3);
+        setInterval(() => { if (!document.hidden) render(); }, 15e3);   // nothing is fetched while the card is not seen
         // Redraw the moment the charger or the buttons change, not only on the 15 s poll.
         watchEntities([E.mode, E.power, E.ladNu, E.ladStop, E.window], () => render());
     </script>
