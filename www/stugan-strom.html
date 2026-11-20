@@ -123,8 +123,8 @@
         const INK = SUMMER ? { grid: 'rgba(20,50,63,0.10)', tick: '#5f7783', line: '#1a8fb8', cost: '#e08a00' } : { grid: 'rgba(255,255,255,0.05)', tick: '#6d808c', line: '#64d2ff', cost: '#ffb340' };
         // One colour per consumer: Mill and Sensibo apart, the car as at home, the rest in slate.
         const CATS = SUMMER
-            ? [{ key: 'mill', name: 'El-varme', color: '#e8870e' }, { key: 'vp', name: 'Varmepumpe', color: '#8e5fd0' }, { key: 'ev', name: 'Elbil', color: '#3aa856' }, { key: 'rest', name: 'Resten', color: '#6f9bb3' }]
-            : [{ key: 'mill', name: 'El-varme', color: '#ffb340' }, { key: 'vp', name: 'Varmepumpe', color: '#c792ea' }, { key: 'ev', name: 'Elbil', color: '#5fe085' }, { key: 'rest', name: 'Resten', color: '#4d86a6' }];
+            ? [{ key: 'mill', name: 'El-varme', color: '#e8870e' }, { key: 'vp', name: 'Varmepumpe', color: '#8e5fd0' }, { key: 'vv', name: 'Varmtvand', color: '#e0526a' }, { key: 'ev', name: 'Elbil', color: '#3aa856' }, { key: 'rest', name: 'Resten', color: '#6f9bb3' }]
+            : [{ key: 'mill', name: 'El-varme', color: '#ffb340' }, { key: 'vp', name: 'Varmepumpe', color: '#c792ea' }, { key: 'vv', name: 'Varmtvand', color: '#ff7a8a' }, { key: 'ev', name: 'Elbil', color: '#5fe085' }, { key: 'rest', name: 'Resten', color: '#4d86a6' }];
         document.getElementById('close').addEventListener('click', () => closePopup());
         const f = (v, d) => v.toLocaleString('da-DK', { minimumFractionDigits: d, maximumFractionDigits: d });
         const isOk = s => s && !['unavailable', 'unknown'].includes(s.state);
@@ -163,6 +163,58 @@
             return out;
         }
 
+        // The groups the meter statistics do not know (Varmtvand, Varmepumpe, El-varme) are found from the Pulse's phase currents, as on the card, per hour:
+        //  Varmepumpe = L1 above its 0.4 A baseline, times 232 V and its power factor (0.82 at 3 A, 0.98 from 5 A), while the Sensibo is not off.
+        //  El-varme   = L2 above its baseline (Stuen is alone there) + a 1.5-4 A load on L3 (Barnrum) + L1 above baseline while the Sensibo is OFF.
+        //  Varmtvand  = L3 above its 0.2 A baseline minus the charger (Zaptec's power; a very big L3 with nothing from Zaptec yet is the charger, which Zaptec
+        //               reports up to ~2 minutes late): what is left at 4.5 A or more is the water heater (6.5 A, 1.46 kW).
+        // Needs the raw history (kept ~10 days) and the Pulse (in Home Assistant since 2026-11-20), so earlier days keep everything in "Resten". Radiators on L1 while
+        // the heat pump runs cannot be told from it here (the card uses Mill's reports for that), so they count as Varmepumpe in this view.
+        const phaseCache = new Map(); let phaseIds = null;
+        async function phaseEntities() {
+            if (phaseIds) return phaseIds;
+            const reg = (await callWS({ type: 'config/entity_registry/list' }).catch(() => [])) || [];
+            const rt = re => reg.find(r => r.platform === 'tibber' && re.test(r.unique_id || ''))?.entity_id;
+            return (phaseIds = { l1: rt(/_rt_currentL1$/), l2: rt(/_rt_currentL2$/), l3: rt(/_rt_currentL3$/), ev: 'sensor.stugan_charge_power', sens: reg.find(r => r.platform === 'sensibo' && r.entity_id.startsWith('climate.'))?.entity_id });
+        }
+        const hpPf = dA => { const x = Math.min(1, Math.max(0, (dA - 3) / 2)); return 0.82 + 0.16 * x * x * (3 - 2 * x); };
+        async function phaseDay(d0, ids) {
+            const end = Math.min(+d0 + 864e5, Date.now()), V = 232, WATER_A = 6.5, STEP = 30e3, out = { vv: Array(24).fill(0), vp: Array(24).fill(0), mill: Array(24).fill(0) };
+            const want = [ids.l1, ids.l2, ids.l3, ids.ev, ids.sens].filter(Boolean);
+            const res = await callApi('GET', `history/period/${d0.toISOString()}?filter_entity_id=${want.join(',')}&end_time=${encodeURIComponent(new Date(end).toISOString())}&minimal_response&no_attributes`).catch(() => []);
+            const rows = id => (res || []).find(r => r[0] && r[0].entity_id === id) || [];
+            const num = (id, f = v => v) => rows(id).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: f(parseFloat(r.state)) })).filter(p => !Number.isNaN(p.v)).sort((a, b) => a.t - b.t);
+            const l1 = num(ids.l1), l2 = num(ids.l2), l3 = num(ids.l3), ev = num(ids.ev, v => v / 1000);
+            const st = rows(ids.sens).map(r => ({ t: new Date(r.last_updated || r.last_changed).getTime(), v: r.state })).sort((a, b) => a.t - b.t);
+            if (!l3.length && !l1.length) return out;
+            const cur = [{ a: l1, i: 0, v: null }, { a: l2, i: 0, v: null }, { a: l3, i: 0, v: null }, { a: ev, i: 0, v: 0 }, { a: st, i: 0, v: null }];
+            for (let t = +d0; t < end; t += STEP) {
+                for (const c of cur) while (c.i < c.a.length && c.a[c.i].t < t + STEP) { c.v = c.a[c.i].v; c.i++; }
+                const [a1, a2, a3, e, sens] = cur.map(c => c.v), h = new Date(t).getHours(), k = STEP / 3600e3, off = sens === 'off';
+                // L3: charger, water heater, a radiator
+                let x = a3 == null ? 0 : Math.max(0, a3 - 0.2);
+                if (a3 != null) { if (e < 0.1 && x >= 11) x = 0; else x = Math.max(0, x - e * 1000 / V); }
+                if (x >= 4.5) { out.vv[h] += WATER_A * V / 1000 * k; x = Math.max(0, x - WATER_A); }
+                let rad = (a2 == null ? 0 : Math.max(0, a2 - 0.4)) * V / 1000 + (x >= 1.5 && x <= 4 ? x * V / 1000 : 0);
+                const dA = a1 == null ? 0 : Math.max(0, a1 - 0.4);
+                if (off) rad += dA * V / 1000; else out.vp[h] += dA * V * hpPf(dA) / 1000 * k;
+                out.mill[h] += rad * k;
+            }
+            return out;
+        }
+        async function addWater(hrs) {
+            if (DEMO) return;
+            const ids = await phaseEntities(); if (!ids.l3 && !ids.l1) return;
+            const todayKey = dayKey(Date.now());
+            for (const k of new Set(hrs.map(h => dayKey(h.t)))) {
+                const d0 = new Date(k + 'T00:00:00');
+                if (+d0 + 864e5 < Date.now() - 9.5 * 864e5 || +d0 < new Date('2026-11-20T00:00:00')) continue;
+                let ph = phaseCache.get(k);
+                if (!ph || (k === todayKey && Date.now() - (phaseCache.get(k + '@') || 0) > 5 * 60e3)) { ph = await phaseDay(d0, ids); phaseCache.set(k, ph); phaseCache.set(k + '@', Date.now()); }
+                for (const h of hrs) if (dayKey(h.t) === k) { const i = new Date(h.t).getHours(); h.vv = ph.vv[i] || 0; h.vp = ph.vp[i] || 0; h.mill = ph.mill[i] || 0; }
+            }
+        }
+
         async function loadMonth() {
             const start = new Date(month), end = new Date(month); end.setMonth(end.getMonth() + 1);
             if (DEMO) hours = demoHours(start, end);
@@ -172,15 +224,16 @@
                 const ids = [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo, ...s.vp];
                 const res = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: ids, period: 'hour', types: ['change'] });
                 const at = new Map();   // hour -> row
-                const row = t => { if (!at.has(t)) at.set(t, { t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0 }); return at.get(t); };
+                const row = t => { if (!at.has(t)) at.set(t, { t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0, vv: 0 }); return at.get(t); };
                 const add = (id, key) => ((res && res[id]) || []).forEach(r => { if (r.change != null) row(new Date(r.start).getTime())[key] += r.change; });
                 add(s.cons, 'total'); add(s.cost, 'cost');
                 s.ev.forEach(id => add(id, 'ev')); s.mill.forEach(id => add(id, 'mill')); s.sensibo.forEach(id => add(id, 'sensibo')); s.vp.forEach(id => add(id, 'vp'));
                 hours = [...at.values()].filter(r => r.total > 0 || r.cost > 0 || r.ev > 0 || r.mill > 0).sort((a, b) => a.t - b.t);
             }
-            for (const h of hours) { h.rest = Math.max(0, h.total - h.mill - h.ev - h.sensibo - h.vp); }
+            await addWater(hours);
+            for (const h of hours) { h.rest = Math.max(0, h.total - h.mill - h.ev - h.sensibo - h.vp - h.vv); }
             const by = new Map();
-            for (const h of hours) { const k = dayKey(h.t); const d = by.get(k) || { k, t: h.t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0, rest: 0 }; for (const c of ['total', 'cost', 'mill', 'ev', 'sensibo', 'vp', 'rest']) d[c] += h[c]; by.set(k, d); }
+            for (const h of hours) { const k = dayKey(h.t); const d = by.get(k) || { k, t: h.t, total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0, vv: 0, rest: 0 }; for (const c of ['total', 'cost', 'mill', 'ev', 'sensibo', 'vp', 'vv', 'rest']) d[c] += h[c]; by.set(k, d); }
             days = [...by.values()].filter(d => d.total > 0);
             applyLive();
             const complete = new Set(days.map(d => d.k));
@@ -257,7 +310,7 @@
             }
             // split chips: the sum over what is on show (the day's hours or the month's days)
             const shownRows = view === 'day' ? hs : days, sumRows = shownRows.reduce((a, r) => a + r.total, 0);
-            const hasSrc = c => DEMO ? shownRows.some(d => d[c.key] > 0) : c.key === 'rest' || !!(sources && sources[c.key] && sources[c.key].length);
+            const hasSrc = c => DEMO ? shownRows.some(d => d[c.key] > 0) : c.key === 'rest' || (['vv', 'vp', 'mill'].includes(c.key) && shownRows.some(d => d[c.key] > 0) ? true : !!(sources && sources[c.key] && sources[c.key].length));
             const shown = CATS.filter(hasSrc);
             document.getElementById('split').innerHTML = chips(shownRows, shown, sumRows);
             // days
@@ -299,12 +352,12 @@
                 const s = await discover();
                 if (!s.cons) { months = []; return; }
                 const res = await callWS({ type: 'recorder/statistics_during_period', start_time: start.toISOString(), end_time: end.toISOString(), statistic_ids: [s.cons, s.cost, ...s.ev, ...s.mill, ...s.sensibo, ...s.vp], period: 'month', types: ['change'] });
-                const at = new Map(), row = t => { const k = dayKey(t).slice(0, 7); if (!at.has(k)) at.set(k, { k, t: +new Date(t), total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0 }); return at.get(k); };
+                const at = new Map(), row = t => { const k = dayKey(t).slice(0, 7); if (!at.has(k)) at.set(k, { k, t: +new Date(t), total: 0, cost: 0, mill: 0, ev: 0, sensibo: 0, vp: 0, vv: 0 }); return at.get(k); };
                 const add = (id, key) => ((res && res[id]) || []).forEach(r => { if (r.change != null) row(r.start)[key] += r.change; });
                 add(s.cons, 'total'); add(s.cost, 'cost'); s.ev.forEach(i => add(i, 'ev')); s.mill.forEach(i => add(i, 'mill')); s.sensibo.forEach(i => add(i, 'sensibo')); s.vp.forEach(i => add(i, 'vp'));
                 months = [...at.values()].filter(r => r.total > 0).sort((a, b) => a.t - b.t);
             }
-            for (const m of months) m.rest = Math.max(0, m.total - m.mill - m.ev - m.sensibo - m.vp);
+            for (const m of months) m.rest = Math.max(0, m.total - m.mill - m.ev - m.sensibo - m.vp - m.vv);
         }
         function renderYear() {
             const set = (id, html, sub) => { document.getElementById(id).innerHTML = html; document.getElementById(id + 'Sub').textContent = sub ?? ''; };
@@ -321,7 +374,7 @@
                 set('kLast', `${f(last.total, 0)}<small>kWh</small>`, `${mn(last.t)} · ${f(last.cost, 0)} kr${last.k === dayKey(new Date()).slice(0, 7) ? ' (hidtil)' : ''}`);
                 document.getElementById('note').textContent = 'Total og kost er fra elmåleren via Tibber. Elbil er Zaptec-laderen, El-varme er Mill-varmerne, og Varmepumpe er Mills stik på den. Resten er alt andet (varmepumpen ligger i Resten, indtil stikket har data i Mills historik).';
             }
-            const hasSrc = c => DEMO ? months.some(d => d[c.key] > 0) : c.key === 'rest' || !!(sources && sources[c.key] && sources[c.key].length);
+            const hasSrc = c => DEMO ? months.some(d => d[c.key] > 0) : c.key === 'rest' || (['vv', 'vp', 'mill'].includes(c.key) && months.some(d => d[c.key] > 0) ? true : !!(sources && sources[c.key] && sources[c.key].length));
             const shown = CATS.filter(hasSrc), sum = months.reduce((a, m) => a + m.total, 0);
             document.getElementById('ysplit').innerHTML = chips(months, shown, sum);
             if (yearChart) yearChart.destroy();

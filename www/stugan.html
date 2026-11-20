@@ -253,7 +253,7 @@
             const calling = act && typeof mr.avg === 'number' ? mr.avg < act.v - 0.3 : null;
             const w = ec ? ec[2] : (mr && calling != null ? (calling ? (mr.power > 0 ? mr.power : 650) : 0) : (mr && typeof mr.power === 'number' ? mr.power : (pow && isOk(pow) ? num(pow) : NaN))), h =   /* the room's own latest report from Mill's cloud (the script), since Home Assistant's Mill sensors are not polled */  ec ? ec[3] : (hum ? num(states0.get(hum)) : NaN);
             const state = off ? 'bad' : action === 'heating' ? 'heat' : action === 'cooling' ? 'cool' : mode === 'off' ? 'idle' : 'on';
-            const stateText = off ? (useFb ? 'Sidst kendt' : 'Offline') : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Fra', auto: 'Auto', dry: 'Affugt', fan_only: 'Blæser' }[mode] || 'Hviler');
+            const stateText = off ? (useFb ? 'Sidst kendt' : 'Offline') : action === 'heating' ? 'Varmer' : action === 'cooling' ? 'Køler' : ({ off: 'Slukket', auto: 'Auto', heat_cool: 'Auto', dry: 'Affugt', fan_only: 'Blæser', heat: 'Varme', cool: 'Køl' }[mode] || mode)   /* the mode in words: the Sensibo does not say whether the compressor runs, so it is never "Hviler" */;
             // The technical room and the guest cottage are kept cool on purpose: no colour for that (same as the other heaters), red only when frost is near (FROST_WARN).
             const sepRoom = /teknik|g[äa]st/i.test([s.entity_id, a.friendly_name, a.room].join(' '));
             const tl = sepRoom ? (Number.isNaN(cur) ? '' : cur < FROST_WARN ? 'bad' : '') : tempLevel(cur, tgt), hl = humLevel(h), worst = [tl, hl].includes('bad') ? 'bad' : [tl, hl].includes('warn') ? 'warn' : '';
@@ -349,13 +349,7 @@
                 const outT = isOk(hp.climate) ? parseFloat(hp.climate.attributes.current_temperature) : NaN;
                 html += `<div class="tiles hp1"><button class="t ${isOk(hp.climate) ? '' : 'off'}" data-e="${esc(hp.climate.entity_id)}"><div class="l">Ude</div><div class="v">${Number.isNaN(outT) ? '–' : fmt(outT, 1)}<small>°C</small></div></button></div>`;
             }
-            if (b.key === 'sensibo') {
-                const t = (label, st, v, unit, d) => `<button class="t ${st && isOk(st) ? '' : 'off'}" ${st ? `data-e="${esc(st.entity_id)}"` : ''}><div class="l">${label}</div><div class="v">${v}<small>${unit}</small></div></button>`;
-                html += `<div class="tiles hp2">
-                    ${t('Effekt nu', hp?.power, hp?.power && isOk(hp.power) ? fmt(num(hp.power), 0) : '–', 'W')}
-                    ${t('I dag', hp?.day, hp?.day && isOk(hp.day) ? fmt(num(hp.day), 1) : '–', 'kWh')}
-                </div>`;
-            }
+            // (the heat pump's power now and today used to be here, from the Mill socket on its plug: removed, the consumption card shows the heat pump from the Pulse)
             if (sensClimate) html += `<div class="sens-curve" data-e="${esc(sensClimate.entity_id)}"${canSet(sensClimate) ? ' data-settable="1"' : ''} data-dialog="1" data-name="${esc(sensClimate.attributes.friendly_name || 'Sensibo')}" data-sub="Sensibo" data-hum="${esc(humOf.get(sensClimate.entity_id) || '')}" ${sensExample ? 'data-example="1"' : ''}><div class="sc-cap">Indetemperatur · seneste døgn${sensExample ? '<span>Eksempeldata</span>' : ''}</div><div class="sc-cv"><canvas id="sensChart"></canvas></div></div>`;
             const tiles = [];
             const shown = sensors.slice(0, b.key === 'tibber' ? 6 : 8), seen = {};
@@ -459,6 +453,15 @@
         const humOf = new Map();   // climate entity -> the humidity sensor of the same device
         const powOf = new Map();   // climate entity -> the power sensor of the same device
         let states0 = new Map();   // all states, for the lookups above
+        // The Grohe integration polls its cloud only every 15 minutes (its default, 900 s), so a valve closed in the Grohe app showed "åben" here for up to a quarter
+        // of an hour. The water card therefore asks for a fresh reading (homeassistant.update_entity on the valve refreshes the whole device) at most every 3 minutes.
+        let groheAt = 0;
+        async function refreshGrohe() {
+            if (DEMO || Date.now() - groheAt < 180e3) return;
+            groheAt = Date.now();
+            const valve = registry.find(r => r.platform === 'grohe_smarthome' && r.entity_id.startsWith('valve.'))?.entity_id;
+            if (valve) try { await callApi('POST', 'services/homeassistant/update_entity', { entity_id: valve }); } catch (e) { /* the next try */ }
+        }
         async function load() {
             const problems = [];
             let states = new Map();
@@ -486,6 +489,7 @@
             if (new URLSearchParams(location.search).get('block') === 'sensibo' || !new URLSearchParams(location.search).get('block')) await loadSensCurve(sensEnt ? sensEnt.entity_id : null);
             const grid = document.getElementById('grid');
             const only = new URLSearchParams(location.search).get('block');
+            if (only === 'grohe') refreshGrohe().then(() => { /* shown at the next 10 s round */ });
             await checkCottage();
             const cards = BLOCKS.filter(b => !only || b.key === only).map(b => {
                 const ents = registry.filter(r => b.platforms.includes(r.platform) && !r.disabled_by && !r.hidden_by && (r.entity_category !== 'diagnostic' || r.entity_id.endsWith('_online')) && r.entity_category !== 'config')

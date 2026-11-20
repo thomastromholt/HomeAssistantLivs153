@@ -191,7 +191,19 @@
                 options: { responsive: true, maintainAspectRatio: false, animation: false, parsing: false, plugins: { legend: { display: false } }, scales: { x: xs, y: axis() } } });
         }
 
+        // The Grohe integration only polls every 15 minutes: ask the cloud for a fresh reading when the dialog opens and at most every 3 minutes after that.
+        let groheAt = 0;
+        async function refreshGrohe() {
+            if (Date.now() - groheAt < 180e3) return;
+            groheAt = Date.now();
+            try {
+                const reg = (await callWS({ type: 'config/entity_registry/list' })) || [];
+                const valve = reg.find(r => r.platform === 'grohe_smarthome' && r.entity_id.startsWith('valve.'))?.entity_id;
+                if (valve) await callApi('POST', 'services/homeassistant/update_entity', { entity_id: valve });
+            } catch (e) { /* use what Home Assistant has */ }
+        }
         async function load() {
+            await refreshGrohe();
             const states = new Map((await callApi('GET', 'states')).map(s => [s.entity_id, s]));
             const valve = [...states.values()].find(s => s.entity_id.startsWith('valve.') && /_valve$/.test(s.entity_id));
             if (!valve) { document.getElementById('error').hidden = false; document.getElementById('error').textContent = 'Fandt ingen Grohe-ventil (valve.…_valve).'; return; }
